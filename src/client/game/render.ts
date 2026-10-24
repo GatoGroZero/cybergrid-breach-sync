@@ -284,6 +284,21 @@ export class BRRenderer {
 
   // ------------------------------------------------------------------ eventos
 
+  /** True si el punto queda bajo un tejado que ahora mismo esta cerrado (no se ve lo que hay adentro). */
+  private hiddenByRoof(x: number, y: number): boolean {
+    for (const r of this.roofs) {
+      if (
+        r.alpha > 0.5 &&
+        x >= r.inside.x0 &&
+        x <= r.inside.x1 &&
+        y >= r.inside.y0 &&
+        y <= r.inside.y1
+      )
+        return true;
+    }
+    return false;
+  }
+
   private distToMe(x: number, y: number): number {
     const g = this.game;
     return g ? Math.hypot(x - g.x, y - g.y) : 9999;
@@ -327,8 +342,8 @@ export class BRRenderer {
             angle: a + Math.PI,
             spread: 0.9,
           });
-        if (d < 300) {
-          this.sfx.shot();
+        if (d < 420) {
+          this.sfx.shot(kind ?? 'pistol', Math.max(0.15, 1 - d / 420));
           if (kind === 'bazooka' || kind === 'sniper')
             this.shake = Math.max(this.shake, d < 60 ? 2 : 0);
         }
@@ -341,11 +356,11 @@ export class BRRenderer {
           life: 0.4,
           grav: 90,
         });
-        if (ev.v >= 4 || ev.kill)
+        if ((ev.v >= 4 || ev.kill) && !this.hiddenByRoof(ev.x, ev.y))
           fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
         const d = this.distToMe(ev.x, ev.y);
         if (d < 12 && g?.alive) this.sfx.hurt();
-        else if (d < 240) this.sfx.hit();
+        else if (d < 240) this.sfx.hit(Math.max(0.3, 1 - d / 240));
         break;
       }
       case 'boom': {
@@ -366,8 +381,8 @@ export class BRRenderer {
           grav: -18,
         });
         const d = this.distToMe(ev.x, ev.y);
-        if (d < 260) {
-          this.sfx.kill();
+        if (d < 420) {
+          this.sfx.boom(Math.max(0.2, 1 - d / 420));
           this.shake = Math.max(this.shake, Math.max(1, 4 - d / 80));
         }
         break;
@@ -422,7 +437,7 @@ export class BRRenderer {
             0.7,
             -22,
           );
-        if (this.distToMe(ev.x, ev.y) < 80) this.sfx.pickup();
+        if (this.distToMe(ev.x, ev.y) < 80) this.sfx.chest();
         break;
       }
       case 'splash': {
@@ -447,7 +462,7 @@ export class BRRenderer {
         }
         break;
       case 'zone':
-        this.sfx.go();
+        this.sfx.warn();
         break;
       case 'claw': {
         const a = (ev.a * Math.PI) / 180;
@@ -874,7 +889,7 @@ export class BRRenderer {
         b.globalAlpha = 1;
       },
     });
-    if (!isMe && info) {
+    if (!isMe && info && !this.hiddenByRoof(x, y)) {
       this.labels.push({
         x,
         y: y - 16,
