@@ -917,6 +917,19 @@ export class BRGame {
     };
   }
 
+  /** Solo para pruebas y demostraciones: equipo basico para un gato. */
+  giveTestKit(catId: number): void {
+    const cat = this.cat(catId);
+    if (cat && !cat.bot) {
+      addItem(cat.inv, { kind: 'rifle', qty: 1, rarity: 2 });
+      addItem(cat.inv, { kind: 'ammo_rifle', qty: 90, rarity: 0 });
+      addItem(cat.inv, { kind: 'medkit', qty: 3, rarity: 0 });
+      addItem(cat.inv, { kind: 'shield', qty: 3, rarity: 0 });
+      addItem(cat.inv, { kind: 'wall', qty: 5, rarity: 0 });
+      cat.invDirty = true;
+    }
+  }
+
   /** Solo para pruebas: termina la partida de inmediato. */
   forceFinish(winnerId: number | null): void {
     this.finish(winnerId === null ? null : (this.cat(winnerId) ?? null));

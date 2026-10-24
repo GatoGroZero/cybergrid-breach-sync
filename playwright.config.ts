@@ -40,6 +40,7 @@ export default defineConfig({
       SESSION_SECRET: 'secreto-e2e-secreto-e2e-secreto-e2e',
       COUNTDOWN_SECONDS: '1',
       DEMO_ACCOUNTS: 'true',
+      TEST_KIT: 'true',
     },
   },
 });

@@ -100,3 +100,16 @@ describe('particularidades de cada mapa', () => {
     }
   });
 });
+
+describe.each(MAP_KINDS)('robustez del generador de %s', (kind) => {
+  it('genera un mapa valido para cualquier semilla, incluidas las que fallaban con el ruido fijo', () => {
+    for (const seed of [647844703, 1037200949, 1993126045, 793057877, 1121893277, 1136484622]) {
+      expect(generateMap(kind, seed).spawns).toHaveLength(MAX_PLAYERS);
+    }
+    for (let i = 1; i <= 120; i++) {
+      const m = generateMap(kind, i * 7919);
+      expect(m.seed).toBe(i * 7919);
+      expect(m.houses.every((h) => h.doors.length >= 2)).toBe(true);
+    }
+  });
+});

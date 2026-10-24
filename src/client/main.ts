@@ -530,7 +530,10 @@ function startGame(payload: GameStartPayload): void {
     else inventory.refresh();
   };
   renderer.setGame(game);
-  if (DEBUG) (window as unknown as { __game?: ClientBR }).__game = game;
+  if (DEBUG) {
+    (window as unknown as { __game?: ClientBR; __net?: Net }).__game = game;
+    (window as unknown as { __net?: Net }).__net = net;
+  }
   input.active = true;
   applyMode(input.mode);
   sfx.go();
