@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Videojuego web multijugador en tiempo real con Canvas 2D, WebSockets y servidor autoritativo",
+  "description": "Battle royale multijugador de gatos en pixeles, en tiempo real, con Canvas 2D, WebSockets y servidor autoritativo",
   "license": "MIT",
   "author": "GatoGroZero",
   "engines": {

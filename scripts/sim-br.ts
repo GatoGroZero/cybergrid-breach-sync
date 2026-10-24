@@ -9,7 +9,18 @@ import { TICK_DT } from '../src/shared/br/constants';
 const games = Number(process.argv[2] ?? 6);
 const which = process.argv[3] ?? 'todos';
 const kinds: MapKind[] = which === 'todos' ? [...MAP_KINDS] : [which as MapKind];
-const NAMES = ['Michi', 'Bigotes', 'Pelusa', 'Luna', 'Tigre', 'Sombra', 'Canela', 'Mini', 'Nube', 'Churro'];
+const NAMES = [
+  'Michi',
+  'Bigotes',
+  'Pelusa',
+  'Luna',
+  'Tigre',
+  'Sombra',
+  'Canela',
+  'Mini',
+  'Nube',
+  'Churro',
+];
 
 for (const kind of kinds) {
   let totalT = 0;
@@ -24,7 +35,13 @@ for (const kind of kinds) {
     const game = new BRGame({
       seed: 5000 + g * 31,
       mapKind: kind,
-      cats: NAMES.map((name, i) => ({ id: i + 1, name, userId: null, bot: true, skin: randomSkin(rng) })),
+      cats: NAMES.map((name, i) => ({
+        id: i + 1,
+        name,
+        userId: null,
+        bot: true,
+        skin: randomSkin(rng),
+      })),
     });
     while (!game.over && game.time < 1000) {
       game.step();
