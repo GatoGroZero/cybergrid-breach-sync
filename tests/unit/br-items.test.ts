@@ -9,6 +9,7 @@ import {
   canStack,
   isAmmo,
   isWeapon,
+  rollAmmoCrate,
   rollChest,
   rollItem,
   rollRarity,
@@ -128,5 +129,54 @@ describe('probabilidades del botín', () => {
     expect(kinds.has('wall')).toBe(true);
     expect(kinds.has('medkit')).toBe(true);
     expect(kinds.has('shield')).toBe(true);
+  });
+});
+
+describe('municion mas facil de conseguir', () => {
+  it('las pilas tienen tope por casilla: 4 escudos, 3 botiquines y 5 muros', () => {
+    expect(STACK_MAX.shield).toBe(4);
+    expect(STACK_MAX.medkit).toBe(3);
+    expect(STACK_MAX.wall).toBe(5);
+  });
+
+  it('en 4000 cofres la municion es lo mas frecuente y casi todo arma viene con sus balas', () => {
+    const rng = createRng(2026);
+    let items = 0;
+    let ammo = 0;
+    let weapons = 0;
+    let orphan = 0;
+    for (let i = 0; i < 4000; i++) {
+      const chest = rollChest(rng, i % 7 === 0 ? 'golden' : 'normal');
+      for (const it of chest) {
+        items++;
+        if (isAmmo(it.kind)) ammo++;
+        if (isWeapon(it.kind)) {
+          weapons++;
+          if (!chest.some((o) => o.kind === `ammo_${it.kind}`)) orphan++;
+        }
+      }
+    }
+    expect(ammo / items).toBeGreaterThan(0.38);
+    expect(ammo).toBeGreaterThan(weapons);
+    // Antes casi nunca coincidian; ahora la mayoria de las armas trae sus balas.
+    expect(orphan / weapons).toBeLessThan(0.45);
+  });
+
+  it('una caja de municion da 4 clases distintas, cantidades grandes y nunca mas de 120', () => {
+    const rng = createRng(77);
+    const totals: Record<string, number> = {};
+    for (let i = 0; i < 500; i++) {
+      const crate = rollAmmoCrate(rng);
+      expect(crate).toHaveLength(4);
+      expect(new Set(crate.map((c) => c.kind)).size).toBe(4);
+      for (const c of crate) {
+        expect(c.qty).toBeGreaterThan(0);
+        expect(c.qty).toBeLessThanOrEqual(120);
+        totals[c.kind] = (totals[c.kind] ?? 0) + c.qty;
+      }
+    }
+    // El fusil y la pistola traen mas balas que la bazuca.
+    expect(totals.ammo_rifle ?? 0).toBeGreaterThan(totals.ammo_bazooka ?? 0);
+    expect(AMMO_KINDS).toHaveLength(5);
   });
 });

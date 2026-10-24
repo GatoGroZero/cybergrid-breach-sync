@@ -18,6 +18,10 @@ import { keyLabel, type Circle } from './input';
 import type { ClientBR } from './state';
 import { drawTouchControls } from './touchui';
 
+/** Cuanto se ve el aviso del objeto en mano y cuanto tarda en difuminarse. */
+const INFO_SHOW_MS = 2000;
+const INFO_FADE_MS = 700;
+
 type Ctx = CanvasRenderingContext2D;
 
 export interface Label {
@@ -173,6 +177,9 @@ export class Hud {
   private miniBase: HTMLCanvasElement | null = null;
   private map: BRMap | null = null;
   private healMax = 0;
+  /** Objeto en mano cuyo aviso se esta mostrando y desde cuando (el aviso se difumina solo). */
+  private infoKey = '';
+  private infoAt = 0;
 
   constructor(private readonly assets: Assets) {}
 
@@ -202,6 +209,7 @@ export class Hud {
     } else {
       g.input.hotbarRects = [];
     }
+    this.drawEmoteBar(f, touch);
     this.drawWarnings(f);
     this.drawBanner(f);
     if (!g.connected) this.drawOffline(f);
@@ -246,11 +254,13 @@ export class Hud {
     const title =
       kind === 0
         ? 'Cofre'
-        : kind === 1
-          ? 'Cofre dorado'
-          : kind === 2
-            ? 'Lápida'
-            : ITEM_NAMES[ITEM_KINDS[Math.floor(top / 3)] ?? 'pistol'];
+        : kind === 4
+          ? 'Caja de munición'
+          : kind === 1
+            ? 'Cofre dorado'
+            : kind === 2
+              ? 'Lápida'
+              : ITEM_NAMES[ITEM_KINDS[Math.floor(top / 3)] ?? 'pistol'];
     const p = f.toScreen(x, y - 14 + Math.sin(f.now / 220) * 1.5);
     const touch = g.input.mode === 'touch';
     const label = touch ? 'ABRIR' : keyLabel(g.input.keys.interact).toUpperCase();
@@ -411,8 +421,11 @@ export class Hud {
         color = Math.floor(f.now / 350) % 2 === 0 ? C.orange : C.yellow;
       } else if (z.phase === 0) {
         msg = `LA OLA LLEGA EN ${fmtTime(z.nextIn)}`;
+      } else if (z.phase === 3) {
+        msg = `¡ÚLTIMA OLA EN ${Math.max(0, z.nextIn)}!`;
+        color = Math.floor(f.now / 300) % 2 === 0 ? C.red : C.orange;
       } else {
-        msg = `PRÓXIMA OLA EN ${fmtTime(z.nextIn)}`;
+        msg = `SEGUNDA OLA EN ${fmtTime(z.nextIn)}`;
       }
     }
     ctx.font = `20px ${VT}`;
@@ -556,7 +569,7 @@ export class Hud {
     let color: string = C.white;
     if (!item) {
       title = 'GARRAS';
-      detail = `${CLAWS.damage} de daño`;
+      detail = `${CLAWS.damage} de daño, rompen muros`;
     } else if (isWeapon(item.kind)) {
       const def = WEAPONS[item.kind];
       title = `${def.name.toUpperCase()} ${RARITY_NAMES[item.rarity].toUpperCase()}`;
@@ -570,7 +583,7 @@ export class Hud {
         item.kind === 'medkit'
           ? `+10 vida por segundo, ${use} para usar`
           : item.kind === 'shield'
-            ? `+5 escudo por segundo, ${use} para usar`
+            ? `+50 de escudo en 5 s, ${use} para usar`
             : item.kind === 'wall'
               ? `${use} para colocar`
               : `Cantidad: ${item.qty}`;
@@ -579,9 +592,21 @@ export class Hud {
     const tw = Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) + 24;
     const x = Math.round(w / 2 - tw / 2);
     const y = Math.round(baseY - 36);
-    panel(ctx, x, y, tw, 38, 'rgba(26,28,44,0.85)', color === C.white ? C.black : color);
-    text(ctx, title, w / 2, y + 12, 20, color, 'center', VT, null);
-    text(ctx, detail, w / 2, y + 28, 16, C.lgray, 'center', VT, null);
+    // El aviso del objeto en mano se ve 2 segundos al cambiarlo y luego se difumina.
+    const key = `${me.sel}|${item?.kind ?? ''}|${item?.rarity ?? ''}`;
+    if (key !== this.infoKey) {
+      this.infoKey = key;
+      this.infoAt = f.now;
+    }
+    const age = f.now - this.infoAt;
+    const fade = age < INFO_SHOW_MS ? 1 : Math.max(0, 1 - (age - INFO_SHOW_MS) / INFO_FADE_MS);
+    if (fade > 0.01) {
+      ctx.globalAlpha = fade;
+      panel(ctx, x, y, tw, 38, 'rgba(26,28,44,0.85)', color === C.white ? C.black : color);
+      text(ctx, title, w / 2, y + 12, 20, color, 'center', VT, null);
+      text(ctx, detail, w / 2, y + 28, 16, C.lgray, 'center', VT, null);
+      ctx.globalAlpha = 1;
+    }
     if (me.healLeft > 0) {
       this.healMax = Math.max(this.healMax, me.healLeft);
       const bw = 150;
@@ -605,6 +630,54 @@ export class Hud {
     } else {
       this.healMax = 0;
     }
+  }
+
+  // ------------------------------------------------------------------ emotes
+
+  /** Barra con los 5 emotes: se abre con la tecla T o el boton de la carita y se elige con toque, clic o numero. */
+  private drawEmoteBar(f: HudFrame, touch: boolean): void {
+    const { ctx, g, w, h } = f;
+    const input = g.input;
+    if (!g.alive || g.result || !input.emoteOpen) {
+      input.emoteRects = [];
+      if (!g.alive || g.result) input.emoteOpen = false;
+      return;
+    }
+    const faces = this.assets.emote.face;
+    const k = 3;
+    const cell = (faces[0]?.width ?? 15) * k + 14;
+    const gap = 8;
+    const total = faces.length * cell + (faces.length - 1) * gap;
+    const px0 = Math.round(w / 2 - total / 2);
+    const py0 = Math.round(h * (touch ? 0.56 : 0.6));
+    panel(ctx, px0 - 12, py0 - 34, total + 24, cell + 52, 'rgba(26,28,44,0.92)', C.yellow);
+    const hint = touch ? 'Toca un emote' : `${keyLabel(input.keys.emote)} o Esc para cerrar`;
+    text(ctx, 'EMOTES', w / 2, py0 - 20, 18, C.yellow, 'center', VT, null);
+    text(ctx, hint, w / 2, py0 - 6, 14, C.lgray, 'center', VT, null);
+    const cooling = f.now - g.lastEmoteTime < 1500;
+    input.emoteRects = [];
+    faces.forEach((face, i) => {
+      const x = px0 + i * (cell + gap);
+      const y = py0 + 2;
+      input.emoteRects.push({ x, y, w: cell, h: cell });
+      ctx.globalAlpha = cooling ? 0.45 : 1;
+      panel(ctx, x, y, cell, cell, 'rgba(51,60,87,0.95)', C.lgray);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(face, x + 7, y + 7, face.width * k, face.height * k);
+      ctx.globalAlpha = 1;
+      if (!touch)
+        text(
+          ctx,
+          keyLabel(input.keys[`slot${i + 1}` as 'slot1']),
+          x + cell / 2,
+          y + cell + 12,
+          16,
+          C.white,
+          'center',
+          VT,
+          null,
+        );
+    });
   }
 
   // ------------------------------------------------------------------ barra de objetos (PC)
@@ -720,6 +793,8 @@ export class Hud {
       pressed: input.pressed,
       interactReady: box !== null && g.alive,
       bagIcon: this.assets.can,
+      emoteIcon: this.assets.emote.face[0],
+      emoteOpen: input.emoteOpen,
       drawSlot: (c: Circle, i: number) => {
         this.drawItemCell(
           ctx,

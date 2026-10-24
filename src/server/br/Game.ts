@@ -1,6 +1,8 @@
 import {
+  HEAL,
   applyDamage,
   healMissing,
+  healSecondsLeft,
   healStep,
   splashDamage,
   type HealKind,
@@ -38,6 +40,7 @@ import {
   WEAPONS,
   isAmmo,
   isWeapon,
+  rollAmmoCrate,
   rollChest,
   type AmmoKind,
   type Item,
@@ -124,7 +127,9 @@ export interface Cat {
   stamina: StaminaState;
   running: boolean;
   sel: number;
-  heal: { kind: HealKind; elapsed: number } | null;
+  heal: { kind: HealKind; elapsed: number; left: number } | null;
+  /** Hasta cuando no puede volver a mandar un emote. */
+  emoteUntil: number;
   cooldownUntil: number;
   prevFire: boolean;
   kills: number;
@@ -170,7 +175,7 @@ interface Wall {
   owner: number;
 }
 
-export type ContainerKind = 'chest' | 'golden' | 'tomb' | 'drop';
+export type ContainerKind = 'chest' | 'golden' | 'ammo' | 'tomb' | 'drop';
 
 interface Container {
   id: number;
@@ -189,7 +194,16 @@ const SHOT_KIND: Record<WeaponKind, number> = {
   sniper: 2,
   bazooka: 3,
 };
-const CONTAINER_CODE: Record<ContainerKind, number> = { chest: 0, golden: 1, tomb: 2, drop: 3 };
+const CONTAINER_CODE: Record<ContainerKind, number> = {
+  chest: 0,
+  golden: 1,
+  tomb: 2,
+  drop: 3,
+  ammo: 4,
+};
+/** Segundos entre un emote y el siguiente de un mismo gato. */
+const EMOTE_COOLDOWN_S = 1.5;
+export const EMOTE_KINDS = 5;
 const HIT_RADIUS = 7;
 const MAX_SHOTS = 320;
 const MAX_WALLS = 120;
@@ -221,7 +235,7 @@ export class BRGame {
   private readonly containers = new Map<number, Container>();
   private events: BREvent[] = [];
   private nextId = 10_000;
-  private lastPhase = -1;
+  private lastZoneKey = -1;
   private readonly brains = new Map<number, BotBrain>();
   private readonly deaths: DiedPayload[] = [];
   private readonly deathOwners: number[] = [];
@@ -261,6 +275,7 @@ export class BRGame {
         running: false,
         sel: 0,
         heal: null,
+        emoteUntil: 0,
         cooldownUntil: 0,
         prevFire: false,
         kills: 0,
@@ -286,14 +301,18 @@ export class BRGame {
     // Cofres con su contenido sorteado desde el inicio (la semilla del servidor, no la del cliente).
     const lootRng = createRng((options.seed ^ 0xc0ffee) >>> 0);
     for (const spot of this.map.chests) {
+      const kind: ContainerKind = spot.ammo ? 'ammo' : spot.golden ? 'golden' : 'chest';
       this.containers.set(spot.id, {
         id: spot.id,
-        kind: spot.golden ? 'golden' : 'chest',
+        kind,
         x: spot.x,
         y: spot.y,
-        items: rollChest(lootRng, spot.golden ? 'golden' : 'normal'),
+        items: spot.ammo
+          ? rollAmmoCrate(lootRng)
+          : rollChest(lootRng, spot.golden ? 'golden' : 'normal'),
         opened: false,
-        title: spot.golden ? 'Cofre dorado' : 'Cofre',
+        title:
+          { chest: 'Cofre', golden: 'Cofre dorado', ammo: 'Caja de munición' }[kind] ?? 'Cofre',
       });
     }
     for (const cat of this.cats) {
@@ -489,6 +508,34 @@ export class BRGame {
       const diff = Math.abs(Math.atan2(Math.sin(toOther - aim), Math.cos(toOther - aim)));
       if (diff < 0.9) this.damageCat(other, CLAWS.damage, cat);
     }
+    // Las garras tambien rompen muros (el mas cercano al frente), para que nadie quede encerrado.
+    let target: Wall | null = null;
+    let targetD = Infinity;
+    for (const wall of this.walls.values()) {
+      const wx = wall.tx * TILE + TILE / 2;
+      const wy = wall.ty * TILE + TILE / 2;
+      const d = dist(cat.x, cat.y, wx, wy);
+      if (d > CLAWS.range + TILE * 0.75) continue;
+      const to = Math.atan2(wy - cat.y, wx - cat.x);
+      const diff = Math.abs(Math.atan2(Math.sin(to - aim), Math.cos(to - aim)));
+      if (diff > 1.1 && d > TILE) continue;
+      if (d < targetD) {
+        targetD = d;
+        target = wall;
+      }
+    }
+    if (target) this.damageWall(target, CLAWS.wallDamage);
+  }
+
+  /** Un emote sobre la cabeza del gato, visible para quien lo tenga cerca. */
+  emote(catId: number, kind: number): boolean {
+    const cat = this.cat(catId);
+    if (!cat || !cat.alive || !Number.isInteger(kind) || kind < 0 || kind >= EMOTE_KINDS)
+      return false;
+    if (this.time < cat.emoteUntil) return false;
+    cat.emoteUntil = this.time + EMOTE_COOLDOWN_S;
+    this.emit({ e: 'emote', x: q1(cat.x), y: q1(cat.y), id: cat.id, k: kind });
+    return true;
   }
 
   // ---------------------------------------------------------------- curacion
@@ -500,7 +547,7 @@ export class BRGame {
     const slot = cat.sel;
     takeOne(cat.inv, slot);
     cat.invDirty = true;
-    cat.heal = { kind, elapsed: 0 };
+    cat.heal = { kind, elapsed: 0, left: HEAL[kind].total };
   }
 
   private updateHeal(cat: Cat, dt: number): void {
@@ -510,7 +557,8 @@ export class BRGame {
     // Pequeña tolerancia: 30 ticks de 1/30 s suman 0.99999... y deben contar como un segundo.
     while (heal.elapsed >= 1 - 1e-6) {
       heal.elapsed -= 1;
-      const r = healStep(heal.kind, cat);
+      const r = healStep(heal.kind, cat, heal.left);
+      heal.left = r.left;
       cat.hp = r.hp;
       cat.shield = r.shield;
       this.emit({
@@ -614,6 +662,16 @@ export class BRGame {
       title: `Lápida de ${target.name}`,
     });
 
+    // Los bots festejan algunas bajas con una carita, como lo haria una persona.
+    if (
+      killer &&
+      killer.bot &&
+      killer.alive &&
+      killer.id !== target.id &&
+      (this.tick + killer.id) % 3 === 0
+    )
+      this.emote(killer.id, (this.tick + target.id) % 4 === 0 ? 4 : 0);
+
     if (!target.bot) {
       this.deaths.push({
         placement: target.placement,
@@ -652,7 +710,7 @@ export class BRGame {
     let best: Container | null = null;
     let bestD = range;
     for (const c of this.containers.values()) {
-      const isChest = c.kind === 'chest' || c.kind === 'golden';
+      const isChest = c.kind === 'chest' || c.kind === 'golden' || c.kind === 'ammo';
       if (!isChest && c.items.length === 0) continue;
       const d = dist(cat.x, cat.y, c.x, c.y);
       if (d < bestD) {
@@ -675,7 +733,13 @@ export class BRGame {
     if (!c) return null;
     if (!c.opened) {
       c.opened = true;
-      this.emit({ e: 'open', x: q1(c.x), y: q1(c.y), golden: c.kind === 'golden' });
+      this.emit({
+        e: 'open',
+        x: q1(c.x),
+        y: q1(c.y),
+        golden: c.kind === 'golden',
+        ammo: c.kind === 'ammo',
+      });
     }
     return this.contentsOf(c);
   }
@@ -804,9 +868,12 @@ export class BRGame {
       mapHeightPx(this.map),
       this.time * this.zoneScale,
     );
-    if (this.zone.phase !== this.lastPhase) {
-      this.lastPhase = this.zone.phase;
-      if (this.zone.phase > 0) this.emit({ e: 'zone', phase: this.zone.phase });
+    // Cada cambio de la ola (empieza a cerrar, se queda quieta, ultima ola...) se avisa a todos.
+    const zoneKey = this.zone.phase * 2 + (this.zone.shrinking ? 1 : 0);
+    if (zoneKey !== this.lastZoneKey) {
+      this.lastZoneKey = zoneKey;
+      if (this.zone.phase > 0)
+        this.emit({ e: 'zone', phase: this.zone.phase, shrinking: this.zone.shrinking });
     }
 
     for (const cat of this.cats) {
@@ -1099,12 +1166,7 @@ export class BRGame {
       sel: cat.sel,
       alive: cat.alive,
       kills: cat.kills,
-      healLeft: cat.heal
-        ? Math.max(
-            0,
-            Math.ceil(healMissing(cat.heal.kind, cat) / (cat.heal.kind === 'medkit' ? 10 : 5)),
-          )
-        : 0,
+      healLeft: cat.heal ? healSecondsLeft(cat.heal.kind, cat, cat.heal.left) : 0,
       healKind: cat.heal ? cat.heal.kind : null,
       cooldown: Math.max(0, q1(cat.cooldownUntil - this.time)),
       stamina: q1(cat.stamina.value),

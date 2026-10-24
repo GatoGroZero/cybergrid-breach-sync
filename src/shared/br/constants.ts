@@ -3,10 +3,10 @@ export const TILE = 16;
 export const TICK_HZ = 30;
 export const TICK_DT = 1 / TICK_HZ;
 
-export const MAX_PLAYERS = 10;
+export const MAX_PLAYERS = 12;
 export const INVENTORY_SLOTS = 5;
 /** Maximo de balas de cada arma. Las balas no ocupan los 5 espacios: van en su propio compartimento. */
-export const AMMO_MAX = 100;
+export const AMMO_MAX = 120;
 
 /** Los primeros segundos nadie puede hacerse dano: da tiempo de ubicarse y buscar el primer cofre. */
 export const SPAWN_GRACE_S = 10;

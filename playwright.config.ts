@@ -46,6 +46,9 @@ export default defineConfig({
       GOOGLE_CLIENT_ID: 'e2e-cliente.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'e2e-secreto-del-cliente',
       EMAIL_PROVIDER: 'console',
+      // Cada prueba registra su propio usuario: el tope normal de 30 por hora no alcanza.
+      LIMIT_REGISTER: '1000',
+      LIMIT_GUEST: '1000',
     },
   },
 });

@@ -102,7 +102,7 @@ describe('eventos de la partida por socket', () => {
     expect(withKit?.inv?.[0]).toMatchObject({ kind: 'bazooka', rarity: 2 });
     socket.emit('dev:finish');
     const result = await ended;
-    expect(result.rows).toHaveLength(10);
+    expect(result.rows).toHaveLength(12);
     expect(result.rows.find((r) => r.id === start.you)).toBeDefined();
   });
 

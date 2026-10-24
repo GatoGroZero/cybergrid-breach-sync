@@ -425,14 +425,16 @@ export class BotBrain {
     const z = this.game.zone;
     const c = this.cat;
     const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
+    // Con la ola tan rapida hay que ponerse en marcha antes de que empiece a cerrar.
+    const lead = z.phase === 0 ? 14 : 26;
     const soonOutside =
-      z.next !== null && z.next.r > 0 && z.nextIn < 25 && !insideCircle(z.next, c.x, c.y);
+      z.next !== null && z.next.r > 0 && z.nextIn < lead && !insideCircle(z.next, c.x, c.y);
     if (outside || soonOutside) {
       this.zoneLatch = true;
       return true;
     }
     if (!this.zoneLatch) return false;
-    const target = !z.next || z.next.r <= 0 || z.nextIn >= 25 ? z.circle : z.next;
+    const target = !z.next || z.next.r <= 0 || z.nextIn >= lead ? z.circle : z.next;
     const safe = insideCircle(
       { cx: target.cx, cy: target.cy, r: Math.max(10, target.r - 45) },
       c.x,
@@ -440,6 +442,18 @@ export class BotBrain {
     );
     if (safe) this.zoneLatch = false;
     return this.zoneLatch;
+  }
+
+  /**
+   * El circulo donde conviene quedarse ahora: el actual, o el siguiente cuando ya se acerca la ola.
+   * Sirve para no ir a saquear algo que quedara fuera (y evita el baile entre botin y ola).
+   */
+  private safeNow(): { cx: number; cy: number; r: number } {
+    const z = this.game.zone;
+    const lead = z.phase === 0 ? 14 : 26;
+    const soon = z.next !== null && z.next.r > 0 && z.nextIn < lead;
+    const c = soon ? (z.next as { cx: number; cy: number; r: number }) : z.circle;
+    return { cx: c.cx, cy: c.cy, r: Math.max(0, c.r - 28) };
   }
 
   private goToZone(): void {
@@ -854,16 +868,27 @@ export class BotBrain {
           c.ammo.ammo_shotgun +
           c.ammo.ammo_sniper +
           c.ammo.ammo_bazooka >=
-          45;
+          70;
+      const lowAmmo =
+        c.ammo.ammo_pistol +
+          c.ammo.ammo_rifle +
+          c.ammo.ammo_shotgun +
+          c.ammo.ammo_sniper +
+          c.ammo.ammo_bazooka <
+        30;
       let best: { id: number; score: number } | null = null;
       for (const box of g.allContainers()) {
         if (this.done.has(box.id)) continue;
-        const isChest = box.kind === 'chest' || box.kind === 'golden';
+        if (!insideCircle(this.safeNow(), box.x, box.y)) continue;
+        const isChest = box.kind === 'chest' || box.kind === 'golden' || box.kind === 'ammo';
         if (!isChest && box.items.length === 0) continue;
         if (isChest && box.opened && box.items.length === 0) continue;
         const d = dist(c.x, c.y, box.x, box.y);
         if (d > (geared ? 260 : 800)) continue;
-        const bonus = (box.kind === 'golden' ? 70 : 0) + (box.kind === 'tomb' ? 40 : 0);
+        const bonus =
+          (box.kind === 'golden' ? 70 : 0) +
+          (box.kind === 'tomb' ? 40 : 0) +
+          (box.kind === 'ammo' ? (lowAmmo ? 140 : 30) : 0);
         // Un cofre con otro gato a la vista cerca se evita: nadie quiere empezar a balazos en el cofre.
         const crowded = g.cats.some(
           (o) =>
@@ -881,7 +906,11 @@ export class BotBrain {
       this.rummageUntil = 0;
     }
     const box = g.allContainers().find((b) => b.id === this.lootTarget);
-    if (!box || (box.items.length === 0 && (box.kind === 'tomb' || box.kind === 'drop'))) {
+    if (
+      !box ||
+      (box.items.length === 0 && (box.kind === 'tomb' || box.kind === 'drop')) ||
+      !insideCircle(this.safeNow(), box.x, box.y)
+    ) {
       this.lootTarget = null;
       return false;
     }
@@ -916,7 +945,7 @@ export class BotBrain {
     const mapW = g.map.w * TILE;
     const mapH = g.map.h * TILE;
     const z = g.zone;
-    const early = z.phase === 0 && z.nextIn > 30;
+    const early = z.phase === 0 && z.nextIn > 12;
     const circle = z.next && z.next.r > 0 && z.nextIn < 60 ? z.next : z.circle;
     for (let tries = 0; tries < 8; tries++) {
       let x: number;

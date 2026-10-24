@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { registerViaUi, startSoloGame, uniqueName } from './helpers';
+import { registerViaUi, startSoloGame, uniqueName, walkTo } from './helpers';
 
 interface DebugGame {
   inv: ({ kind: string; qty: number; rarity: number } | null)[];
@@ -79,7 +79,7 @@ test.describe('Flujo 6: fin de la partida', () => {
       ),
     );
     await expect(page.getByTestId('results')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('#results-body tr')).toHaveCount(10);
+    await expect(page.locator('#results-body tr')).toHaveCount(12);
     await expect(page.locator('#results-body tr.me')).toHaveCount(1);
 
     // La partida terminada entra a la telemetria (solo cuentan las personas, no los bots).
@@ -164,5 +164,100 @@ test.describe('Flujo 7: correr con estamina', () => {
         page.evaluate(() => (window as unknown as { __game: DebugGame }).__game.ammo[4]),
       )
       .toBe(0);
+  });
+});
+
+test.describe('Flujo 8: cajas de municion y emotes', () => {
+  test('una caja de municion trae varias clases de balas y se pasan al compartimento sin ocupar casillas', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_caja'), true);
+    await startSoloGame(page);
+
+    const tried: { x: number; y: number }[] = [];
+    let taken = false;
+    for (let attempt = 0; attempt < 8 && !taken; attempt++) {
+      // La caja cerrada mas cercana que todavia no se ha probado (los bots tambien las abren).
+      const crate = await page.evaluate((skip) => {
+        const g = (
+          window as unknown as {
+            __game: { x: number; y: number; boxes: [number, number, number, number, number][] };
+          }
+        ).__game;
+        let best: { x: number; y: number } | null = null;
+        let bestD = Infinity;
+        for (const b of g.boxes) {
+          if (b[3] !== 4 || b[4] !== 0) continue;
+          if (skip.some((t) => t.x === b[1] && t.y === b[2])) continue;
+          const d = Math.hypot(b[1] - g.x, b[2] - g.y);
+          if (d < bestD) {
+            bestD = d;
+            best = { x: b[1], y: b[2] };
+          }
+        }
+        return best;
+      }, tried);
+      if (!crate) break;
+      tried.push(crate);
+      const left = await walkTo(page, crate.x, crate.y, 17);
+      if (left < 0 || left >= 26) continue;
+      await page.keyboard.press('KeyE');
+      await expect(page.getByTestId('inv')).toBeVisible();
+      const slots = await page.locator('[data-testid="loot-slot"]:not(.empty)').count();
+      if (slots >= 3 && (await page.getByTestId('loot-all').isEnabled())) {
+        await expect(page.getByTestId('loot-block')).toContainText('Caja de munición');
+        await page.getByTestId('loot-all').click();
+        // Todo va al compartimento de balas: ninguna de las 5 casillas se ocupa.
+        await expect
+          .poll(async () => page.locator('[data-testid="ammo-chip"]:not(.empty)').count())
+          .toBeGreaterThanOrEqual(3);
+        await expect(page.locator('[data-testid="inv-slot"]:not(.empty)')).toHaveCount(0);
+        taken = true;
+      } else {
+        await page.keyboard.press('Escape');
+      }
+    }
+    expect(taken).toBe(true);
+  });
+
+  test('con la tecla T se abre la barra de emotes y el emote sale sobre el gato (con respiro entre uno y otro)', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_emo'), true);
+    await startSoloGame(page);
+    type Dbg = { emotes: Map<number, { k: number }>; you: number };
+    const emote = (): Promise<number | null> =>
+      page.evaluate(() => {
+        const g = (window as unknown as { __game: Dbg }).__game;
+        return g.emotes.get(g.you)?.k ?? null;
+      });
+    expect(await emote()).toBeNull();
+
+    await page.keyboard.press('KeyT');
+    await page.waitForTimeout(150);
+    // Con la barra abierta, el numero 2 elige el llanto en vez de cambiar de objeto.
+    await page.keyboard.press('Digit2');
+    await expect.poll(emote).toBe(1);
+
+    // El respiro de 1.5 s evita el spam: uno inmediato se ignora.
+    await page.keyboard.press('KeyT');
+    await page.keyboard.press('Digit3');
+    await page.waitForTimeout(500);
+    expect(await emote()).toBe(1);
+
+    // Pasado el respiro, la bandera blanca (4) si sale.
+    await page.waitForTimeout(1300);
+    await page.keyboard.press('KeyT');
+    await page.keyboard.press('Digit4');
+    await expect.poll(emote).toBe(3);
+
+    // Escape cierra la barra sin mandar nada ni abrir el menu de pausa.
+    await page.waitForTimeout(1600);
+    await page.keyboard.press('KeyT');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('menu')).toBeHidden();
+    await page.keyboard.press('Digit1');
+    await page.waitForTimeout(400);
+    expect(await emote()).toBe(3);
   });
 });

@@ -20,6 +20,8 @@ const NAMES = [
   'Mini',
   'Nube',
   'Churro',
+  'Pixel',
+  'Byte',
 ];
 
 for (const kind of kinds) {
@@ -64,7 +66,7 @@ for (const kind of kinds) {
   console.info(
     `${kind}: partidas=${games} duracion media=${Math.round(totalT / games)} s (max ${Math.round(maxT)} s), bajas medias=${(totalKills / games).toFixed(1)}, muertes=${(causes.dead / games).toFixed(1)}, ganadores por arma=`,
     weaponWins,
-    `| CPU: ${(ms / ticks).toFixed(3)} ms por tick (10 gatos, 10 instantaneas)`,
+    `| CPU: ${(ms / ticks).toFixed(3)} ms por tick (12 gatos, 12 instantaneas)`,
     `${(TICK_DT * 1000).toFixed(1)} ms disponibles`,
   );
 }

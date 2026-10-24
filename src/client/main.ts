@@ -105,6 +105,7 @@ const input = new InputController(canvas, {
     else toggleMenu();
   },
   onSelect: (slot) => game?.select(slot),
+  onEmote: (kind) => game?.sendEmote(kind),
   onMute: () => {
     sfx.setMuted(!sfx.muted);
     toast(sfx.muted ? 'Sonido apagado' : 'Sonido encendido');
@@ -114,7 +115,7 @@ const input = new InputController(canvas, {
 });
 
 const inventory = new InventoryPanel(renderer.assets, () => game);
-const settings = new Settings(input, sfx, renderer.assets.can);
+const settings = new Settings(input, sfx, renderer.assets.can, renderer.assets.emote.face[0]);
 
 inventory.onClose = () => syncActive();
 settings.onClose = () => syncActive();

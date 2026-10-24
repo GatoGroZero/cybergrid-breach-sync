@@ -81,6 +81,8 @@ export interface ChestSpot {
   x: number;
   y: number;
   golden: boolean;
+  /** Caja de municion: trae varias clases de balas y no tiene cofre dorado. */
+  ammo: boolean;
 }
 
 export interface Landmark {
@@ -142,6 +144,9 @@ const NAMES_BOSQUE = [
   'Siesta',
   'Colita',
   'Atún',
+  'Maullido',
+  'Lanita',
+  'Bigotitos',
 ];
 const NAMES_CAMA = [
   'Cama de Mimi',
@@ -150,8 +155,18 @@ const NAMES_CAMA = [
   'Cama de Tigre',
   'Cama de Nube',
   'Cama de Mochi',
+  'Cama de Canela',
+  'Cama de Churro',
 ];
-const NAMES_CABANA = ['Vestidor', 'Bar del Atún', 'Cabaña Salmón', 'Caseta Splash', 'Cabaña Coral'];
+const NAMES_CABANA = [
+  'Vestidor',
+  'Bar del Atún',
+  'Cabaña Salmón',
+  'Caseta Splash',
+  'Cabaña Coral',
+  'Snack Bar',
+  'Cabaña Delfín',
+];
 
 interface Rect {
   x: number;
@@ -390,21 +405,23 @@ class Builder {
     return out;
   }
 
-  chest(tx: number, ty: number, golden: boolean): void {
+  chest(tx: number, ty: number, golden: boolean, ammo = false): void {
     this.m.chests.push({
       id: this.nextChest++,
       x: tx * TILE + TILE / 2,
       y: ty * TILE + TILE / 2,
       golden,
+      ammo,
     });
     // Un cofre ocupa su casilla pero no la bloquea del todo: es solido para no atravesarlo.
     this.setSolid(tx, ty);
     this.reserved[this.at(tx, ty)] = 1;
   }
 
-  /** Cofres dentro de cada casa (pegados a las paredes) y en lugares abiertos. */
-  stockHouses(perHouse: number): void {
+  /** Cofres dentro de cada casa (pegados a las paredes): entre `min` y `max` por casa. */
+  stockHouses(min: number, max: number): void {
     for (const house of this.m.houses) {
+      const perHouse = this.rng.int(min, max);
       const doorSet = new Set(house.doors.map((d) => `${d.x},${d.y}`));
       const candidates = this.interiorTiles(house).filter((t) => {
         const nearWall =
@@ -454,28 +471,78 @@ class Builder {
     }
   }
 
-  /** Marca algunos cofres como dorados: siempre al menos uno. */
+  /**
+   * Cajas de municion en lugares abiertos, repartidas por todo el mapa y lejos de los cofres,
+   * para que haya municion cerca de casi cualquier punto de aparicion.
+   */
+  ammoCrates(count: number): void {
+    const { w, h } = this.m;
+    let attempts = 0;
+    let placed = 0;
+    while (placed < count && attempts++ < 1500) {
+      const x = this.rng.int(4, w - 5);
+      const y = this.rng.int(4, h - 5);
+      if (!this.isFree(x, y) || groundAt(this.m, x, y) === G.WATER) continue;
+      if (this.m.chests.some((c) => Math.hypot(c.x / TILE - x, c.y / TILE - y) < 7)) continue;
+      let open = 0;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        if (!isSolidTile(this.m, x + dx, y + dy)) open++;
+      }
+      if (open < 3) continue;
+      this.chest(x, y, false, true);
+      placed++;
+    }
+  }
+
+  /** Marca algunos cofres como dorados (nunca las cajas de municion): siempre al menos uno. */
   goldenChests(fraction: number): void {
-    const list = this.m.chests;
+    const list = this.m.chests.filter((c) => !c.ammo);
     if (list.length === 0) return;
     for (const c of list) c.golden = this.rng.chance(fraction);
     if (!list.some((c) => c.golden)) (this.rng.pick(list) as ChestSpot).golden = true;
   }
 
-  /** 10 puntos de aparicion repartidos en anillo, sobre casillas libres. */
+  /**
+   * Un punto de aparicion por jugador, repartidos en anillo sobre casillas libres y separados al
+   * menos 8 casillas entre si (en un bosque denso las casillas libres escasean y un reparto
+   * ingenuo los amontona en los claros).
+   */
   spawns(): void {
     const { w, h } = this.m;
     const cx = (w * TILE) / 2;
     const cy = (h * TILE) / 2;
     const radius = Math.min(w, h) * TILE * 0.38;
     const offset = this.rng.range(0, Math.PI * 2);
+    const minGap = 8 * TILE;
+    const spots: Vec[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) {
-      const a = offset + (i / MAX_PLAYERS) * Math.PI * 2;
-      const tx = Math.floor((cx + Math.cos(a) * radius * (0.85 + this.rng.next() * 0.3)) / TILE);
-      const ty = Math.floor((cy + Math.sin(a) * radius * (0.85 + this.rng.next() * 0.3)) / TILE);
-      const spot = this.findFree(tx, ty, 2);
-      this.m.spawns.push({ x: spot.x * TILE + TILE / 2, y: spot.y * TILE + TILE / 2 });
+      const slot = (Math.PI * 2) / MAX_PLAYERS;
+      let best: Vec | null = null;
+      let bestGap = -1;
+      for (let attempt = 0; attempt < 16 && bestGap < minGap; attempt++) {
+        const a = offset + i * slot + (attempt === 0 ? 0 : this.rng.range(-0.45, 0.45) * slot);
+        const rr = radius * (attempt === 0 ? 1 : this.rng.range(0.55, 1.15));
+        const tx = Math.floor((cx + Math.cos(a) * rr) / TILE);
+        const ty = Math.floor((cy + Math.sin(a) * rr) / TILE);
+        const spot = this.findFree(tx, ty, attempt < 8 ? 2 : 1);
+        const pos = { x: spot.x * TILE + TILE / 2, y: spot.y * TILE + TILE / 2 };
+        const gap = spots.reduce(
+          (m, o) => Math.min(m, Math.hypot(o.x - pos.x, o.y - pos.y)),
+          Infinity,
+        );
+        if (gap > bestGap) {
+          bestGap = gap;
+          best = pos;
+        }
+      }
+      spots.push(best as Vec);
     }
+    this.m.spawns.push(...spots);
   }
 
   /** Casilla libre mas cercana con `clear` casillas de holgura. */
@@ -676,12 +743,12 @@ function connectPaths(b: Builder, g: number): void {
 // ------------------------------------------------------------------ bosque
 
 function buildBosque(rng: Rng, seed: number): BRMap {
-  const b = new Builder(rng, 'bosque', seed, 96, 64);
+  const b = new Builder(rng, 'bosque', seed, 108, 72);
   baseGrass(b, 0.035);
   b.border(G.HEDGE);
   placeHouses(
     b,
-    8,
+    rng.int(9, 11),
     [
       [8, 6],
       [9, 7],
@@ -701,12 +768,12 @@ function buildBosque(rng: Rng, seed: number): BRMap {
     }
   }
   connectPaths(b, G.PATH);
-  b.stockHouses(2);
+  b.stockHouses(1, 3);
 
   // Bosque: ruido para que haya zonas densas y claros.
   const cell = new Set<string>();
   let attempts = 0;
-  while (attempts++ < 2400) {
+  while (attempts++ < 3100) {
     const x = rng.int(3, b.m.w - 4);
     const y = rng.int(3, b.m.h - 4);
     if (!b.isFree(x, y) || b.m.ground[b.at(x, y)] === G.PATH) continue;
@@ -718,15 +785,16 @@ function buildBosque(rng: Rng, seed: number): BRMap {
     const kind: PropKind = rng.chance(0.6) ? 'tree' : 'pine';
     b.addProp(kind, x, y, 1, 1, 'all');
   }
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 34; i++) {
     const x = rng.int(3, b.m.w - 4);
     const y = rng.int(3, b.m.h - 4);
     if (!b.isFree(x, y)) continue;
     const kind: PropKind = rng.chance(0.55) ? 'rock' : rng.chance(0.5) ? 'log' : 'bush';
     b.addProp(kind, x, y, 1, 1, kind === 'bush' ? 'none' : 'all');
   }
-  b.scatterChests(11);
+  b.scatterChests(rng.int(13, 16));
   b.goldenChests(0.14);
+  b.ammoCrates(rng.int(13, 16));
   b.spawns();
   b.connect();
   return b.m;
@@ -735,7 +803,7 @@ function buildBosque(rng: Rng, seed: number): BRMap {
 // ------------------------------------------------------------------ casa de gatitos
 
 function buildCasa(rng: Rng, seed: number): BRMap {
-  const b = new Builder(rng, 'casa', seed, 80, 56);
+  const b = new Builder(rng, 'casa', seed, 90, 62);
   const { w, h } = b.m;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -770,7 +838,8 @@ function buildCasa(rng: Rng, seed: number): BRMap {
   // Camas: las "casas" de este mapa. Los gatos se meten debajo.
   const bedNames = rng.shuffle([...NAMES_CAMA]);
   let attempts = 0;
-  while (b.m.houses.length < 6 && attempts++ < 500) {
+  const beds = rng.int(7, 8);
+  while (b.m.houses.length < beds && attempts++ < 600) {
     const bw = rng.pick([10, 11, 12]);
     const bh = rng.pick([6, 7]);
     const x = rng.int(5, w - 5 - bw);
@@ -780,11 +849,11 @@ function buildCasa(rng: Rng, seed: number): BRMap {
     if (wallX.some((wx) => x - 1 <= wx && wx <= x + bw)) continue;
     b.bed(x, y, bw, bh, bedNames[b.m.houses.length % bedNames.length] as string);
   }
-  b.stockHouses(2);
+  b.stockHouses(1, 3);
   // Muebles: sillones, mesas, estantes, plantas y arboles para gatos.
   attempts = 0;
   let furniture = 0;
-  while (furniture < 40 && attempts++ < 900) {
+  while (furniture < 50 && attempts++ < 1100) {
     const kind = rng.pick<PropKind>([
       'couch',
       'table',
@@ -818,8 +887,9 @@ function buildCasa(rng: Rng, seed: number): BRMap {
     b.reserve(x - 1, y - 1, pw + 2, ph + 2);
     furniture++;
   }
-  b.scatterChests(9);
+  b.scatterChests(rng.int(14, 17));
   b.goldenChests(0.14);
+  b.ammoCrates(rng.int(13, 16));
   b.spawns();
   b.connect();
   return b.m;
@@ -828,7 +898,7 @@ function buildCasa(rng: Rng, seed: number): BRMap {
 // ------------------------------------------------------------------ piscina
 
 function buildPiscina(rng: Rng, seed: number): BRMap {
-  const b = new Builder(rng, 'piscina', seed, 88, 60);
+  const b = new Builder(rng, 'piscina', seed, 98, 66);
   const { w, h } = b.m;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -838,8 +908,8 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
   }
   b.border(G.HEDGE);
   // Alberca grande al centro y una chica (el agua hace daño).
-  const pw = rng.int(30, 36);
-  const ph = rng.int(18, 22);
+  const pw = rng.int(32, 40);
+  const ph = rng.int(19, 24);
   const px = Math.floor(w / 2 - pw / 2) + rng.int(-4, 4);
   const py = Math.floor(h / 2 - ph / 2) + rng.int(-3, 3);
   const pool = (x: number, y: number, ww: number, hh: number): void => {
@@ -872,7 +942,7 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
   }
   placeHouses(
     b,
-    5,
+    rng.int(6, 7),
     [
       [8, 6],
       [8, 7],
@@ -884,11 +954,11 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
     4,
   );
   connectPaths(b, G.DECK2);
-  b.stockHouses(2);
+  b.stockHouses(1, 3);
   // Camastros y sombrillas junto a la alberca, palmeras y arbustos por fuera.
   let attempts = 0;
   let placed = 0;
-  while (placed < 22 && attempts++ < 700) {
+  while (placed < 28 && attempts++ < 900) {
     const x = rng.int(4, w - 5);
     const y = rng.int(4, h - 5);
     if (!b.isFree(x, y) || b.m.ground[b.at(x, y)] === G.WATER) continue;
@@ -903,34 +973,43 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
     }
     placed++;
   }
-  b.scatterChests(11);
+  b.scatterChests(rng.int(15, 18));
   b.goldenChests(0.14);
+  b.ammoCrates(rng.int(13, 16));
   b.spawns();
   b.connect();
   return b.m;
 }
 
-function validate(m: BRMap): boolean {
-  if (m.houses.length < (m.kind === 'piscina' ? 4 : 5)) return false;
-  if (m.houses.some((hs) => hs.doors.length < 2)) return false;
-  if (m.chests.length < 14) return false;
-  if (m.spawns.length !== MAX_PLAYERS) return false;
+/** Motivo por el que un mapa generado no sirve, o `null` si esta bien. */
+export function mapProblem(m: BRMap): string | null {
+  if (m.houses.length < (m.kind === 'piscina' ? 4 : 5)) return 'casas';
+  if (m.houses.some((hs) => hs.doors.length < 2)) return 'puertas';
+  // Al menos dos cofres por jugador y una caja de municion por jugador, aproximadamente.
+  if (m.chests.filter((c) => !c.ammo).length < MAX_PLAYERS * 2) return 'cofres';
+  if (m.chests.filter((c) => c.ammo).length < MAX_PLAYERS) return 'cajas';
+  if (m.spawns.length !== MAX_PLAYERS) return 'apariciones';
   // Los puntos de aparicion deben estar bien separados.
   for (let i = 0; i < m.spawns.length; i++) {
     for (let j = i + 1; j < m.spawns.length; j++) {
       const a = m.spawns[i] as Vec;
       const c = m.spawns[j] as Vec;
-      if (Math.hypot(a.x - c.x, a.y - c.y) < 7 * TILE) return false;
+      if (Math.hypot(a.x - c.x, a.y - c.y) < 7 * TILE) return 'separacion';
     }
   }
-  return true;
+  return null;
 }
 
 /**
  * Genera un mapa completo de forma determinista. Cliente y servidor llaman con la misma semilla
- * y obtienen exactamente el mismo mundo, asi solo viaja la semilla.
+ * y obtienen exactamente el mismo mundo, asi solo viaja la semilla. Si un intento no cumple las
+ * reglas se prueba otro (con un ruido distinto), y `problems` dice por que fallo cada uno.
  */
-export function generateMap(kind: MapKind, seed: number): BRMap {
+export function generateMapReport(
+  kind: MapKind,
+  seed: number,
+): { map: BRMap | null; problems: string[] } {
+  const problems: string[] = [];
   for (let attempt = 0; attempt < 60; attempt++) {
     // El ruido del terreno tambien depende de la semilla, asi que cada intento la cambia.
     const s = attempt === 0 ? seed : (seed ^ Math.imul(attempt, 0x9e3779b1)) >>> 0;
@@ -941,12 +1020,28 @@ export function generateMap(kind: MapKind, seed: number): BRMap {
         : kind === 'casa'
           ? buildCasa(rng, s)
           : buildPiscina(rng, s);
-    if (validate(m)) {
+    const problem = mapProblem(m);
+    if (!problem) {
       m.seed = seed;
-      return m;
+      return { map: m, problems };
     }
+    problems.push(problem);
   }
-  throw new Error(`no se pudo generar el mapa ${kind} para la semilla ${seed}`);
+  return { map: null, problems };
+}
+
+export function generateMap(kind: MapKind, seed: number): BRMap {
+  const { map, problems } = generateMapReport(kind, seed);
+  if (!map) {
+    const counts = problems.reduce<Record<string, number>>(
+      (acc, p) => ({ ...acc, [p]: (acc[p] ?? 0) + 1 }),
+      {},
+    );
+    throw new Error(
+      `no se pudo generar el mapa ${kind} para la semilla ${seed}: ${JSON.stringify(counts)}`,
+    );
+  }
+  return map;
 }
 
 /** Casillas alcanzables desde un punto (cuatro vecinos), para pruebas y para los bots. */

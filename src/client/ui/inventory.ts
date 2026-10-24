@@ -40,7 +40,7 @@ export function describeItem(item: Item): string {
   if (item.kind === 'medkit')
     return `Botiquín (${item.qty}): +10 de vida por segundo hasta 100. Si cambias de objeto se cancela.`;
   if (item.kind === 'shield')
-    return `Escudo (${item.qty}): +5 por segundo hasta 100. Si cambias de objeto se cancela.`;
+    return `Escudo (${item.qty}): +10 por segundo durante 5 segundos (50 en total). Si cambias de objeto se cancela.`;
   return `Mini muro (${item.qty}): 150 de vida, se desgasta al recibir golpes. Clic para colocarlo.`;
 }
 

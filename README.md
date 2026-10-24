@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml)
 
-Battle royale multijugador de gatos en pixeles, en tiempo real. Diez gatos por partida (tú y hasta 9 más, los lugares libres los llenan bots) caen a un mapa con cofres, armas, casas y una **ola de agua** que se cierra por zonas. Gana el último gato en pie. Canvas 2D, WebSockets y servidor autoritativo.
+Battle royale multijugador de gatos en pixeles, en tiempo real. Doce gatos por partida (tú y hasta 11 más, los lugares libres los llenan bots) caen a un mapa con cofres, armas, casas y una **ola de agua** que se cierra por zonas. Gana el último gato en pie. Canvas 2D, WebSockets y servidor autoritativo.
 
 |                      |                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------- |
@@ -75,7 +75,7 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 | `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos) | ~180 a 200 ms                                    |
 | FPS del juego (Chromium, monitor de 60 Hz)                              | 60 (el dibujo tarda ~2 ms por cuadro)            |
 | Instantáneas del servidor                                               | 30 por segundo                                   |
-| CPU del servidor por partida de 10 gatos                                | ~0.1 ms por tick (hay 33 ms disponibles)         |
+| CPU del servidor por partida de 12 gatos                                | ~0.1 ms por tick (hay 33 ms disponibles)         |
 
 ## Cómo se juega
 
@@ -93,20 +93,23 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 
   Las pistolas son las más comunes; el fusil y la escopeta son raros; la sniper y la bazuca son lo más raro. Lo morado es difícil de encontrar.
 
-- **Curación:** el botiquín da +10 de vida por segundo hasta 100 y el escudo +5 por segundo hasta 100. Si cambias de objeto a media curación se cancela.
-- **Mini muros:** 150 de vida y se van rompiendo visualmente con cada golpe.
+- **Curación:** el botiquín da +10 de vida por segundo hasta 100 (caben 3 por casilla). Cada escudo da +10 por segundo durante 5 segundos, 50 en total, así que con dos se llena la barra (caben 4 por casilla). Si cambias de objeto a media curación se cancela y lo que faltaba se pierde.
+- **Mini muros:** 150 de vida y se van rompiendo visualmente con cada golpe. Las garras también los rompen (25 por zarpazo), para que nadie se quede encerrado sin balas.
 - **Inventario:** 5 espacios, abre con el botón de la lata de sardinas (o I). Arrastra para ordenar, suelta fuera para tirar. Los objetos del mismo tipo se apilan.
-- **La ola:** durante los primeros 4 minutos no hay ola. A los 4, 8 y 12 minutos el agua avanza hacia una zona segura al azar (círculo) cada vez más chica, y desde el minuto 13:20 se cierra hasta no dejar zona libre. La partida dura máximo 15 minutos. Fuera del círculo y dentro del agua se recibe daño.
-- **Mapas:** Bosque (casas con fachada, al menos 2 puertas e interior para saquear), Casa de gatitos (las casas son camas y los gatos se meten por debajo) y Piscina (el agua daña 5 cada medio segundo). Medianos, con minimapa y lugares con nombre (tecla M para verlo grande).
+- **La ola** (la partida dura unos 2 minutos): 30 segundos de calma para buscar armas y municion. Al segundo 30 el aviso "La ola se cierra" y el agua llega a la primera zona en 10 segundos. Al 40 avisa que en 20 segundos se cierra la segunda, que tarda 15. Al 75 sale "Última ola cerrándose" con una cuenta de 10 segundos, y al 85 el agua se cierra hasta inundarlo todo. Las zonas son círculos al azar, cada vez más chicos. Fuera del círculo y dentro del agua se recibe daño.
+- **Mapas** (hechos para 12 gatos): Bosque (casas con fachada, al menos 2 puertas e interior para saquear), Casa de gatitos (las casas son camas y los gatos se meten por debajo) y Piscina (el agua daña 5 cada medio segundo). Hay al menos 2 cofres y una caja de munición por jugador, en lugares distintos en cada partida, con minimapa y lugares con nombre (tecla M para verlo grande).
+- **Cajas de munición:** cofres verdes que traen 4 clases de balas con cantidades grandes. Además, los cofres normales llevan más balas que antes y casi cada arma viene con las suyas.
 - **Pelaje:** en el lobby pintas a tu gato (colores, pincel de 1 a 3, rayas, manchas) y así te ven los demás.
 - **PC:** WASD o flechas para moverte, **Shift para correr**, ratón para apuntar, clic o espacio para disparar, E abre cofres, 1 a 5 eligen objeto, I inventario, M mapa, Esc menú. Todas las teclas se pueden cambiar en **Ajustes**.
 - **Correr:** el gato galopa un 55 % más rápido y gasta la barra de estamina, que es un pez: se acaba en 5 segundos corriendo y se llena en 4 si estás quieto o caminando. Mientras corres no se recupera; si empiezas a correr a media recuperación, esta se detiene ahí. Sin aire no puedes correr hasta recuperar un poco.
-- **Balas:** no ocupan los 5 espacios; viven en su propio compartimento (hasta 100 de cada arma) y se ven como "Balas de pistola", "Balas de fusil", etc. Arrástralas fuera del inventario para tirarlas.
+- **Balas:** no ocupan los 5 espacios; viven en su propio compartimento (hasta 120 de cada arma) y se ven como "Balas de pistola", "Balas de fusil", etc. Arrástralas fuera del inventario para tirarlas.
 - **Móvil:** se juega en horizontal (en vertical pide girar el teléfono). Joystick izquierdo para moverte (empújalo hasta el aro punteado para correr). **Joystick derecho para la mira:** al arrastrarlo aparece la línea de disparo y el arma dispara sola mientras la ves; al soltarlo deja de disparar. No hay auto apuntado. Con un muro en la mano la mira muestra en qué casilla caerá y se coloca al soltar (si lo regresas al centro se cancela); un toque corto usa botiquines y escudos. En **Ajustes** se puede mover y cambiar el tamaño de cada botón. Para jugar a pantalla completa en iPhone: Compartir, _Añadir a pantalla de inicio_; en Android se activa sola.
 - **Ganar:** el último gato en pie se lleva una corona y la partida celebra con fuegos artificiales antes de mostrar los puestos.
-- **Solo:** tú más 9 bots.
+- **Solo:** tú más 11 bots.
+- **Emotes:** la tecla T (o el botón de la carita en el móvil) abre una barra con risa, llanto, enojo, bandera blanca y paz. Sale un globo sobre tu gato que ven los que están cerca. Hay un respiro de 1.5 segundos entre uno y otro, y con la barra abierta los números 1 a 5 eligen el emote.
+- **Avisos:** el cuadro del objeto en mano (nombre y daño) se ve 2 segundos al cambiar de objeto y se difumina solo.
 - **Salas:** cualquiera crea una sala con nombre, mapa y bots. Las públicas aparecen en la lista con su anfitrión, personas y bots, y la lista se actualiza sola. Las privadas se comparten con el código de 5 caracteres o con el enlace de invitación (`/?sala=ABCDE`).
-- **Bots en la sala:** el anfitrión elige "Llenar con bots" (completa hasta 10 gatos) o una cantidad exacta de 0 a 9 (por ejemplo, 4 amigos y 6 bots). Con bots exactos se reserva su lugar: 6 bots dejan espacio para 4 personas. Sin bots hacen falta al menos 2 personas.
+- **Bots en la sala:** el anfitrión elige "Llenar con bots" (completa hasta 12 gatos) o una cantidad exacta de 0 a 11 (por ejemplo, 4 amigos y 8 bots). Con bots exactos se reserva su lugar: 8 bots dejan espacio para 4 personas. Sin bots hacen falta al menos 2 personas.
 - **Ajustes e inicio:** solo el anfitrión cambia mapa, privacidad y bots (cada cambio quita el Listo a todos) y puede pulsar "Iniciar ya" sin esperar a que todos marquen Listo.
 
 ## API de prueba

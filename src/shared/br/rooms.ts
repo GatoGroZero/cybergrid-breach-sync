@@ -1,7 +1,7 @@
 import { MAX_PLAYERS } from './constants';
 
 /**
- * Cuantos bots lleva una sala: `'llenar'` completa hasta 10 gatos con los que falten,
+ * Cuantos bots lleva una sala: `'llenar'` completa hasta 12 gatos con los que falten,
  * un numero fija esa cantidad exacta (0 a 9).
  */
 export type BotsSetting = 'llenar' | number;

@@ -35,6 +35,10 @@ export interface TouchDrawState {
   /** Dibuja el contenido de los objetos; en edicion se muestran casillas vacias. */
   drawSlot?: (c: Circle, i: number) => void;
   bagIcon?: HTMLCanvasElement;
+  /** Cara que se dibuja en el boton de emotes. */
+  emoteIcon?: HTMLCanvasElement;
+  /** La barra de emotes esta abierta (el boton se resalta). */
+  emoteOpen?: boolean;
 }
 
 /** Joystick, fuego, interactuar, inventario, menu, mapa y la barra de objetos, en pixeles CSS. */
@@ -145,6 +149,25 @@ export function drawTouchControls(
     );
   }
 
+  // emotes
+  const em = circles.emote;
+  ring(
+    ctx,
+    em,
+    glow('emote') || st.emoteOpen ? C.yellow : 'rgba(148,176,194,0.8)',
+    st.emoteOpen ? 'rgba(255,205,117,0.25)' : 'rgba(26,28,44,0.55)',
+  );
+  if (st.emoteIcon) {
+    const k = (em.r * 1.3) / st.emoteIcon.width;
+    ctx.drawImage(
+      st.emoteIcon,
+      em.x - (st.emoteIcon.width * k) / 2,
+      em.y - (st.emoteIcon.height * k) / 2,
+      st.emoteIcon.width * k,
+      st.emoteIcon.height * k,
+    );
+  }
+
   // menu y mapa
   for (const id of ['menu', 'map'] as const) {
     const c = circles[id];
@@ -182,7 +205,7 @@ export function drawTouchControls(
       ctx.textAlign = align;
       ctx.fillText(label, cx, y);
     };
-    for (const id of ['stick', 'aim', 'interact', 'menu'] as const) {
+    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote'] as const) {
       const c = circles[id];
       put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }
