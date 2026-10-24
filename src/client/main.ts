@@ -173,6 +173,7 @@ $('btn-logout').addEventListener('click', async () => {
 });
 
 function disconnect(): void {
+  hasConnectedBefore = false;
   stopRoomsPolling();
   net?.close();
   net = null;
@@ -209,15 +210,47 @@ async function enterLobby(): Promise<void> {
   startRoomsPolling();
 }
 
+let resumeTimer: number | null = null;
+let gotStateSinceConnect = false;
+let hasConnectedBefore = false;
+
+/** Tras reconectar, el servidor reengancha la sala o la partida. Si no lo hace es que se reinicio. */
+function watchResume(): void {
+  if (resumeTimer !== null) window.clearTimeout(resumeTimer);
+  gotStateSinceConnect = false;
+  resumeTimer = window.setTimeout(() => {
+    resumeTimer = null;
+    if (gotStateSinceConnect) return;
+    if (game && !game.result) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      game = null;
+      room = null;
+      countdownEl.hidden = true;
+      navigate('/lobby');
+      toast('El servidor se reinició, crea la sala de nuevo');
+      void enterLobby();
+    } else if (room) {
+      room = null;
+      renderRoom();
+    }
+  }, 2500);
+}
+
 function wireNet(n: Net): void {
   const s = n.socket;
-  s.on('connect', () => setNetChip(true));
+  s.on('connect', () => {
+    setNetChip(true);
+    if (hasConnectedBefore) watchResume();
+    hasConnectedBefore = true;
+  });
   s.on('disconnect', () => setNetChip(false));
   s.on('session:replaced', () => {
     disconnect();
     showAuth('Abriste tu sesión en otra pestaña');
   });
   s.on('room:state', (state: RoomState) => {
+    gotStateSinceConnect = true;
     room = state;
     renderRoom();
     updateCountdown(state);
@@ -395,6 +428,7 @@ let lastHud = 0;
 
 function startGame(payload: GameStartPayload): void {
   if (!net) return;
+  gotStateSinceConnect = true;
   countdownEl.hidden = true;
   resultsEl.hidden = true;
   showView('game');

@@ -221,7 +221,10 @@ export class Renderer {
     this.drawObjectiveArrow(game, camX, camY, scale);
     if (!game.connected && !game.result) this.drawReconnecting();
     if (fx.hurtFlash > 0) this.drawHurt(fx.hurtFlash);
-    if (this.input.mode === 'touch') this.drawTouchControls(game);
+    if (this.input.mode === 'touch') {
+      this.drawTouchControls(game);
+      if (this.cssH > this.cssW) this.drawRotateHint();
+    }
   }
 
   // ------------------------------------------------------------------ mapa
@@ -888,6 +891,14 @@ export class Renderer {
     ctx.globalAlpha = 0.95;
     ctx.fillText(`${label} · ${meters} m`, ax - Math.cos(ang) * 38, ay - Math.sin(ang) * 26 + 4);
     ctx.globalAlpha = 1;
+  }
+
+  private drawRotateHint(): void {
+    const ctx = this.ctx;
+    ctx.textAlign = 'center';
+    ctx.font = '700 14px Rajdhani, sans-serif';
+    ctx.fillStyle = C.amber;
+    ctx.fillText('Gira el teléfono para jugar mejor', this.cssW / 2, 96);
   }
 
   private drawReconnecting(): void {

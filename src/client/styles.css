@@ -52,6 +52,7 @@ body.playing {
   -webkit-user-select: none;
   touch-action: none;
   overscroll-behavior: none;
+  -webkit-touch-callout: none;
 }
 
 #game {
