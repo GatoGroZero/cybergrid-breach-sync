@@ -111,6 +111,7 @@ function setAuthMode(mode: 'login' | 'register'): void {
 function showAuth(message = ''): void {
   user = null;
   room = null;
+  setAuthMode('login');
   showView('auth');
   navigate('/login', true);
   $('auth-error').textContent = message;
@@ -310,7 +311,7 @@ $<HTMLFormElement>('join-form').addEventListener('submit', async (event) => {
 
 $('btn-solo').addEventListener('click', async () => {
   if (!net) return;
-  if (await createRoom(true, `Misión de ${user?.username ?? 'runner'}`)) {
+  if (await createRoom(true)) {
     await net.ack('room:ready', { ready: true });
   }
 });
