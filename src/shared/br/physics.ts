@@ -1,7 +1,8 @@
 import { CAT, TILE } from './constants';
 import { isSolidTile, type BRMap, type Vec } from './map';
 
-export const clamp = (v: number, min: number, max: number): number => (v < min ? min : v > max ? max : v);
+export const clamp = (v: number, min: number, max: number): number =>
+  v < min ? min : v > max ? max : v;
 
 const EPS = 1e-3;
 
@@ -83,7 +84,14 @@ export function normalizeMove(mx: number, my: number): MoveInput {
 /** Un paso de movimiento del gato. Lo ejecutan igual el servidor y el cliente (prediccion). */
 export function stepCat(m: BRMap, motion: Motion, input: MoveInput, dt: number): void {
   const n = normalizeMove(input.mx, input.my);
-  const next = moveBox(m, motion.x, motion.y, n.mx * CAT.speed * dt, n.my * CAT.speed * dt, CAT.half);
+  const next = moveBox(
+    m,
+    motion.x,
+    motion.y,
+    n.mx * CAT.speed * dt,
+    n.my * CAT.speed * dt,
+    CAT.half,
+  );
   motion.x = next.x;
   motion.y = next.y;
 }
@@ -100,7 +108,13 @@ export interface SegmentHit {
  * Recorre las casillas que atraviesa un segmento (DDA) y devuelve el primer choque con un solido.
  * Es lo que evita que una bala rapida (sniper) atraviese un muro entre dos ticks.
  */
-export function segmentSolidHit(m: BRMap, x0: number, y0: number, x1: number, y1: number): SegmentHit {
+export function segmentSolidHit(
+  m: BRMap,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): SegmentHit {
   let tx = Math.floor(x0 / TILE);
   let ty = Math.floor(y0 / TILE);
   if (isSolidTile(m, tx, ty)) return { hit: true, t: 0, tx, ty };
@@ -110,8 +124,8 @@ export function segmentSolidHit(m: BRMap, x0: number, y0: number, x1: number, y1
   const stepY = dy > 0 ? 1 : -1;
   const tDeltaX = dx === 0 ? Infinity : Math.abs(TILE / dx);
   const tDeltaY = dy === 0 ? Infinity : Math.abs(TILE / dy);
-  let tMaxX = dx === 0 ? Infinity : ((dx > 0 ? (tx + 1) * TILE - x0 : x0 - tx * TILE) / Math.abs(dx));
-  let tMaxY = dy === 0 ? Infinity : ((dy > 0 ? (ty + 1) * TILE - y0 : y0 - ty * TILE) / Math.abs(dy));
+  let tMaxX = dx === 0 ? Infinity : (dx > 0 ? (tx + 1) * TILE - x0 : x0 - tx * TILE) / Math.abs(dx);
+  let tMaxY = dy === 0 ? Infinity : (dy > 0 ? (ty + 1) * TILE - y0 : y0 - ty * TILE) / Math.abs(dy);
   for (let guard = 0; guard < 400; guard++) {
     let t: number;
     if (tMaxX < tMaxY) {
@@ -159,4 +173,5 @@ export function segmentCircleHit(
   return t >= 0 && t <= 1 ? t : -1;
 }
 
-export const dist = (ax: number, ay: number, bx: number, by: number): number => Math.hypot(ax - bx, ay - by);
+export const dist = (ax: number, ay: number, bx: number, by: number): number =>
+  Math.hypot(ax - bx, ay - by);

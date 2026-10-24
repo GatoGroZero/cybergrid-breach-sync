@@ -6,34 +6,36 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#04060c" />
+    <meta name="theme-color" content="#1a1c2c" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="CyberGrid" />
+    <meta name="apple-mobile-web-app-title" content="Gato Royale" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta
       name="description"
-      content="CyberGrid: Breach & Sync. Juego cooperativo en tiempo real con servidor autoritativo, WebSockets y Canvas 2D."
+      content="CyberGrid Gato Royale: battle royale multijugador de gatos en pixeles, con WebSockets, servidor autoritativo y Canvas 2D."
     />
-    <title>CyberGrid: Breach &amp; Sync</title>
+    <title>CyberGrid Gato Royale</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <canvas id="game" hidden aria-label="Área de juego de CyberGrid"></canvas>
+    <canvas id="game" hidden aria-label="Área de juego"></canvas>
     <div id="safe-probe" aria-hidden="true"></div>
 
     <div id="rotate" class="rotate" role="alert" data-testid="rotate">
       <div class="rotate-phone" aria-hidden="true"></div>
       <h2>Gira tu teléfono</h2>
-      <p>CyberGrid se juega en horizontal. Voltea el teléfono para continuar.</p>
+      <p>Gato Royale se juega en horizontal. Voltea el teléfono para continuar.</p>
     </div>
 
-    <main id="screen-auth" class="screen" hidden data-testid="screen-auth">
+    <!-- ============================================================ acceso -->
+    <main id="screen-auth" class="screen center" hidden data-testid="screen-auth">
       <section class="card auth-card">
-        <h1 class="logo">CYBER<span>GRID</span></h1>
-        <p class="tagline">Breach &amp; Sync</p>
+        <canvas id="auth-cat" class="auth-cat" width="104" height="72" aria-hidden="true"></canvas>
+        <h1 class="logo">GATO<span>ROYALE</span></h1>
+        <p class="tagline">CyberGrid · Battle Royale de gatos</p>
         <div class="tabs" role="tablist" aria-label="Acceso">
           <button
             id="tab-login"
@@ -86,153 +88,370 @@
       </section>
     </main>
 
+    <!-- ============================================================ lobby -->
     <main id="screen-lobby" class="screen" hidden data-testid="screen-lobby">
       <header class="topbar">
-        <h1 class="logo small">CYBER<span>GRID</span></h1>
+        <h1 class="logo small">GATO<span>ROYALE</span></h1>
         <div class="topbar-right">
           <span id="lobby-net" class="chip" data-testid="lobby-net" data-state="offline"
             >sin conexión</span
           >
           <span id="lobby-user" class="chip user" data-testid="lobby-user"></span>
-          <button id="btn-logout" class="btn ghost" type="button">Salir</button>
+          <button
+            id="btn-settings"
+            class="btn ghost small"
+            type="button"
+            data-testid="btn-settings"
+          >
+            Ajustes
+          </button>
+          <button id="btn-logout" class="btn ghost small" type="button">Salir</button>
         </div>
       </header>
 
-      <div id="lobby-browse" class="lobby-grid">
-        <section class="card">
-          <h2>Operaciones</h2>
-          <button id="btn-solo" class="btn primary wide big" type="button" data-testid="btn-solo">
-            Jugar solo
-          </button>
-          <p class="muted small">
-            Sala privada que empieza al instante. Ideal para probar el juego.
-          </p>
-          <hr />
-          <form id="create-form" novalidate>
-            <label class="field">
-              <span>Nombre de la sala</span>
-              <input id="room-name" data-testid="room-name" maxlength="24" placeholder="Mi sala" />
-            </label>
-            <label class="check">
-              <input id="room-private" data-testid="room-private" type="checkbox" />
-              <span>Privada (solo entra quien tenga el código)</span>
-            </label>
-            <button class="btn wide" type="submit" data-testid="btn-create">Crear sala</button>
-          </form>
-          <hr />
-          <form id="join-form" novalidate>
-            <label class="field">
-              <span>Unirse con código</span>
-              <input
-                id="join-code"
-                data-testid="join-code"
-                maxlength="5"
-                autocapitalize="characters"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="AB3CD"
-              />
-            </label>
-            <button class="btn wide" type="submit" data-testid="btn-join">Entrar a la sala</button>
-          </form>
-          <p id="lobby-error" class="error" role="alert" data-testid="lobby-error"></p>
+      <div class="lobby-grid">
+        <section class="card painter" data-testid="painter" aria-labelledby="painter-title">
+          <h2 id="painter-title">Tu gato</h2>
+          <div class="paint-stage">
+            <canvas
+              id="paint-canvas"
+              width="312"
+              height="216"
+              aria-label="Lienzo para pintar tu gato"
+            ></canvas>
+            <canvas
+              id="paint-walk"
+              class="paint-walk"
+              width="78"
+              height="54"
+              aria-hidden="true"
+            ></canvas>
+          </div>
+          <div class="paint-row">
+            <span class="lbl">Pelaje</span>
+            <div id="coats" class="swatches" role="radiogroup" aria-label="Color base"></div>
+          </div>
+          <div class="paint-row">
+            <span class="lbl">Pincel</span>
+            <div
+              id="palette"
+              class="swatches"
+              role="radiogroup"
+              aria-label="Color del pincel"
+            ></div>
+          </div>
+          <div class="paint-row">
+            <span class="lbl">Tamaño</span>
+            <div id="brushes" class="seg" role="radiogroup" aria-label="Tamaño del pincel"></div>
+          </div>
+          <div class="paint-row tools">
+            <button id="paint-stripes" class="btn small" type="button">Rayas</button>
+            <button id="paint-spots" class="btn small" type="button">Manchas</button>
+            <button id="paint-random" class="btn small" type="button">Al azar</button>
+            <button id="paint-clear" class="btn small ghost" type="button">Limpiar</button>
+          </div>
         </section>
 
-        <section class="card">
-          <h2>Salas públicas</h2>
-          <ul id="room-list" class="room-list" data-testid="room-list"></ul>
-          <p id="room-empty" class="muted">No hay salas públicas ahora mismo. Crea la primera.</p>
-          <hr />
-          <h3>Controles</h3>
-          <ul class="help">
-            <li>
-              <b>PC:</b> WASD o flechas para moverte, ratón para apuntar, clic o espacio para
-              disparar, teclas 1 a 3 para objetos, M para silenciar.
-            </li>
-            <li>
-              <b>Móvil:</b> joystick abajo a la izquierda, botón FUEGO abajo a la derecha. Los
-              controles aparecen solos.
-            </li>
-            <li>
-              <b>Objetivo:</b> abre los 3 nodos (BREACH) y luego lleven a todo el equipo a la salida
-              (SYNC).
-            </li>
-          </ul>
+        <div id="lobby-browse" class="lobby-main">
+          <section class="card">
+            <h2>Jugar</h2>
+            <button id="btn-solo" class="btn primary wide big" type="button" data-testid="btn-solo">
+              Jugar solo
+            </button>
+            <p class="muted">Tú contra 9 bots. La partida empieza al instante.</p>
+            <hr />
+            <form id="create-form" novalidate>
+              <label class="field">
+                <span>Nombre de la sala</span>
+                <input
+                  id="room-name"
+                  data-testid="room-name"
+                  maxlength="24"
+                  placeholder="Mi sala"
+                />
+              </label>
+              <label class="field">
+                <span>Mapa</span>
+                <select id="room-map" data-testid="room-map"></select>
+              </label>
+              <label class="check">
+                <input id="room-private" data-testid="room-private" type="checkbox" />
+                <span>Privada (solo entra quien tenga el código)</span>
+              </label>
+              <button class="btn wide" type="submit" data-testid="btn-create">Crear sala</button>
+            </form>
+            <hr />
+            <form id="join-form" novalidate>
+              <label class="field">
+                <span>Unirse con código</span>
+                <input
+                  id="join-code"
+                  data-testid="join-code"
+                  maxlength="5"
+                  autocapitalize="characters"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="AB3CD"
+                />
+              </label>
+              <button class="btn wide" type="submit" data-testid="btn-join">
+                Entrar a la sala
+              </button>
+            </form>
+            <p id="lobby-error" class="error" role="alert" data-testid="lobby-error"></p>
+          </section>
+
+          <section class="card">
+            <h2>Salas públicas</h2>
+            <ul id="room-list" class="room-list" data-testid="room-list"></ul>
+            <p id="room-empty" class="muted">No hay salas públicas ahora mismo. Crea la primera.</p>
+            <hr />
+            <h3>Cómo se juega</h3>
+            <ul class="help">
+              <li>Sé el último gato en pie. Los cofres tienen armas, balas, botiquines y muros.</li>
+              <li>La ola de agua cubre el mapa en 3 zonas. Quédate dentro del círculo seguro.</li>
+              <li>
+                <b>PC:</b> WASD mueve, ratón apunta, clic dispara, E abre, I inventario, M mapa.
+              </li>
+              <li>
+                <b>Móvil:</b> joystick a la izquierda, FUEGO a la derecha. Todo se puede mover en
+                Ajustes.
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <section id="room-view" class="card room-card" hidden data-testid="room-view">
+          <div class="room-head">
+            <div>
+              <h2 id="room-title"></h2>
+              <p class="muted" id="room-meta"></p>
+            </div>
+            <div class="room-code">
+              <span class="muted">Código</span>
+              <strong id="room-code" data-testid="room-code"></strong>
+              <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
+            </div>
+          </div>
+          <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
+          <ul id="member-list" class="member-list" data-testid="member-list"></ul>
+          <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
+          <div class="row">
+            <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
+              Estoy listo
+            </button>
+            <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
+              Salir de la sala
+            </button>
+          </div>
         </section>
       </div>
-
-      <section id="room-view" class="card room-card" hidden data-testid="room-view">
-        <div class="room-head">
-          <div>
-            <h2 id="room-title"></h2>
-            <p class="muted small" id="room-meta"></p>
-          </div>
-          <div class="room-code">
-            <span class="muted small">Código</span>
-            <strong id="room-code" data-testid="room-code"></strong>
-            <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
-          </div>
-        </div>
-        <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
-        <ul id="member-list" class="member-list" data-testid="member-list"></ul>
-        <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
-        <div class="row">
-          <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
-            Estoy listo
-          </button>
-          <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
-            Salir de la sala
-          </button>
-        </div>
-      </section>
     </main>
 
+    <!-- ============================================================ partida -->
     <div id="hud" hidden data-testid="hud" aria-hidden="true">
       <span id="hud-fps" data-testid="hud-fps">-- FPS</span>
       <span id="hud-rtt" data-testid="hud-rtt">-- ms</span>
       <span id="hud-coords" data-testid="hud-coords" data-x="0" data-y="0">0, 0</span>
       <span id="hud-mode" data-testid="hud-mode">teclado</span>
     </div>
-    <button id="btn-mute" class="mute" type="button" hidden aria-label="Silenciar o activar sonido">
-      Sonido
-    </button>
 
     <button
-      id="btn-quit"
-      class="mute quit"
+      id="btn-bag"
+      class="bag-btn"
       type="button"
       hidden
-      aria-label="Salir de la partida"
-      data-testid="btn-quit"
+      aria-label="Abrir el inventario"
+      data-testid="btn-bag"
     >
-      Salir
+      <canvas id="bag-icon" width="20" height="14" aria-hidden="true"></canvas>
+      <span id="bag-key">I</span>
     </button>
+    <button
+      id="btn-menu"
+      class="menu-btn"
+      type="button"
+      hidden
+      aria-label="Menú de pausa"
+      data-testid="btn-menu"
+    >
+      Menú
+    </button>
+
+    <div
+      id="inv"
+      class="overlay inv"
+      hidden
+      data-testid="inv"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Inventario"
+    >
+      <section class="card inv-card">
+        <header class="inv-head">
+          <h2>Inventario</h2>
+          <button
+            id="inv-close"
+            class="btn ghost small"
+            type="button"
+            aria-label="Cerrar inventario"
+          >
+            Cerrar
+          </button>
+        </header>
+        <div id="loot-block" class="loot-block" hidden data-testid="loot-block">
+          <h3 id="loot-title">Cofre</h3>
+          <ul id="loot-items" class="slots" data-testid="loot-items"></ul>
+          <button id="loot-all" class="btn small" type="button" data-testid="loot-all">
+            Tomar todo
+          </button>
+        </div>
+        <h3>Tus cosas <span id="inv-count" class="muted">0/5</span></h3>
+        <ul id="inv-slots" class="slots" data-testid="inv-slots"></ul>
+        <p id="inv-detail" class="muted detail"></p>
+        <p class="muted">Arrastra para ordenar o combinar. Suelta fuera para tirar.</p>
+      </section>
+    </div>
 
     <div id="countdown" class="overlay" hidden data-testid="countdown">
       <div class="count-number" id="count-number">3</div>
       <p class="muted">La partida empieza en…</p>
     </div>
 
+    <div
+      id="menu"
+      class="overlay"
+      hidden
+      data-testid="menu"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Pausa"
+    >
+      <section class="card modal">
+        <h2>Pausa</h2>
+        <p class="muted">La partida sigue mientras tanto.</p>
+        <button id="menu-resume" class="btn primary wide" type="button">Continuar</button>
+        <button id="menu-settings" class="btn wide" type="button">Ajustes</button>
+        <button id="btn-quit" class="btn wide danger" type="button" data-testid="btn-quit">
+          Salir de la partida
+        </button>
+      </section>
+    </div>
+
+    <div id="death" class="overlay soft" hidden data-testid="death">
+      <section class="card death-card">
+        <h2 id="death-title">¡Te eliminaron!</h2>
+        <p id="death-sub" class="muted"></p>
+        <div class="row">
+          <button id="btn-spectate" class="btn primary" type="button">Seguir mirando</button>
+          <button id="btn-death-leave" class="btn ghost" type="button">Salir</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="spec-bar" class="spec-bar" hidden data-testid="spec-bar">
+      <button id="spec-prev" class="btn small" type="button" aria-label="Ver al gato anterior">
+        &lt;
+      </button>
+      <span id="spec-name">Observando</span>
+      <button id="spec-next" class="btn small" type="button" aria-label="Ver al gato siguiente">
+        &gt;
+      </button>
+      <button id="spec-leave" class="btn small ghost" type="button">Salir</button>
+    </div>
+
     <div id="results" class="overlay" hidden data-testid="results">
       <section class="card results-card">
         <h2 id="results-title" class="results-title"></h2>
         <p id="results-sub" class="muted"></p>
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th>Jugador</th>
-              <th>Bajas</th>
-              <th>Caídas</th>
-              <th>Daño</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody id="results-body"></tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Puesto</th>
+                <th>Gato</th>
+                <th>Bajas</th>
+                <th>Daño</th>
+                <th>Tiempo</th>
+              </tr>
+            </thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
         <button id="btn-back" class="btn primary wide" type="button" data-testid="btn-back">
           Volver a la sala
         </button>
       </section>
+    </div>
+
+    <!-- ============================================================ ajustes -->
+    <div
+      id="settings"
+      class="overlay"
+      hidden
+      data-testid="settings"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+    >
+      <section class="card modal wide-modal">
+        <h2 id="settings-title">Ajustes</h2>
+        <div class="tabs" role="tablist" aria-label="Secciones de ajustes">
+          <button
+            id="set-tab-keys"
+            class="tab is-active"
+            role="tab"
+            aria-selected="true"
+            type="button"
+          >
+            Teclas
+          </button>
+          <button id="set-tab-touch" class="tab" role="tab" aria-selected="false" type="button">
+            Táctil
+          </button>
+          <button id="set-tab-sound" class="tab" role="tab" aria-selected="false" type="button">
+            Sonido
+          </button>
+        </div>
+        <div id="set-keys" class="set-pane">
+          <p class="muted">Pulsa una tecla y luego la que quieras usar. Escape cancela.</p>
+          <ul id="key-list" class="key-list" data-testid="key-list"></ul>
+          <button id="keys-reset" class="btn small ghost" type="button">Restaurar teclas</button>
+        </div>
+        <div id="set-touch" class="set-pane" hidden>
+          <p class="muted">
+            Mueve y cambia el tamaño de cada botón del teléfono: joystick, fuego, interactuar,
+            inventario, objetos, menú y mapa.
+          </p>
+          <button id="touch-edit" class="btn primary wide" type="button" data-testid="touch-edit">
+            Editar botones
+          </button>
+          <button id="touch-reset" class="btn small ghost" type="button">
+            Restaurar posiciones
+          </button>
+        </div>
+        <div id="set-sound" class="set-pane" hidden>
+          <label class="check">
+            <input id="sound-toggle" type="checkbox" checked />
+            <span>Sonido activado</span>
+          </label>
+        </div>
+        <button id="settings-close" class="btn wide" type="button">Cerrar</button>
+      </section>
+    </div>
+
+    <div id="touch-editor" class="editor" hidden data-testid="touch-editor">
+      <canvas id="editor-canvas" aria-label="Editor de botones tactiles"></canvas>
+      <div class="editor-bar">
+        <span id="editor-sel" class="chip">Toca un botón</span>
+        <button id="editor-minus" class="btn small" type="button" aria-label="Más pequeño">
+          -
+        </button>
+        <button id="editor-plus" class="btn small" type="button" aria-label="Más grande">+</button>
+        <button id="editor-reset" class="btn small ghost" type="button">Restaurar</button>
+        <button id="editor-cancel" class="btn small ghost" type="button">Cancelar</button>
+        <button id="editor-save" class="btn small primary" type="button">Guardar</button>
+      </div>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite" data-testid="toast"></div>

@@ -6,6 +6,7 @@ export default defineConfig({
     outDir: '../../dist/client',
     emptyOutDir: true,
     target: 'es2022',
+    assetsInlineLimit: 0,
   },
   server: {
     port: 5173,

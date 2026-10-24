@@ -1,35 +1,47 @@
-import '@fontsource/orbitron/latin-700.css';
-import '@fontsource/rajdhani/latin-500.css';
-import '@fontsource/rajdhani/latin-600.css';
-import '@fontsource/rajdhani/latin-700.css';
+import '@fontsource/press-start-2p/latin-400.css';
+import '@fontsource/vt323/latin-400.css';
 import './styles.css';
 
-import type { GameEndPayload, GameStartPayload, PublicRoom, RoomState } from '../shared/protocol';
-import { credentialsSchema } from '../shared/protocol';
-import type { Snapshot } from '../shared/types';
+import { CAT } from '../shared/br/constants';
+import { MAP_KINDS, MAP_NAMES } from '../shared/br/map';
+import type {
+  DiedPayload,
+  GameEndPayload,
+  GameStartPayload,
+  PublicRoom,
+  RoomState,
+} from '../shared/br/protocol';
+import { credentialsSchema } from '../shared/br/protocol';
+import { randomSkin } from '../shared/br/skin';
+import type { BRSnapshot } from '../shared/br/types';
+import { createRng } from '../shared/rng';
 import { FrameLimiter } from '../shared/timing';
 import { api, ApiError, type User } from './api';
 import { Sfx } from './audio';
-import { ClientGame } from './game';
-import { Input } from './input';
+import { BRRenderer } from './game/render';
+import { InputController, keyLabel, type ControlMode } from './game/input';
+import { ClientBR } from './game/state';
 import { Net } from './net';
-import { Renderer } from './render';
-
-const $ = <T extends HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Falta el elemento #${id}`);
-  return el as T;
-};
+import { $, el, toast } from './ui/dom';
+import { InventoryPanel } from './ui/inventory';
+import { Painter, drawCatIcon, startWalker } from './ui/painter';
+import { Settings } from './ui/settings';
 
 const canvas = $<HTMLCanvasElement>('game');
 const screenAuth = $('screen-auth');
 const screenLobby = $('screen-lobby');
-const hud = $('hud');
-const btnMute = $<HTMLButtonElement>('btn-mute');
+const hudEl = $('hud');
 const countdownEl = $('countdown');
 const resultsEl = $('results');
+const menuEl = $('menu');
+const deathEl = $('death');
+const specBar = $('spec-bar');
+const bagBtn = $<HTMLButtonElement>('btn-bag');
+const menuBtn = $<HTMLButtonElement>('btn-menu');
 
 const sfx = new Sfx();
+/** Con ?debug en la URL se expone el estado local del juego para las pruebas del navegador. */
+const DEBUG = new URLSearchParams(window.location.search).has('debug');
 const ERRORS: Record<string, string> = {
   sala_no_existe: 'Esa sala no existe',
   sala_llena: 'La sala está llena',
@@ -45,12 +57,61 @@ const ERRORS: Record<string, string> = {
 let user: User | null = null;
 let net: Net | null = null;
 let room: RoomState | null = null;
-let game: ClientGame | null = null;
-let input: Input | null = null;
-let renderer: Renderer | null = null;
+let game: ClientBR | null = null;
 let roomsTimer: number | null = null;
 let lastCountdown = -1;
-let toastTimer: number | null = null;
+
+// ---------------------------------------------------------------- piezas de interfaz
+
+const painter = new Painter();
+const renderer = new BRRenderer(canvas, sfx);
+
+const input = new InputController(canvas, {
+  onInteract: () => void doInteract(),
+  onBag: () => inventory.toggle(),
+  onMap: () => {
+    renderer.mapOpen = !renderer.mapOpen;
+  },
+  onMenu: () => {
+    if (inventory.isOpen) inventory.close();
+    else if (renderer.mapOpen) renderer.mapOpen = false;
+    else toggleMenu();
+  },
+  onSelect: (slot) => game?.select(slot),
+  onMute: () => {
+    sfx.setMuted(!sfx.muted);
+    toast(sfx.muted ? 'Sonido apagado' : 'Sonido encendido');
+  },
+  onFirstGesture: () => sfx.unlock(),
+  onModeChange: (mode) => applyMode(mode),
+});
+
+const inventory = new InventoryPanel(renderer.assets, () => game);
+const settings = new Settings(input, sfx);
+
+inventory.onClose = () => syncActive();
+settings.onClose = () => syncActive();
+
+/** Los controles solo responden cuando no hay un panel encima. */
+function syncActive(): void {
+  const playing = !canvas.hidden;
+  input.active = playing && menuEl.hidden === true && !settings.isOpen && resultsEl.hidden === true;
+}
+
+function applyMode(mode: ControlMode): void {
+  $('hud-mode').textContent = mode === 'touch' ? 'táctil' : 'teclado';
+  document.body.dataset.mode = mode;
+  const inGame = !canvas.hidden;
+  bagBtn.hidden = !inGame || mode === 'touch';
+  menuBtn.hidden = !inGame || mode === 'touch';
+  $('bag-key').textContent = keyLabel(input.keys.bag).toUpperCase();
+}
+
+// el icono de la lata de sardinas del boton de inventario (PC)
+{
+  const c = $<HTMLCanvasElement>('bag-icon');
+  (c.getContext('2d') as CanvasRenderingContext2D).drawImage(renderer.assets.can, 0, 0);
+}
 
 // ---------------------------------------------------------------- pantalla completa en moviles
 
@@ -69,39 +130,24 @@ function enterImmersive(): void {
     .catch(() => undefined);
 }
 
-// ---------------------------------------------------------------- utilidades de interfaz
-
-function toast(message: string): void {
-  const el = $('toast');
-  el.textContent = message;
-  el.classList.add('show');
-  if (toastTimer !== null) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el.classList.remove('show'), 3200);
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 type View = 'auth' | 'lobby' | 'game';
 
 function showView(view: View): void {
   screenAuth.hidden = view !== 'auth';
   screenLobby.hidden = view !== 'lobby';
   canvas.hidden = view !== 'game';
-  hud.hidden = view !== 'game';
-  btnMute.hidden = view !== 'game';
-  $('btn-quit').hidden = view !== 'game';
+  hudEl.hidden = view !== 'game';
   document.body.classList.toggle('playing', view === 'game');
-  if (input) input.active = view === 'game';
-  if (view === 'game') renderer?.resize();
+  if (view !== 'game') {
+    menuEl.hidden = true;
+    deathEl.hidden = true;
+    specBar.hidden = true;
+    resultsEl.hidden = true;
+    inventory.close();
+  }
+  applyMode(input.mode);
+  input.active = view === 'game';
+  if (view === 'game') renderer.resize();
 }
 
 function navigate(path: string, replace = false): void {
@@ -195,7 +241,7 @@ function disconnect(): void {
   net?.close();
   net = null;
   room = null;
-  game = null;
+  leaveGameView();
 }
 
 // ---------------------------------------------------------------- lobby
@@ -204,6 +250,18 @@ function setNetChip(online: boolean): void {
   const chip = $('lobby-net');
   chip.dataset.state = online ? 'online' : 'offline';
   chip.textContent = online ? 'conectado' : 'sin conexión';
+}
+
+const mapSelect = $<HTMLSelectElement>('room-map');
+{
+  const random = el('option', '', 'Mapa al azar');
+  random.value = 'azar';
+  mapSelect.append(random);
+  for (const kind of MAP_KINDS) {
+    const o = el('option', '', MAP_NAMES[kind]);
+    o.value = kind;
+    mapSelect.append(o);
+  }
 }
 
 async function enterLobby(): Promise<void> {
@@ -239,9 +297,7 @@ function watchResume(): void {
     resumeTimer = null;
     if (gotStateSinceConnect) return;
     if (game && !game.result) {
-      cancelAnimationFrame(raf);
-      raf = 0;
-      game = null;
+      leaveGameView();
       room = null;
       countdownEl.hidden = true;
       navigate('/lobby');
@@ -258,6 +314,7 @@ function wireNet(n: Net): void {
   const s = n.socket;
   s.on('connect', () => {
     setNetChip(true);
+    s.emit('skin:set', painter.skin);
     if (hasConnectedBefore) watchResume();
     hasConnectedBefore = true;
   });
@@ -273,9 +330,12 @@ function wireNet(n: Net): void {
     updateCountdown(state);
   });
   s.on('game:start', (payload: GameStartPayload) => startGame(payload));
-  s.on('game:snap', (snap: Snapshot) => game?.onSnapshot(snap));
+  s.on('game:snap', (snap: BRSnapshot) => game?.onSnapshot(snap));
+  s.on('game:died', (payload: DiedPayload) => onDied(payload));
   s.on('game:end', (payload: GameEndPayload) => endGame(payload));
 }
+
+painter.onChange = (skin) => net?.socket.emit('skin:set', skin);
 
 function updateCountdown(state: RoomState): void {
   if (state.phase !== 'countdown') {
@@ -302,9 +362,10 @@ async function refreshRooms(): Promise<void> {
   for (const r of rooms) {
     const li = el('li');
     const info = el('div');
+    const mapName = MAP_NAMES[r.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
     info.append(
       el('strong', '', r.name),
-      el('div', 'muted small', `${r.players}/${r.maxPlayers} jugadores`),
+      el('div', 'muted', `${r.players}/${r.maxPlayers} gatos · ${mapName}`),
     );
     const join = el(
       'button',
@@ -338,6 +399,7 @@ async function createRoom(isPrivate: boolean, name?: string): Promise<boolean> {
   const res = await net.ack<{ code: string }>('room:create', {
     name: name || undefined,
     isPrivate,
+    map: mapSelect.value,
   });
   lobbyError(res.ok ? undefined : res.error);
   return res.ok;
@@ -364,9 +426,7 @@ $<HTMLFormElement>('join-form').addEventListener('submit', async (event) => {
 $('btn-solo').addEventListener('click', async () => {
   enterImmersive();
   if (!net) return;
-  if (await createRoom(true)) {
-    await net.ack('room:ready', { ready: true });
-  }
+  if (await createRoom(true)) await net.ack('room:ready', { ready: true });
 });
 
 $('btn-leave').addEventListener('click', async () => {
@@ -394,6 +454,8 @@ $('btn-copy').addEventListener('click', async () => {
   }
 });
 
+$('btn-settings').addEventListener('click', () => settings.open());
+
 function renderRoom(): void {
   const inRoom = room !== null;
   $('lobby-browse').hidden = inRoom;
@@ -401,7 +463,9 @@ function renderRoom(): void {
   if (!room || !user) return;
 
   $('room-title').textContent = room.name;
-  $('room-meta').textContent = room.isPrivate ? 'Sala privada: solo con código' : 'Sala pública';
+  const mapName = MAP_NAMES[room.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
+  $('room-meta').textContent =
+    `${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · los lugares libres se llenan con bots`;
   $('room-code').textContent = room.code;
 
   const list = $('member-list');
@@ -412,9 +476,13 @@ function renderRoom(): void {
     const li = el('li');
     li.dataset.testid = 'member';
     li.dataset.name = m.name;
-    const left = el('div');
-    left.append(el('strong', '', m.name));
-    if (m.host) left.append(el('span', 'badge', 'anfitrión'));
+    const left = el('div', 'who');
+    const icon = el('canvas');
+    drawCatIcon(icon, m.skin, 2);
+    const label = el('div');
+    label.append(el('strong', '', m.name));
+    if (m.host) label.append(el('span', 'badge', 'anfitrión'));
+    left.append(icon, label);
     const state = el('span', m.connected ? (m.ready ? 'badge ready' : 'badge') : 'badge off');
     state.textContent = m.connected ? (m.ready ? 'Listo' : 'Esperando') : 'Desconectado';
     state.dataset.testid = 'member-state';
@@ -441,35 +509,32 @@ let lastRender = 0;
 let frames = 0;
 let fpsStart = 0;
 let fps = 0;
-let rawFrames = 0;
-let rafHz = 60;
-let slowWindows = 0;
 let lastHud = 0;
+let drawMs = 0;
+let deathTimer: number | null = null;
+let resultsTimer: number | null = null;
 
 function startGame(payload: GameStartPayload): void {
   if (!net) return;
   gotStateSinceConnect = true;
   countdownEl.hidden = true;
   resultsEl.hidden = true;
+  deathEl.hidden = true;
+  specBar.hidden = true;
   showView('game');
   navigate('/play');
-  input ??= new Input(canvas);
-  input.onFirstGesture = () => sfx.unlock();
-  input.onToggleMute = toggleMute;
-  input.onModeChange = (mode) => {
-    $('hud-mode').textContent = mode === 'touch' ? 'táctil' : 'teclado';
+  game = new ClientBR(payload, net, input, sfx);
+  game.onInventory = () => inventory.refresh();
+  game.onLootChanged = () => {
+    if (game?.loot) inventory.open();
+    else inventory.refresh();
   };
+  renderer.setGame(game);
+  if (DEBUG) (window as unknown as { __game?: ClientBR }).__game = game;
   input.active = true;
-  renderer ??= new Renderer(canvas, input);
-  renderer.resize();
-  game = new ClientGame(payload, net, input, sfx);
-  $('hud-mode').textContent = input.mode === 'touch' ? 'táctil' : 'teclado';
+  applyMode(input.mode);
   sfx.go();
-  game.banner = {
-    text: 'Abran 3 nodos y sincronicen en la salida',
-    until: performance.now() + 5000,
-    tone: 'info',
-  };
+  game.say('¡Sé el último gato en pie!', 'info', 4200);
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
     raf = requestAnimationFrame(frame);
@@ -478,40 +543,33 @@ function startGame(payload: GameStartPayload): void {
 
 function frame(now: number): void {
   raf = requestAnimationFrame(frame);
-  if (!game || !renderer || !net) return;
-  rawFrames++;
-
+  const g = game;
+  if (!g || !net) return;
   const dt = Math.min(0.1, (now - lastTick) / 1000);
   lastTick = now;
-  game.update(dt);
+  g.update(dt);
   if (!limiter.shouldRender(now)) return;
 
   const rdt = Math.min(0.1, (now - lastRender) / 1000);
   lastRender = now;
-  renderer.draw(game, rdt, now);
+  const t0 = performance.now();
+  renderer.draw(now, rdt);
+  drawMs += (performance.now() - t0 - drawMs) * 0.1;
 
   frames++;
   if (now - fpsStart >= 500) {
     fps = Math.round((frames * 1000) / (now - fpsStart));
-    rafHz = (rawFrames * 1000) / (now - fpsStart);
     frames = 0;
-    rawFrames = 0;
     fpsStart = now;
-    // Resolucion dinamica: si el monitor da 60 Hz o mas pero no llegamos a 60 FPS, baja la
-    // resolucion del canvas. Si el monitor es de 30 Hz no se castiga la calidad.
-    slowWindows = rafHz > 56 && fps < 52 ? slowWindows + 1 : 0;
-    if (slowWindows >= 4) {
-      renderer.setQuality(renderer.quality - 0.125);
-      slowWindows = 0;
-    }
   }
   if (now - lastHud >= 100) {
     lastHud = now;
-    updateHud(game, net);
+    updateHud(g, net);
+    watchLoot(g);
   }
 }
 
-function updateHud(g: ClientGame, n: Net): void {
+function updateHud(g: ClientBR, n: Net): void {
   const x = Math.round(g.x);
   const y = Math.round(g.y);
   const coords = $('hud-coords');
@@ -522,81 +580,203 @@ function updateHud(g: ClientGame, n: Net): void {
   }
   $('hud-fps').textContent = `${fps} FPS`;
   $('hud-rtt').textContent = n.connected ? `${Math.round(n.rttMedian)} ms` : 'sin red';
+  if (!specBar.hidden) {
+    const spec = g.latest?.spectating;
+    $('spec-name').textContent =
+      spec !== undefined ? (g.cats.get(spec)?.name ?? 'Observando') : 'Observando';
+  }
   window.__cybergrid = {
     fps,
     rtt: Math.round(n.rttMedian * 10) / 10,
     x,
     y,
-    mode: input?.mode ?? 'keyboard',
+    mode: input.mode,
     snapshots: g.snapshotsPerSecond,
     connected: n.connected,
-    quality: renderer?.quality ?? 1,
+    quality: renderer.scale,
+    hp: Math.round(g.me?.hp ?? 0),
+    alive: g.alive,
+    players: g.latest?.alive ?? 0,
+    drawMs: Math.round(drawMs * 100) / 100,
   };
+}
+
+/** Si te alejas del cofre mientras esta abierto, se cierra solo. */
+function watchLoot(g: ClientBR): void {
+  if (!g.loot) return;
+  const box = g.boxes.find((b) => b[0] === g.loot?.id);
+  if (!box || Math.hypot(box[1] - g.x, box[2] - g.y) > CAT.interactRange + 14) inventory.close();
+}
+
+async function doInteract(): Promise<void> {
+  const g = game;
+  if (!g || !g.alive || g.result) return;
+  if (inventory.isOpen && g.loot) {
+    inventory.close();
+    return;
+  }
+  const box = g.nearestBox();
+  if (!box) {
+    toast('No hay nada cerca para abrir');
+    return;
+  }
+  const loot = await g.interact();
+  if (loot) sfx.pickup();
+}
+
+function toggleMenu(): void {
+  if (canvas.hidden || resultsEl.hidden === false) return;
+  const open = menuEl.hidden;
+  menuEl.hidden = !open;
+  $('btn-quit').textContent = 'Salir de la partida';
+  quitArmed = false;
+  input.active = !open;
+  if (open) $('menu-resume').focus({ preventScroll: true });
+}
+
+let quitArmed = false;
+
+function onDied(payload: DiedPayload): void {
+  if (!game) return;
+  game.onDied(payload);
+  inventory.close();
+  if (deathTimer !== null) window.clearTimeout(deathTimer);
+  deathTimer = window.setTimeout(() => {
+    deathTimer = null;
+    if (!game || game.result) return;
+    $('death-sub').textContent = payload.killerName
+      ? `${payload.killerName} te eliminó. Quedaste en el puesto ${payload.placement}, con ${payload.kills} ${payload.kills === 1 ? 'baja' : 'bajas'}.`
+      : `La ola te alcanzó. Quedaste en el puesto ${payload.placement}, con ${payload.kills} ${payload.kills === 1 ? 'baja' : 'bajas'}.`;
+    deathEl.hidden = false;
+    $('btn-spectate').focus({ preventScroll: true });
+  }, 1100);
+}
+
+$('btn-spectate').addEventListener('click', () => {
+  deathEl.hidden = true;
+  specBar.hidden = false;
+});
+$('spec-prev').addEventListener('click', () => game?.spectate(-1));
+$('spec-next').addEventListener('click', () => game?.spectate(1));
+
+function placementText(n: number): string {
+  return `#${n}`;
 }
 
 function endGame(payload: GameEndPayload): void {
   if (!game) return;
   game.onEnd(payload);
-  const win = payload.result === 'win';
+  deathEl.hidden = true;
+  specBar.hidden = true;
+  menuEl.hidden = true;
+  inventory.close();
+  const me = payload.rows.find((r) => r.id === game?.you);
+  const win = payload.winnerId === game.you;
   const title = $('results-title');
-  title.textContent = win ? 'Misión cumplida' : 'Misión fallida';
-  title.dataset.result = payload.result;
-  const reasons = {
-    sync: 'Todo el equipo sincronizó en la salida',
-    wipe: 'El equipo quedó fuera de línea',
-    timeout: 'Se acabó el tiempo',
-  } as const;
-  $('results-sub').textContent =
-    `${reasons[payload.reason]} · ${Math.round(payload.durationS)} s · oleada ${payload.wave}`;
+  title.textContent = win ? '¡VICTORIA REAL!' : 'Fin de la partida';
+  title.dataset.win = String(win);
+  const winner = payload.rows.find((r) => r.placement === 1);
+  $('results-sub').textContent = win
+    ? `Eres el último gato en pie. ${me?.kills ?? 0} bajas en ${Math.round(payload.durationS)} s.`
+    : `${winner ? `Ganó ${winner.name}. ` : ''}Quedaste en el puesto ${me?.placement ?? '?'} de ${payload.rows.length}.`;
   const body = $('results-body');
   body.replaceChildren();
-  for (const p of payload.players) {
-    const tr = el('tr');
-    const cells = [
-      p.name,
-      String(p.kills),
-      String(p.deaths),
-      String(p.damageDealt),
-      p.survived ? 'Vivo' : 'Caído',
-    ];
-    cells.forEach((text) => tr.append(el('td', '', text)));
+  for (const r of [...payload.rows].sort((a, b) => a.placement - b.placement)) {
+    const tr = el('tr', r.id === game.you ? 'me' : '');
+    [
+      placementText(r.placement),
+      r.name + (r.bot ? ' (bot)' : ''),
+      String(r.kills),
+      String(r.damageDealt),
+      `${Math.round(r.survivalS)} s`,
+    ].forEach((t) => tr.append(el('td', '', t)));
     body.append(tr);
   }
-  window.setTimeout(() => {
-    if (game?.result) resultsEl.hidden = false;
-  }, 900);
+  if (resultsTimer !== null) window.clearTimeout(resultsTimer);
+  resultsTimer = window.setTimeout(
+    () => {
+      resultsTimer = null;
+      if (game?.result) {
+        resultsEl.hidden = false;
+        input.active = false;
+        $('btn-back').focus({ preventScroll: true });
+      }
+    },
+    win ? 1600 : 900,
+  );
 }
 
-$('btn-quit').addEventListener('click', async () => {
-  if (!net || !game) return;
-  if (!game.result && !window.confirm('¿Salir de la partida? Tu equipo seguirá sin ti.')) return;
+function leaveGameView(): void {
+  if (raf) cancelAnimationFrame(raf);
+  raf = 0;
+  if (deathTimer !== null) window.clearTimeout(deathTimer);
+  if (resultsTimer !== null) window.clearTimeout(resultsTimer);
+  deathTimer = resultsTimer = null;
+  game = null;
+  renderer.setGame(null);
+  window.__cybergrid = undefined;
+}
+
+async function quitToLobby(): Promise<void> {
+  if (!net) return;
   await net.ack('room:leave');
   room = null;
-  resultsEl.hidden = true;
-  cancelAnimationFrame(raf);
-  raf = 0;
-  game = null;
+  countdownEl.hidden = true;
+  leaveGameView();
   navigate('/lobby');
   void enterLobby();
+}
+
+$('btn-quit').addEventListener('click', () => {
+  if (!quitArmed) {
+    quitArmed = true;
+    $('btn-quit').textContent = 'Toca otra vez para salir';
+    return;
+  }
+  menuEl.hidden = true;
+  void quitToLobby();
 });
+$('menu-resume').addEventListener('click', () => toggleMenu());
+$('menu-settings').addEventListener('click', () => {
+  settings.open('keys');
+});
+$('btn-death-leave').addEventListener('click', () => void quitToLobby());
+$('spec-leave').addEventListener('click', () => void quitToLobby());
+bagBtn.addEventListener('click', () => inventory.toggle());
+menuBtn.addEventListener('click', () => toggleMenu());
 
 $('btn-back').addEventListener('click', () => {
   resultsEl.hidden = true;
-  cancelAnimationFrame(raf);
-  raf = 0;
-  game = null;
+  leaveGameView();
   navigate('/lobby');
   void enterLobby();
 });
 
-function toggleMute(): void {
-  sfx.setMuted(!sfx.muted);
-  btnMute.dataset.muted = String(sfx.muted);
-  btnMute.textContent = sfx.muted ? 'Sonido: no' : 'Sonido: sí';
-}
-btnMute.addEventListener('click', toggleMute);
-btnMute.dataset.muted = String(sfx.muted);
-btnMute.textContent = sfx.muted ? 'Sonido: no' : 'Sonido: sí';
+window.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.code === 'Escape') {
+      if (settings.isOpen) {
+        e.stopImmediatePropagation();
+        if (!$('touch-editor').hidden) return;
+        settings.close();
+        return;
+      }
+      if (!menuEl.hidden) {
+        e.stopImmediatePropagation();
+        toggleMenu();
+        return;
+      }
+      return;
+    }
+    const g = game;
+    if (g && !g.alive && !g.result && deathEl.hidden && !(e.target instanceof HTMLInputElement)) {
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') g.spectate(-1);
+      else if (e.code === 'KeyD' || e.code === 'ArrowRight') g.spectate(1);
+    }
+  },
+  true,
+);
 
 document.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -609,13 +789,13 @@ window.addEventListener('popstate', () => {
 async function boot(): Promise<void> {
   try {
     await Promise.all([
-      document.fonts.load('700 20px Orbitron'),
-      document.fonts.load('600 14px Rajdhani'),
-      document.fonts.load('700 14px Rajdhani'),
+      document.fonts.load('12px "Press Start 2P"'),
+      document.fonts.load('20px VT323'),
     ]);
   } catch {
     // si las fuentes no cargan se usa la fuente del sistema
   }
+  startWalker($<HTMLCanvasElement>('auth-cat'), () => authSkin, 4);
   try {
     user = await api.me();
   } catch {
@@ -630,6 +810,7 @@ async function boot(): Promise<void> {
   await enterLobby();
 }
 
+const authSkin = randomSkin(createRng((Math.random() * 2 ** 31) >>> 0));
 setAuthMode('login');
 void boot();
 
@@ -644,6 +825,10 @@ declare global {
       snapshots: number;
       connected: boolean;
       quality: number;
+      hp: number;
+      alive: boolean;
+      players: number;
+      drawMs: number;
     };
   }
 }

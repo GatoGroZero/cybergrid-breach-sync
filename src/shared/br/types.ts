@@ -6,7 +6,7 @@ export type CatTuple = [number, number, number, number, number, number];
 export type ShotTuple = [number, number, number, number, number];
 /** [id, casillaX, casillaY, vida %] */
 export type WallTuple = [number, number, number, number];
-/** [id, x, y, tipo (0 cofre, 1 cofre dorado, 2 lapida, 3 objeto tirado), abierto 0/1, indice de objeto o -1] */
+/** [id, x, y, tipo (0 cofre, 1 cofre dorado, 2 lapida, 3 objeto tirado), abierto 0/1, objeto tirado (indice de ITEM_KINDS * 3 + rareza) o -1] */
 export type ContainerTuple = [number, number, number, number, number, number];
 
 export type BREvent =
@@ -68,4 +68,6 @@ export interface BRSnapshot {
   ev: BREvent[];
   /** A quien se esta viendo cuando ya estas eliminado. */
   spectating?: number;
+  /** Eliminaciones nuevas (para el aviso arriba a la izquierda). */
+  feed?: { k: string | null; v: string }[];
 }

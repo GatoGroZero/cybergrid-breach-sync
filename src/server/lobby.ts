@@ -207,14 +207,16 @@ export class Lobby {
       if (!allow(actionBucket)) return;
       const parsed = lootIdSchema.safeParse(raw);
       const m = me();
-      if (!parsed.success || !m?.game) return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
+      if (!parsed.success || !m?.game)
+        return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
       ack?.({ ok: true, data: m.game.contents(m.member.catId, parsed.data.id) });
     });
     socket.on('loot:take', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = lootTakeSchema.safeParse(raw);
       const m = me();
-      if (!parsed.success || !m?.game) return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
+      if (!parsed.success || !m?.game)
+        return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
       const { id, index, slot } = parsed.data;
       ack?.({ ok: true, data: m.game.lootTake(m.member.catId, id, index, slot) });
     });
@@ -222,7 +224,8 @@ export class Lobby {
       if (!allow(actionBucket)) return;
       const parsed = lootIdSchema.safeParse(raw);
       const m = me();
-      if (!parsed.success || !m?.game) return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
+      if (!parsed.success || !m?.game)
+        return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
       ack?.({ ok: true, data: m.game.lootTakeAll(m.member.catId, parsed.data.id) });
     });
     socket.on('inv:move', (raw: unknown, ack?: (a: Ack) => void) => {
@@ -275,7 +278,8 @@ export class Lobby {
     void socket.join(room.code);
     room.game?.setConnected(member.catId, true);
     socket.emit('room:state', this.stateOf(room));
-    if (room.phase === 'playing' && room.game) socket.emit('game:start', this.startPayload(room, member));
+    if (room.phase === 'playing' && room.game)
+      socket.emit('game:start', this.startPayload(room, member));
   }
 
   // ------------------------------------------------------------------ salas
@@ -288,7 +292,8 @@ export class Lobby {
   private newCode(): string {
     for (let attempt = 0; attempt < 50; attempt++) {
       let code = '';
-      for (let i = 0; i < ROOM_CODE_LENGTH; i++) code += ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)];
+      for (let i = 0; i < ROOM_CODE_LENGTH; i++)
+        code += ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)];
       if (!this.rooms.has(code)) return code;
     }
     return randomBytes(3).toString('hex').toUpperCase().slice(0, ROOM_CODE_LENGTH);
@@ -327,7 +332,8 @@ export class Lobby {
     if (!room) return fail('sala_no_existe') as Ack<{ code: string }>;
     if (this.userRoom.get(user.id) === room.code) return { ok: true, data: { code: room.code } };
     if (this.userRoom.has(user.id)) return fail('ya_estas_en_una_sala') as Ack<{ code: string }>;
-    if (room.phase === 'playing' || room.phase === 'ended') return fail('partida_en_curso') as Ack<{ code: string }>;
+    if (room.phase === 'playing' || room.phase === 'ended')
+      return fail('partida_en_curso') as Ack<{ code: string }>;
     if (room.members.size >= MAX_PLAYERS) return fail('sala_llena') as Ack<{ code: string }>;
     this.cancelCountdown(room);
     this.addMember(room, user, socket);
@@ -352,7 +358,8 @@ export class Lobby {
     const room = this.roomOf(userId);
     if (!room) return;
     const member = room.members.get(userId);
-    if (room.phase === 'playing' && room.game && member) room.game.setConnected(member.catId, false);
+    if (room.phase === 'playing' && room.game && member)
+      room.game.setConnected(member.catId, false);
     room.members.delete(userId);
     this.userRoom.delete(userId);
     void socket?.leave(room.code);
@@ -378,7 +385,8 @@ export class Lobby {
     member.skin = this.skins.get(userId) ?? member.skin;
     if (!member.ready) this.cancelCountdown(room);
     this.broadcast(room);
-    if ([...room.members.values()].every((m) => m.ready) && room.phase === 'lobby') this.startCountdown(room);
+    if ([...room.members.values()].every((m) => m.ready) && room.phase === 'lobby')
+      this.startCountdown(room);
     return { ok: true };
   }
 

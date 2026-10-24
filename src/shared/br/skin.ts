@@ -99,7 +99,8 @@ export function randomSkin(rng: Rng): Skin {
   if (style === 0) {
     // rayas verticales
     const phase = rng.int(0, 2);
-    for (let x = 3 + phase; x < SKIN_W - 2; x += 3) for (let y = 3; y < SKIN_H - 3; y++) cells.push([x, y]);
+    for (let x = 3 + phase; x < SKIN_W - 2; x += 3)
+      for (let y = 3; y < SKIN_H - 3; y++) cells.push([x, y]);
   } else if (style === 1) {
     // manchas
     for (let i = 0; i < rng.int(4, 8); i++) {

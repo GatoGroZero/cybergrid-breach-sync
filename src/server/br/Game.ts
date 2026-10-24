@@ -1,5 +1,20 @@
-import { applyDamage, healMissing, healStep, splashDamage, type HealKind } from '../../shared/br/combat';
-import { CAT, INTEREST_RADIUS, INVENTORY_SLOTS, TICK_DT, TILE, WALL_ITEM, WATER, FLAG } from '../../shared/br/constants';
+import {
+  applyDamage,
+  healMissing,
+  healStep,
+  splashDamage,
+  type HealKind,
+} from '../../shared/br/combat';
+import {
+  CAT,
+  INTEREST_RADIUS,
+  INVENTORY_SLOTS,
+  TICK_DT,
+  TILE,
+  WALL_ITEM,
+  WATER,
+  FLAG,
+} from '../../shared/br/constants';
 import {
   addItem,
   cloneItem,
@@ -55,7 +70,14 @@ import type {
   WallTuple,
   ZoneView,
 } from '../../shared/br/types';
-import { ZONE_TIMELINE, insideCircle, planZones, zoneAt, type ZonePlan, type ZoneState } from '../../shared/br/zone';
+import {
+  ZONE_TIMELINE,
+  insideCircle,
+  planZones,
+  zoneAt,
+  type ZonePlan,
+  type ZoneState,
+} from '../../shared/br/zone';
 import { createRng, type Rng } from '../../shared/rng';
 import { BotBrain } from './bots';
 
@@ -146,7 +168,13 @@ interface Container {
   title: string;
 }
 
-const SHOT_KIND: Record<WeaponKind, number> = { pistol: 0, rifle: 0, shotgun: 1, sniper: 2, bazooka: 3 };
+const SHOT_KIND: Record<WeaponKind, number> = {
+  pistol: 0,
+  rifle: 0,
+  shotgun: 1,
+  sniper: 2,
+  bazooka: 3,
+};
 const CONTAINER_CODE: Record<ContainerKind, number> = { chest: 0, golden: 1, tomb: 2, drop: 3 };
 const HIT_RADIUS = 7;
 const MAX_SHOTS = 320;
@@ -180,13 +208,18 @@ export class BRGame {
   private readonly brains = new Map<number, BotBrain>();
   private readonly deaths: DiedPayload[] = [];
   private readonly deathOwners: number[] = [];
+  private feed: { k: string | null; v: string }[] = [];
 
   constructor(options: GameOptions) {
     this.seed = options.seed;
     this.mapKind = options.mapKind;
     this.map = generateMap(options.mapKind, options.seed);
     this.rng = createRng((options.seed ^ 0x9e3779b9) >>> 0);
-    this.plan = planZones(createRng((options.seed ^ 0x5bd1e995) >>> 0), mapWidthPx(this.map), mapHeightPx(this.map));
+    this.plan = planZones(
+      createRng((options.seed ^ 0x5bd1e995) >>> 0),
+      mapWidthPx(this.map),
+      mapHeightPx(this.map),
+    );
     this.zone = zoneAt(this.plan, mapWidthPx(this.map), mapHeightPx(this.map), 0);
 
     const spawns = this.rng.shuffle([...this.map.spawns]);
@@ -243,7 +276,11 @@ export class BRGame {
       });
     }
     for (const cat of this.cats) {
-      if (cat.bot) this.brains.set(cat.id, new BotBrain(this, cat, createRng((options.seed + cat.id * 7919) >>> 0)));
+      if (cat.bot)
+        this.brains.set(
+          cat.id,
+          new BotBrain(this, cat, createRng((options.seed + cat.id * 7919) >>> 0)),
+        );
     }
   }
 
@@ -396,7 +433,13 @@ export class BRGame {
         angle: a,
       });
     }
-    this.emit({ e: 'shot', x: q1(cat.x), y: q1(cat.y), a: Math.round((aim * 180) / Math.PI), w: ITEM_KINDS.indexOf(def.kind) });
+    this.emit({
+      e: 'shot',
+      x: q1(cat.x),
+      y: q1(cat.y),
+      a: Math.round((aim * 180) / Math.PI),
+      w: ITEM_KINDS.indexOf(def.kind),
+    });
   }
 
   private claw(cat: Cat, aim: number): void {
@@ -434,7 +477,12 @@ export class BRGame {
       const r = healStep(heal.kind, cat);
       cat.hp = r.hp;
       cat.shield = r.shield;
-      this.emit({ e: 'heal', x: q1(cat.x), y: q1(cat.y), kind: heal.kind === 'medkit' ? 'hp' : 'shield' });
+      this.emit({
+        e: 'heal',
+        x: q1(cat.x),
+        y: q1(cat.y),
+        kind: heal.kind === 'medkit' ? 'hp' : 'shield',
+      });
       if (r.done) {
         cat.heal = null;
         return;
@@ -489,7 +537,13 @@ export class BRGame {
     target.shield = r.shield;
     target.hurtUntil = this.time + 0.25;
     if (attacker && attacker.id !== target.id) attacker.damageDealt += r.dealt;
-    this.emit({ e: 'hit', x: q1(target.x), y: q1(target.y), v: Math.round(r.dealt), kill: target.hp <= 0 });
+    this.emit({
+      e: 'hit',
+      x: q1(target.x),
+      y: q1(target.y),
+      v: Math.round(r.dealt),
+      kill: target.hp <= 0,
+    });
     if (target.hp <= 0) this.killCat(target, attacker);
   }
 
@@ -503,6 +557,7 @@ export class BRGame {
     target.killerId = killer && killer.id !== target.id ? killer.id : null;
     if (killer && killer.id !== target.id) killer.kills++;
     this.emit({ e: 'death', x: q1(target.x), y: q1(target.y), id: target.id });
+    this.feed.push({ k: killer && killer.id !== target.id ? killer.name : null, v: target.name });
 
     const items = target.inv.filter((it): it is Item => it !== null).map(cloneItem);
     target.inv = emptyInventory();
@@ -531,7 +586,10 @@ export class BRGame {
 
   /** Muertes de humanos pendientes de avisar (las consume la sala). */
   drainDeaths(): { catId: number; payload: DiedPayload }[] {
-    const out = this.deaths.map((payload, i) => ({ catId: this.deathOwners[i] as number, payload }));
+    const out = this.deaths.map((payload, i) => ({
+      catId: this.deathOwners[i] as number,
+      payload,
+    }));
     this.deaths.length = 0;
     this.deathOwners.length = 0;
     return out;
@@ -629,7 +687,8 @@ export class BRGame {
   }
 
   private cleanup(c: Container): void {
-    if ((c.kind === 'tomb' || c.kind === 'drop') && c.items.length === 0) this.containers.delete(c.id);
+    if ((c.kind === 'tomb' || c.kind === 'drop') && c.items.length === 0)
+      this.containers.delete(c.id);
   }
 
   invMove(catId: number, from: number, to: number): boolean {
@@ -838,7 +897,11 @@ export class BRGame {
       .sort((a, b) => a.placement - b.placement);
     const top = alive[0] ?? null;
     this.result = {
-      winnerId: top ? top.id : winner ? winner.id : (this.cats.find((c) => c.placement === 1)?.id ?? null),
+      winnerId: top
+        ? top.id
+        : winner
+          ? winner.id
+          : (this.cats.find((c) => c.placement === 1)?.id ?? null),
       humanWon: top !== null && !top.bot,
       durationS: Math.round(this.time * 10) / 10,
       rows,
@@ -882,25 +945,36 @@ export class BRGame {
       if (target) focus = target;
     }
     const R = INTEREST_RADIUS;
-    const near = (x: number, y: number): boolean => Math.abs(x - focus.x) < R && Math.abs(y - focus.y) < R;
+    const near = (x: number, y: number): boolean =>
+      Math.abs(x - focus.x) < R && Math.abs(y - focus.y) < R;
 
     const cats: CatTuple[] = [];
     for (const c of this.cats) {
       if (!c.alive || c.id === cat.id || !near(c.x, c.y)) continue;
-      cats.push([c.id, q1(c.x), q1(c.y), this.flags(c), Math.round((c.aim * 180) / Math.PI), this.heldCode(c)]);
+      cats.push([
+        c.id,
+        q1(c.x),
+        q1(c.y),
+        this.flags(c),
+        Math.round((c.aim * 180) / Math.PI),
+        this.heldCode(c),
+      ]);
     }
     const shots: ShotTuple[] = [];
     for (const s of this.shots) {
-      if (near(s.x, s.y)) shots.push([s.id, q1(s.x), q1(s.y), s.kind, Math.round((s.angle * 180) / Math.PI)]);
+      if (near(s.x, s.y))
+        shots.push([s.id, q1(s.x), q1(s.y), s.kind, Math.round((s.angle * 180) / Math.PI)]);
     }
     const walls: WallTuple[] = [];
     for (const w of this.walls.values()) {
-      if (near(w.tx * TILE, w.ty * TILE)) walls.push([w.id, w.tx, w.ty, Math.max(1, Math.round((w.hp / WALL_ITEM.hp) * 100))]);
+      if (near(w.tx * TILE, w.ty * TILE))
+        walls.push([w.id, w.tx, w.ty, Math.max(1, Math.round((w.hp / WALL_ITEM.hp) * 100))]);
     }
     const boxes: ContainerTuple[] = [];
     for (const c of this.containers.values()) {
       if (!near(c.x, c.y)) continue;
-      const first = c.kind === 'drop' && c.items[0] ? ITEM_KINDS.indexOf(c.items[0].kind) : -1;
+      const top = c.kind === 'drop' ? c.items[0] : undefined;
+      const first = top ? ITEM_KINDS.indexOf(top.kind) * 3 + top.rarity : -1;
       boxes.push([c.id, c.x, c.y, CONTAINER_CODE[c.kind], c.opened ? 1 : 0, first]);
     }
     const ev = this.events.filter((e) => {
@@ -932,7 +1006,12 @@ export class BRGame {
       sel: cat.sel,
       alive: cat.alive,
       kills: cat.kills,
-      healLeft: cat.heal ? Math.max(0, Math.ceil(healMissing(cat.heal.kind, cat) / (cat.heal.kind === 'medkit' ? 10 : 5))) : 0,
+      healLeft: cat.heal
+        ? Math.max(
+            0,
+            Math.ceil(healMissing(cat.heal.kind, cat) / (cat.heal.kind === 'medkit' ? 10 : 5)),
+          )
+        : 0,
       healKind: cat.heal ? cat.heal.kind : null,
       cooldown: Math.max(0, q1(cat.cooldownUntil - this.time)),
     };
@@ -954,11 +1033,13 @@ export class BRGame {
       cat.invDirty = false;
     }
     if (!cat.alive && cat.spectate !== null) snap.spectating = cat.spectate;
+    if (this.feed.length > 0) snap.feed = this.feed;
     return snap;
   }
 
   /** Se llama una vez por tick, despues de generar las instantaneas de todos. */
   endTick(): void {
     this.events = [];
+    this.feed = [];
   }
 }
