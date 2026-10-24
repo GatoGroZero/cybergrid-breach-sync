@@ -13,20 +13,21 @@ import type {
   WinPayload,
   RoomState,
 } from '../shared/br/protocol';
-import { credentialsSchema } from '../shared/br/protocol';
 import { BOTS_FILL, maxHumans, type BotsSetting } from '../shared/br/rooms';
 import { randomSkin } from '../shared/br/skin';
 import type { BRSnapshot } from '../shared/br/types';
 import { createRng } from '../shared/rng';
 import { FrameLimiter } from '../shared/timing';
-import { api, ApiError, type User } from './api';
+import { api, type User } from './api';
 import { Sfx } from './audio';
 import { BRRenderer } from './game/render';
 import { InputController, keyLabel, type ControlMode } from './game/input';
 import { ClientBR } from './game/state';
 import { Net } from './net';
 import { $, el, toast } from './ui/dom';
+import { AuthScreen, authErrorText } from './ui/auth';
 import { InventoryPanel } from './ui/inventory';
+import { NicknameDialog, nicknameConfirmed } from './ui/nickname';
 import { Painter, drawCatIcon, startWalker } from './ui/painter';
 import { Settings } from './ui/settings';
 
@@ -60,12 +61,20 @@ const ERRORS: Record<string, string> = {
   faltan_jugadores: 'Con esos bots hacen falta al menos 2 personas',
 };
 /** Enlace de invitacion (?sala=ABCDE): se guarda para entrar a la sala cuando haya sesion. */
+const INVITE_KEY = 'cg_invitacion';
 let pendingInvite: string | null = null;
 {
   const params = new URLSearchParams(window.location.search);
-  const code = (params.get('sala') ?? '').trim().toUpperCase();
-  if (code) {
-    pendingInvite = code;
+  let code = (params.get('sala') ?? '').trim().toUpperCase();
+  // Al volver de Google la URL ya no trae la sala: se recupera la que se guardo antes de salir.
+  try {
+    if (!code) code = sessionStorage.getItem(INVITE_KEY) ?? '';
+    sessionStorage.removeItem(INVITE_KEY);
+  } catch {
+    // sin almacenamiento de sesion: solo funciona el enlace directo
+  }
+  if (/^[A-Z0-9]{5}$/.test(code)) pendingInvite = code;
+  if (params.has('sala')) {
     params.delete('sala');
     const rest = params.toString();
     history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
@@ -169,79 +178,41 @@ function showView(view: View): void {
 }
 
 function navigate(path: string, replace = false): void {
-  if (location.pathname === path) return;
+  if (location.pathname === path) {
+    // Misma ruta: solo se limpia lo que sobre en la URL (por ejemplo ?error= al volver de Google).
+    if (location.search) history.replaceState(null, '', path);
+    return;
+  }
   if (replace) history.replaceState(null, '', path);
   else history.pushState(null, '', path);
 }
 
 // ---------------------------------------------------------------- autenticacion
 
-let authMode: 'login' | 'register' = 'login';
+const auth = new AuthScreen();
+const nickname = new NicknameDialog();
 
-function setAuthMode(mode: 'login' | 'register'): void {
-  authMode = mode;
-  $('tab-login').classList.toggle('is-active', mode === 'login');
-  $('tab-register').classList.toggle('is-active', mode === 'register');
-  $('tab-login').setAttribute('aria-selected', String(mode === 'login'));
-  $('tab-register').setAttribute('aria-selected', String(mode === 'register'));
-  $('auth-submit').textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta';
-  $<HTMLInputElement>('auth-pass').autocomplete =
-    mode === 'login' ? 'current-password' : 'new-password';
-  $('auth-error').textContent = '';
-}
+auth.onLeaveForGoogle = () => {
+  if (!pendingInvite) return;
+  try {
+    sessionStorage.setItem(INVITE_KEY, pendingInvite);
+  } catch {
+    // sin almacenamiento de sesion: se pierde la invitacion, el codigo sigue sirviendo
+  }
+};
+auth.onLogin = async (loggedIn) => {
+  user = loggedIn;
+  navigate('/lobby');
+  await enterLobby();
+};
 
 function showAuth(message = ''): void {
   user = null;
   room = null;
-  setAuthMode('login');
   showView('auth');
   navigate('/login', true);
-  $('auth-error').textContent = message;
+  void auth.prepare(message);
 }
-
-$('tab-login').addEventListener('click', () => setAuthMode('login'));
-$('tab-register').addEventListener('click', () => setAuthMode('register'));
-$('fill-demo').addEventListener('click', () => {
-  $<HTMLInputElement>('auth-user').value = 'demo1';
-  $<HTMLInputElement>('auth-pass').value = 'CyberGrid26';
-  setAuthMode('login');
-});
-
-$<HTMLFormElement>('auth-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const errorEl = $('auth-error');
-  const submit = $<HTMLButtonElement>('auth-submit');
-  const username = $<HTMLInputElement>('auth-user').value.trim();
-  const password = $<HTMLInputElement>('auth-pass').value;
-  errorEl.textContent = '';
-
-  if (authMode === 'register') {
-    const parsed = credentialsSchema.safeParse({ username, password });
-    if (!parsed.success) {
-      errorEl.textContent = parsed.error.issues[0]?.message ?? 'Datos inválidos';
-      return;
-    }
-  } else if (!username || !password) {
-    errorEl.textContent = 'Escribe tu usuario y tu contraseña';
-    return;
-  }
-
-  submit.disabled = true;
-  try {
-    user =
-      authMode === 'login'
-        ? await api.login(username, password)
-        : await api.register(username, password);
-    $<HTMLInputElement>('auth-pass').value = '';
-    navigate('/lobby');
-    await enterLobby();
-  } catch (err) {
-    errorEl.textContent =
-      err instanceof ApiError ? err.message : 'No se pudo conectar con el servidor';
-  } finally {
-    submit.disabled = false;
-  }
-});
 
 $('btn-logout').addEventListener('click', async () => {
   try {
@@ -310,6 +281,12 @@ const parseBots = (value: string): BotsSetting => (value === BOTS_FILL ? BOTS_FI
 async function enterLobby(): Promise<void> {
   if (!user) return;
   showView('lobby');
+  if (!nicknameConfirmed(user)) {
+    // Primera vez en este navegador: se confirma el apodo antes de abrir la conexion.
+    $('lobby-user').textContent = user.username;
+    const renamed = await nickname.open(user);
+    if (renamed) user = renamed;
+  }
   $('lobby-user').textContent = user.username;
   renderRoom();
   if (!net) {
@@ -563,6 +540,24 @@ $('btn-start').addEventListener('click', async () => {
 });
 
 $('btn-settings').addEventListener('click', () => settings.open());
+
+$('lobby-user').addEventListener('click', async () => {
+  if (!user || nickname.isOpen) return;
+  if (room) {
+    toast('Sal de la sala para cambiar tu apodo');
+    return;
+  }
+  if (user.provider === 'local') {
+    toast('Tu usuario no se puede cambiar');
+    return;
+  }
+  const renamed = await nickname.open(user);
+  if (!renamed) return;
+  // El servidor conoce el apodo desde que se abre la conexion: se reconecta con el nuevo.
+  user = renamed;
+  disconnect();
+  await enterLobby();
+});
 
 function renderRoom(): void {
   const inRoom = room !== null;
@@ -958,6 +953,7 @@ async function boot(): Promise<void> {
     // si las fuentes no cargan se usa la fuente del sistema
   }
   startWalker($<HTMLCanvasElement>('auth-cat'), () => authSkin, 4);
+  const problem = new URLSearchParams(window.location.search).get('error');
   try {
     user = await api.me();
   } catch {
@@ -965,7 +961,7 @@ async function boot(): Promise<void> {
     return;
   }
   if (!user) {
-    showAuth();
+    showAuth(authErrorText(problem));
     return;
   }
   navigate('/lobby', true);
@@ -973,7 +969,6 @@ async function boot(): Promise<void> {
 }
 
 const authSkin = randomSkin(createRng((Math.random() * 2 ** 31) >>> 0));
-setAuthMode('login');
 void boot();
 
 declare global {

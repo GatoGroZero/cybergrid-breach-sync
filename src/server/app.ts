@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { authRouter, sameOrigin } from './auth';
 import type { Config } from './config';
 import type { Repo } from './db';
+import type { Mailer } from './mailer';
 import type { Metrics } from './metrics';
 import { testRouter, type RuntimeInfo } from './testApi';
 
@@ -15,6 +16,8 @@ export interface AppDeps {
   repo: Repo;
   metrics: Metrics;
   runtime: () => RuntimeInfo;
+  /** Envia los codigos de acceso por correo; sin el, el acceso por correo no se ofrece. */
+  mailer?: Mailer | null;
 }
 
 export function createApp(deps: AppDeps): Express {

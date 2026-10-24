@@ -4,7 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { io as connect, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { createApp } from '../../src/server/app';
-import { loadConfig, type Config } from '../../src/server/config';
+import { loadConfig, type Config, type ConfigOverrides } from '../../src/server/config';
+import type { Mailer } from '../../src/server/mailer';
 import { Repo } from '../../src/server/db';
 import { Metrics } from '../../src/server/metrics';
 import { createRealtime, type Realtime } from '../../src/server/realtime';
@@ -19,7 +20,10 @@ export interface TestServer {
   close(): Promise<void>;
 }
 
-export async function startServer(overrides: Partial<Config> = {}): Promise<TestServer> {
+export async function startServer(
+  overrides: ConfigOverrides = {},
+  extra: { mailer?: Mailer | null } = {},
+): Promise<TestServer> {
   const config = loadConfig({
     env: 'test',
     dbPath: ':memory:',
@@ -32,7 +36,13 @@ export async function startServer(overrides: Partial<Config> = {}): Promise<Test
   const metrics = new Metrics();
   const http = createServer();
   const realtime = createRealtime(http, { config, metrics, repo });
-  const app = createApp({ config, repo, metrics, runtime: realtime.runtime });
+  const app = createApp({
+    config,
+    repo,
+    metrics,
+    runtime: realtime.runtime,
+    mailer: extra.mailer ?? null,
+  });
   http.on('request', app);
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
   const port = (http.address() as AddressInfo).port;

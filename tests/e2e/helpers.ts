@@ -16,9 +16,17 @@ export function uniqueName(prefix: string): string {
   return `${prefix}_${stamp}${rand}`.slice(0, 20);
 }
 
+/** El acceso con usuario y contraseña vive en un desplegable: se abre si no lo está. */
+export async function openPasswordForm(page: Page): Promise<void> {
+  const box = page.getByTestId('auth-legacy');
+  if (!(await box.evaluate((el) => (el as HTMLDetailsElement).open)))
+    await box.locator('summary').click();
+}
+
 export async function registerViaUi(page: Page, username: string, debug = false): Promise<void> {
   await page.goto(debug ? '/?debug' : '/');
   await expect(page).toHaveURL(/\/login$/);
+  await openPasswordForm(page);
   await page.getByRole('tab', { name: 'Crear cuenta' }).click();
   await page.getByTestId('auth-user').fill(username);
   await page.getByTestId('auth-pass').fill(PASSWORD);

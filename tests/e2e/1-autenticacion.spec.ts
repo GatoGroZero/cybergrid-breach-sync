@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { io } from 'socket.io-client';
-import { PASSWORD, registerViaUi, uniqueName } from './helpers';
+import { openPasswordForm, PASSWORD, registerViaUi, uniqueName } from './helpers';
 
 test.describe('Flujo 1: autenticación y protección', () => {
   test('una ruta protegida sin sesión manda al login', async ({ page }) => {
@@ -16,6 +16,7 @@ test.describe('Flujo 1: autenticación y protección', () => {
     await page.getByRole('button', { name: 'Salir' }).click();
     await expect(page.getByTestId('screen-auth')).toBeVisible();
 
+    await openPasswordForm(page);
     await page.getByTestId('auth-user').fill(name);
     await page.getByTestId('auth-pass').fill('contraseña-incorrecta');
     await page.getByTestId('auth-submit').click();
@@ -32,6 +33,7 @@ test.describe('Flujo 1: autenticación y protección', () => {
     page,
   }) => {
     await page.goto('/login');
+    await openPasswordForm(page);
     await page.getByRole('tab', { name: 'Crear cuenta' }).click();
     await page.getByTestId('auth-user').fill('ab');
     await page.getByTestId('auth-pass').fill('corta');
@@ -41,6 +43,7 @@ test.describe('Flujo 1: autenticación y protección', () => {
     const name = uniqueName('e2e_dup');
     await registerViaUi(page, name);
     await page.getByRole('button', { name: 'Salir' }).click();
+    await openPasswordForm(page);
     await page.getByRole('tab', { name: 'Crear cuenta' }).click();
     await page.getByTestId('auth-user').fill(name.toUpperCase());
     await page.getByTestId('auth-pass').fill(PASSWORD);

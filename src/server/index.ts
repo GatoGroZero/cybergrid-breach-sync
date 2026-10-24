@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { hashPassword } from './auth';
 import { DEMO_PASSWORD, DEMO_USERS, loadConfig } from './config';
 import { Repo } from './db';
+import { createMailer } from './mailer';
 import { Metrics } from './metrics';
 import { createRealtime } from './realtime';
 
@@ -20,7 +21,13 @@ async function main(): Promise<void> {
 
   const http = createServer();
   const realtime = createRealtime(http, { config, metrics, repo });
-  const app = createApp({ config, repo, metrics, runtime: realtime.runtime });
+  const app = createApp({
+    config,
+    repo,
+    metrics,
+    runtime: realtime.runtime,
+    mailer: createMailer(config.email),
+  });
   http.on('request', app);
 
   http.listen(config.port, '0.0.0.0', () => {

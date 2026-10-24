@@ -135,14 +135,28 @@ async function checkHttp() {
 }
 
 async function checkSocket() {
-  const name = `audit_${Math.random().toString(36).slice(2, 9)}`;
-  const reg = await request('/api/auth/register', {
-    method: 'POST',
-    body: { username: name, password: 'auditoria-segura-1' },
-  });
+  // El invitado no necesita cuenta ni base de datos: sirve aunque se apaguen las demas formas de entrar.
+  const reg = await request('/api/auth/guest', { method: 'POST', body: {} });
   if (reg.status !== 201)
-    return check('Registro para la prueba de WebSocket', false, `HTTP ${reg.status}`);
-  const cookie = String(reg.headers['set-cookie']?.[0] ?? '').split(';')[0];
+    return check('Entrar como invitado para la prueba de WebSocket', false, `HTTP ${reg.status}`);
+  const rawCookie = String(reg.headers['set-cookie']?.[0] ?? '');
+  const cookie = rawCookie.split(';')[0];
+  check(
+    'Cookie de sesion HttpOnly + Secure + SameSite=Lax',
+    /HttpOnly/i.test(rawCookie) && /Secure/i.test(rawCookie) && /SameSite=Lax/i.test(rawCookie),
+    rawCookie.replace(/cg_session=[^;]+/, 'cg_session=...'),
+  );
+  check(
+    'Respuestas de acceso sin cache',
+    String(reg.headers['cache-control'] ?? '').includes('no-store'),
+    String(reg.headers['cache-control']),
+  );
+  const cfg = await request('/api/auth/config');
+  check(
+    'Formas de entrar publicadas (/api/auth/config)',
+    cfg.status === 200 && typeof cfg.json?.guest === 'boolean',
+    JSON.stringify(cfg.json),
+  );
 
   const anon = io(base, { transports: ['websocket'], reconnection: false });
   const rejected = await new Promise((resolve) => {
@@ -189,12 +203,9 @@ async function checkBrowser() {
   const browser = await chromium.launch();
   const context = await browser.newContext({ ...devices['Pixel 7 landscape'], baseURL: base });
   const page = await context.newPage();
-  const name = `aud_${Math.random().toString(36).slice(2, 8)}`;
   await page.goto('/');
-  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
-  await page.getByTestId('auth-user').fill(name);
-  await page.getByTestId('auth-pass').fill('auditoria-segura-1');
-  await page.getByTestId('auth-submit').click();
+  await page.getByTestId('btn-guest').click();
+  await page.getByTestId('nick-save').click();
   await page.getByTestId('btn-solo').click();
   await page.waitForFunction(() => (window.__cybergrid?.snapshots ?? 0) > 5, null, {
     timeout: 60_000,

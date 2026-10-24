@@ -255,6 +255,84 @@ hr {
   display: block;
 }
 
+.auth-methods {
+  display: grid;
+  gap: 4px;
+}
+
+.auth-methods .btn {
+  margin-top: 0;
+}
+
+.btn.google {
+  gap: 12px;
+  color: #1f1f1f;
+  background: #ffffff;
+  border-color: #ffffff;
+  text-decoration: none;
+  box-shadow: 0 4px 0 #8a93a8;
+}
+
+.btn.google:hover {
+  background: #eef1f7;
+}
+
+.btn.google svg {
+  flex: none;
+}
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 10px;
+  color: var(--dim);
+}
+
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  border-top: 3px dashed var(--line);
+}
+
+.fine {
+  margin: 8px 0 0;
+  font-size: 18px;
+}
+
+.legacy {
+  margin-top: 14px;
+  text-align: left;
+}
+
+.legacy summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.legacy[open] summary {
+  margin-bottom: 8px;
+}
+
+button.chip {
+  font: inherit;
+  cursor: pointer;
+}
+
+button.chip:hover {
+  border-color: var(--cyan);
+}
+
+button.link {
+  display: block;
+  margin: 12px auto 0;
+}
+
 /* ------------------------------------------------------------ controles */
 
 .btn {

@@ -2,6 +2,23 @@ import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { TICK_HZ as SIM_HZ } from '../shared/br/constants';
 
+export interface GoogleConfig {
+  clientId: string;
+  clientSecret: string;
+  authUrl: string;
+  tokenUrl: string;
+  jwksUrl: string;
+}
+
+export interface EmailConfig {
+  /** `console` solo existe fuera de produccion: imprime el codigo en vez de mandar correo. */
+  provider: 'resend' | 'brevo' | 'console';
+  apiKey: string;
+  /** Direccion verificada desde la que salen los codigos. */
+  from: string;
+  fromName: string;
+}
+
 export interface Config {
   env: 'production' | 'development' | 'test';
   port: number;
@@ -10,6 +27,16 @@ export interface Config {
   staticDir: string;
   testEndpoints: boolean;
   demoAccounts: boolean;
+  /** Entrar con usuario y contrasena (cuentas locales). Apagarlo deja solo Google, correo e invitado. */
+  passwordAuth: boolean;
+  /** Entrar como invitado, sin cuenta. */
+  guestLogin: boolean;
+  /** Direccion publica del sitio (para el regreso de Google). En Render la pone la plataforma. */
+  publicUrl: string | null;
+  /** Dias que dura la sesion. */
+  sessionDays: number;
+  google: GoogleConfig | null;
+  email: EmailConfig | null;
   trustProxy: number | boolean;
   /** Detras de Cloudflare (Render) la IP real viene en CF-Connecting-IP. */
   trustCloudflare: boolean;
@@ -26,6 +53,10 @@ export interface Config {
   limits: {
     login: number;
     register: number;
+    guest: number;
+    oauth: number;
+    emailSend: number;
+    emailVerify: number;
     seed: number;
     telemetry: number;
   };
@@ -34,12 +65,46 @@ export interface Config {
 export const DEMO_PASSWORD = 'CyberGrid26';
 export const DEMO_USERS = ['demo1', 'demo2', 'demo3', 'demo4'] as const;
 
+function bool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === '') return fallback;
+  return value !== 'false' && value !== '0';
+}
+
+function loadGoogle(): GoogleConfig | null {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return null;
+  return {
+    clientId,
+    clientSecret,
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+  };
+}
+
+function loadEmail(env: Config['env']): EmailConfig | null {
+  const provider = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
+  const from = process.env.EMAIL_FROM?.trim() ?? '';
+  const apiKey = process.env.EMAIL_API_KEY?.trim() ?? '';
+  const fromName = process.env.EMAIL_FROM_NAME?.trim() || 'CyberGrid Gato Royale';
+  if (provider === 'console' && env !== 'production')
+    return { provider: 'console', apiKey: '', from: 'no-reply@localhost', fromName };
+  if ((provider === 'resend' || provider === 'brevo') && apiKey && from)
+    return { provider, apiKey, from, fromName };
+  return null;
+}
+
 function int(value: string | undefined, fallback: number): number {
   const n = Number.parseInt(value ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function loadConfig(overrides: Partial<Config> = {}): Config {
+export type ConfigOverrides = Omit<Partial<Config>, 'limits'> & {
+  limits?: Partial<Config['limits']>;
+};
+
+export function loadConfig(overrides: ConfigOverrides = {}): Config {
   const env = (process.env.NODE_ENV as Config['env'] | undefined) ?? 'development';
   const secret = process.env.SESSION_SECRET;
   if (env === 'production' && !secret) {
@@ -53,6 +118,13 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     staticDir: process.env.STATIC_DIR ?? resolve('dist/client'),
     testEndpoints: process.env.ENABLE_TEST_ENDPOINTS !== 'false',
     demoAccounts: process.env.DEMO_ACCOUNTS !== 'false',
+    passwordAuth: bool(process.env.PASSWORD_AUTH, true),
+    guestLogin: bool(process.env.GUEST_LOGIN, true),
+    publicUrl:
+      (process.env.PUBLIC_URL ?? process.env.RENDER_EXTERNAL_URL)?.replace(/\/+$/, '') || null,
+    sessionDays: Math.min(90, Math.max(1, int(process.env.SESSION_DAYS, 30))),
+    google: loadGoogle(),
+    email: loadEmail(env),
     trustProxy: int(process.env.TRUST_PROXY, env === 'production' ? 2 : 0),
     trustCloudflare: process.env.TRUST_CLOUDFLARE
       ? process.env.TRUST_CLOUDFLARE === 'true'
@@ -67,6 +139,10 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
+      guest: int(process.env.LIMIT_GUEST, 40),
+      oauth: int(process.env.LIMIT_OAUTH, 40),
+      emailSend: int(process.env.LIMIT_EMAIL_SEND, 8),
+      emailVerify: int(process.env.LIMIT_EMAIL_VERIFY, 30),
       seed: int(process.env.LIMIT_SEED, 60),
       telemetry: int(process.env.LIMIT_TELEMETRY, 600),
     },

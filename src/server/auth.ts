@@ -2,18 +2,16 @@ import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:c
 import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { jwtVerify, SignJWT } from 'jose';
 import { credentialsSchema } from '../shared/br/protocol';
+import { nicknameSchema, randomNickname } from '../shared/nickname';
 import type { Config } from './config';
 import type { Repo } from './db';
+import { emailRouter } from './emailLogin';
+import { googleRouter } from './google';
+import type { Mailer } from './mailer';
+import { publicUser, SESSION_COOKIE, sessionFromHeader, startSession } from './session';
 
-export const SESSION_COOKIE = 'cg_session';
-const SESSION_DAYS = 7;
-
-export interface SessionUser {
-  id: number;
-  username: string;
-}
+export { SESSION_COOKIE, sessionFromHeader, type SessionUser } from './session';
 
 // scrypt con N=2^15 usa ~32 MiB. Se limita a 2 hashes simultaneos para que un pico de logins
 // no deje sin CPU al bucle del juego en una instancia pequena.
@@ -92,69 +90,6 @@ function getDummyHash(): Promise<string> {
   return dummyHash;
 }
 
-export function parseCookies(header: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!header) return out;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0) continue;
-    const key = part.slice(0, eq).trim();
-    const value = part.slice(eq + 1).trim();
-    if (key && !(key in out)) {
-      try {
-        out[key] = decodeURIComponent(value);
-      } catch {
-        out[key] = value;
-      }
-    }
-  }
-  return out;
-}
-
-const secretKey = (secret: string): Uint8Array => new TextEncoder().encode(secret);
-
-export async function createSessionToken(secret: string, user: SessionUser): Promise<string> {
-  return new SignJWT({ name: user.username })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(String(user.id))
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_DAYS}d`)
-    .sign(secretKey(secret));
-}
-
-export async function readSessionToken(
-  secret: string,
-  token: string | undefined,
-): Promise<SessionUser | null> {
-  if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, secretKey(secret), { algorithms: ['HS256'] });
-    const id = Number(payload.sub);
-    const name = payload.name;
-    if (!Number.isInteger(id) || typeof name !== 'string') return null;
-    return { id, username: name };
-  } catch {
-    return null;
-  }
-}
-
-export function sessionFromHeader(
-  secret: string,
-  cookieHeader: string | undefined,
-): Promise<SessionUser | null> {
-  return readSessionToken(secret, parseCookies(cookieHeader)[SESSION_COOKIE]);
-}
-
-function setSessionCookie(res: Response, config: Config, token: string): void {
-  res.cookie(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: config.env === 'production',
-    maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
-    path: '/',
-  });
-}
-
 /** Rechaza peticiones con cabecera Origin de otro sitio (defensa extra contra CSRF). */
 export function sameOrigin(req: Request, res: Response, next: NextFunction): void {
   const origin = req.headers.origin;
@@ -181,9 +116,20 @@ function requireJson(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-export function authRouter(deps: { repo: Repo; config: Config }): Router {
+export function authRouter(deps: { repo: Repo; config: Config; mailer?: Mailer | null }): Router {
   const { repo, config } = deps;
+  const mailer = deps.mailer ?? null;
   const router = Router();
+
+  // Las respuestas de acceso nunca se guardan en cache del navegador ni de un intermediario.
+  router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+  router.use((req, res, next) => {
+    if (req.method === 'POST') requireJson(req, res, next);
+    else next();
+  });
 
   const tooMany = {
     error: 'demasiados_intentos',
@@ -205,6 +151,13 @@ export function authRouter(deps: { repo: Repo; config: Config }): Router {
     legacyHeaders: false,
     message: tooMany,
   });
+  const guestLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: config.limits.guest,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: tooMany,
+  });
 
   const invalid = (res: Response, issues: { path: PropertyKey[]; message: string }[]): void => {
     res.status(400).json({
@@ -213,8 +166,59 @@ export function authRouter(deps: { repo: Repo; config: Config }): Router {
       detalles: issues.map((i) => ({ campo: i.path.join('.'), mensaje: i.message })),
     });
   };
+  const disabled = (res: Response): void => {
+    res
+      .status(404)
+      .json({ error: 'no_disponible', mensaje: 'Esta forma de entrar no está activa' });
+  };
 
-  router.post('/register', registerLimiter, requireJson, async (req, res) => {
+  /** Que formas de entrar ofrece este servidor: la pantalla de acceso se arma con esto. */
+  router.get('/config', (_req, res) => {
+    res.json({
+      google: config.google !== null,
+      email: config.email !== null && mailer !== null,
+      guest: config.guestLogin,
+      password: config.passwordAuth,
+    });
+  });
+
+  if (config.google) router.use('/google', googleRouter(config, config.google));
+  if (config.email && mailer) router.use('/email', emailRouter(config, mailer));
+
+  router.post('/guest', guestLimiter, async (req, res) => {
+    if (!config.guestLogin) return disabled(res);
+    const wanted = (req.body as { nickname?: unknown } | undefined)?.nickname;
+    let name = randomNickname();
+    if (typeof wanted === 'string' && wanted.trim()) {
+      const parsed = nicknameSchema.safeParse(wanted);
+      if (!parsed.success) return invalid(res, parsed.error.issues);
+      name = parsed.data;
+    }
+    const sub = `guest:${randomBytes(12).toString('base64url')}`;
+    const user = await startSession(res, config, { sub, name, provider: 'guest' });
+    res.status(201).json({ user: publicUser(user) });
+  });
+
+  router.post('/nickname', async (req, res) => {
+    const current = await sessionFromHeader(config.sessionSecret, req.headers.cookie);
+    if (!current) {
+      res.status(401).json({ error: 'sin_sesion', mensaje: 'No has iniciado sesión' });
+      return;
+    }
+    const parsed = nicknameSchema.safeParse(
+      (req.body as { nickname?: unknown } | undefined)?.nickname,
+    );
+    if (!parsed.success) return invalid(res, parsed.error.issues);
+    const user = await startSession(res, config, {
+      sub: current.sub,
+      name: parsed.data,
+      provider: current.provider,
+    });
+    res.json({ user: publicUser(user) });
+  });
+
+  router.post('/register', registerLimiter, async (req, res) => {
+    if (!config.passwordAuth) return disabled(res);
     const parsed = credentialsSchema.safeParse(req.body);
     if (!parsed.success) return invalid(res, parsed.error.issues);
     const { username, password } = parsed.data;
@@ -227,11 +231,16 @@ export function authRouter(deps: { repo: Repo; config: Config }): Router {
       res.status(409).json({ error: 'usuario_en_uso', mensaje: 'Ese usuario ya existe' });
       return;
     }
-    setSessionCookie(res, config, await createSessionToken(config.sessionSecret, { id, username }));
-    res.status(201).json({ user: { id, username } });
+    const user = await startSession(res, config, {
+      sub: `local:${id}`,
+      name: username,
+      provider: 'local',
+    });
+    res.status(201).json({ user: publicUser(user) });
   });
 
-  router.post('/login', loginLimiter, requireJson, async (req, res) => {
+  router.post('/login', loginLimiter, async (req, res) => {
+    if (!config.passwordAuth) return disabled(res);
     const parsed = credentialsSchema.safeParse(req.body);
     if (!parsed.success) {
       res
@@ -248,9 +257,12 @@ export function authRouter(deps: { repo: Repo; config: Config }): Router {
         .json({ error: 'credenciales_invalidas', mensaje: 'Usuario o contraseña incorrectos' });
       return;
     }
-    const user = { id: row.id, username: row.username };
-    setSessionCookie(res, config, await createSessionToken(config.sessionSecret, user));
-    res.json({ user });
+    const user = await startSession(res, config, {
+      sub: `local:${row.id}`,
+      name: row.username,
+      provider: 'local',
+    });
+    res.json({ user: publicUser(user) });
   });
 
   router.post('/logout', (_req, res) => {
@@ -264,7 +276,7 @@ export function authRouter(deps: { repo: Repo; config: Config }): Router {
       res.status(401).json({ error: 'sin_sesion', mensaje: 'No has iniciado sesión' });
       return;
     }
-    res.json({ user });
+    res.json({ user: publicUser(user) });
   });
 
   return router;
