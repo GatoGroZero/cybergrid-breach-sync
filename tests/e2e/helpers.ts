@@ -4,6 +4,8 @@ interface DebugGame {
   x: number;
   y: number;
   map: { w: number; h: number; solid: Uint8Array; chests: { x: number; y: number }[] };
+  /** [id, x, y, tipo (0 cofre, 1 dorado, 2 lapida, 3 objeto), abierto, objeto] */
+  boxes: [number, number, number, number, number, number][];
 }
 
 export const PASSWORD = 'clave-e2e-segura';
@@ -130,24 +132,35 @@ export async function walkTo(page: Page, tx: number, ty: number, near = 20): Pro
   );
 }
 
-/** El cofre mas cercano al gato que no este en la lista de descartados (se identifica por su lugar). */
+/**
+ * El cofre mas cercano que todavia sigue cerrado segun lo que el servidor reporta cerca del gato
+ * (los bots abren cofres desde el primer segundo). Si no hay ninguno a la vista, usa el mapa.
+ */
 export async function nearestChest(
   page: Page,
   skip: { x: number; y: number }[] = [],
 ): Promise<{ x: number; y: number }> {
   return page.evaluate((skipList) => {
     const g = (window as unknown as { __game: DebugGame }).__game;
-    let best: { x: number; y: number } | null = null;
-    let bestD = Infinity;
-    for (const c of g.map.chests) {
-      if (skipList.some((s) => s.x === c.x && s.y === c.y)) continue;
-      const d = Math.hypot(c.x - g.x, c.y - g.y);
-      if (d < bestD) {
-        bestD = d;
-        best = { x: c.x, y: c.y };
+    const skipped = (c: { x: number; y: number }): boolean =>
+      skipList.some((s) => s.x === c.x && s.y === c.y);
+    const pick = (list: { x: number; y: number }[]): { x: number; y: number } | null => {
+      let best: { x: number; y: number } | null = null;
+      let bestD = Infinity;
+      for (const c of list) {
+        if (skipped(c)) continue;
+        const d = Math.hypot(c.x - g.x, c.y - g.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: c.x, y: c.y };
+        }
       }
-    }
-    return best as { x: number; y: number };
+      return best;
+    };
+    const closed = g.boxes
+      .filter((b) => (b[3] === 0 || b[3] === 1) && b[4] === 0)
+      .map((b) => ({ x: b[1], y: b[2] }));
+    return pick(closed) ?? (pick(g.map.chests) as { x: number; y: number });
   }, skip);
 }
 

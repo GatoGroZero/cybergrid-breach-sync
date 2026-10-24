@@ -86,6 +86,8 @@ export class BotBrain {
   private readonly boldness: number;
   private readonly sight: number;
   private idleUntil = 0;
+  private readonly startDelay: number;
+  private rummageUntil = 0;
   private provokedUntil = 0;
 
   constructor(
@@ -97,6 +99,7 @@ export class BotBrain {
     this.reaction = rng.range(0.35, 0.75);
     this.boldness = rng.range(0.15, 1);
     this.sight = rng.range(110, 170);
+    this.startDelay = rng.range(1.5, 7);
     this.lastX = cat.x;
     this.lastY = cat.y;
   }
@@ -114,7 +117,9 @@ export class BotBrain {
       this.equipBest();
     }
     c.moving = false;
-    if (c.hurtUntil > now) this.provokedUntil = now + 6;
+    if (c.hurtUntil > now) this.provokedUntil = now + 4;
+    // Los bots tardan un poco en reaccionar al empezar: el jugador tambien llega a los primeros cofres.
+    if (now < this.startDelay) return;
 
     const z = g.zone;
     const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
@@ -145,7 +150,13 @@ export class BotBrain {
       return;
     }
 
-    // 3) pelear, solo si conviene: no todos los gatos buscan pleito
+    // 3) con poca vida y sin curas, huir en vez de pelear a muerte
+    if (enemy && enemy.alive && c.hp + c.shield < 38 && enemyClose && !this.canHeal()) {
+      this.flee(enemy, dt);
+      return;
+    }
+
+    // 3b) pelear, solo si conviene: no todos los gatos buscan pleito
     if (enemy && enemy.alive && this.wantsFight(enemy)) {
       this.fight(enemy, dt);
       return;
@@ -154,6 +165,26 @@ export class BotBrain {
     // 4) buscar botin y 5) merodear cerca del centro de la zona
     if (this.loot(dt)) return;
     this.roam(dt);
+  }
+
+  private canHeal(): boolean {
+    return this.cat.inv.some((it) => it && (it.kind === 'medkit' || it.kind === 'shield'));
+  }
+
+  /** Corre en sentido contrario al enemigo, hacia el centro de la zona si se puede. */
+  private flee(enemy: Cat, dt: number): void {
+    const g = this.game;
+    const c = this.cat;
+    const away = Math.atan2(c.y - enemy.y, c.x - enemy.x);
+    const z = g.zone.circle;
+    const toZone = Math.atan2(z.cy - c.y, z.cx - c.x);
+    const a =
+      Math.abs(Math.atan2(Math.sin(toZone - away), Math.cos(toZone - away))) < 1.2 ? toZone : away;
+    const before = { x: c.x, y: c.y };
+    stepCat(g.map, c, { mx: Math.cos(a), my: Math.sin(a) }, dt);
+    c.moving = Math.hypot(c.x - before.x, c.y - before.y) > 0.05;
+    this.aimAt(enemy, g.time);
+    g.fireControl(c, c.aim, false, false);
   }
 
   /** Decide si vale la pena pelear: con arma y valor sí; sin arma solo en defensa propia o a quemarropa. */
@@ -291,6 +322,13 @@ export class BotBrain {
       return false;
     }
     if (dist(c.x, c.y, box.x, box.y) <= CAT.interactRange - 6) {
+      // Revolver el cofre toma un momento.
+      if (this.rummageUntil === 0) this.rummageUntil = g.time + this.rng.range(0.5, 1.4);
+      if (g.time < this.rummageUntil) {
+        c.moving = false;
+        return true;
+      }
+      this.rummageUntil = 0;
       const contents = g.interact(c.id) as Contents | null;
       if (contents) this.takeUseful(contents);
       this.done.add(box.id);
