@@ -14,7 +14,7 @@ import {
 } from '../shared/constants';
 import { isWallTile } from '../shared/map';
 import { colorOf, type ClientGame, type DroneView } from './game';
-import { actionCircle, joystickCircle, slotCircle, type Input } from './input';
+import { actionCircle, slotCircle, type Input } from './input';
 
 const C = {
   bg: '#04060c',
@@ -57,6 +57,8 @@ export class Renderer {
   private dpr = 1;
   /** Escala de resolucion (0.5 a 1). Baja sola si no se sostienen los 60 FPS. */
   quality = 1;
+  /** Margenes seguros del dispositivo (muesca, esquinas, barra inferior). */
+  safe = { l: 0, r: 0, t: 0, b: 0 };
   cssW = 960;
   cssH = 540;
   private readonly glows = new Map<string, HTMLCanvasElement>();
@@ -93,7 +95,8 @@ export class Renderer {
     const bh = Math.round(h * dpr);
     if (this.canvas.width !== bw) this.canvas.width = bw;
     if (this.canvas.height !== bh) this.canvas.height = bh;
-    this.input.layout = { w, h };
+    this.safe = this.measureSafeArea();
+    this.input.layout = { w, h, ...this.safe };
     this.minimapW = w < 700 ? 120 : 168;
     this.minimapH = Math.round((this.minimapW * MAP_H) / MAP_W);
     this.minimapSeed = -1;
@@ -104,6 +107,20 @@ export class Renderer {
     if (next === this.quality) return;
     this.quality = next;
     this.resize();
+  }
+
+  /** Lee los margenes seguros con un elemento oculto que usa env(safe-area-inset-*). */
+  private measureSafeArea(): { l: number; r: number; t: number; b: number } {
+    const probe = document.getElementById('safe-probe');
+    if (!probe) return { l: 0, r: 0, t: 0, b: 0 };
+    const cs = window.getComputedStyle(probe);
+    const px = (v: string): number => Math.max(0, Number.parseFloat(v) || 0);
+    return {
+      l: px(cs.paddingLeft),
+      r: px(cs.paddingRight),
+      t: px(cs.paddingTop),
+      b: px(cs.paddingBottom),
+    };
   }
 
   /** Pantalla de espera mientras no hay partida. */
@@ -223,7 +240,6 @@ export class Renderer {
     if (fx.hurtFlash > 0) this.drawHurt(fx.hurtFlash);
     if (this.input.mode === 'touch') {
       this.drawTouchControls(game);
-      if (this.cssH > this.cssW) this.drawRotateHint();
     }
   }
 
@@ -647,6 +663,8 @@ export class Renderer {
     const hpNow = snap?.pl.find((p) => p[0] === game.you)?.[3] ?? PLAYER.maxHp;
     const lives = snap?.pl.find((p) => p[0] === game.you)?.[6] ?? PLAYER.respawns;
     const pw = compact ? 150 : 200;
+    ctx.save();
+    ctx.translate(this.safe.l, this.safe.t);
     this.panel(pad, pad, pw, compact ? 48 : 58);
     ctx.textAlign = 'left';
     ctx.font = '700 12px Rajdhani, sans-serif';
@@ -675,7 +693,11 @@ export class Renderer {
       ctx.fillText(`ARMA Nv ${snap?.wl ?? 0}`, pad + pw - 10, pad + 49);
     }
 
+    ctx.restore();
+
     // --- objetivo y reloj (centro)
+    ctx.save();
+    ctx.translate(0, this.safe.t);
     const open = snap ? snap.nd.filter((n) => n[1] === 1).length : 0;
     const exitOpen = (snap?.ex[0] ?? 0) === 1;
     const clock = snap?.clock ?? 0;
@@ -699,19 +721,29 @@ export class Renderer {
     );
 
     this.drawMinimap(game, players, pad);
-    this.drawInventory(game);
 
     // --- aviso temporal
     const banner = game.banner;
     if (banner && banner.until > now) {
       const a = Math.min(1, (banner.until - now) / 500);
       ctx.globalAlpha = a;
-      ctx.font = `700 ${compact ? 15 : 20}px Orbitron, sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = banner.tone === 'good' ? C.green : banner.tone === 'bad' ? C.red : C.cyan;
-      ctx.fillText(banner.text.toUpperCase(), this.cssW / 2, pad + (compact ? 78 : 96));
+      const text = banner.text.toUpperCase();
+      // El aviso se encoge hasta caber entre el minimapa y el panel de vida.
+      const room = this.cssW - 2 * (this.minimapW + 2 * pad + Math.max(this.safe.l, this.safe.r));
+      let size = this.cssH < 460 ? 15 : compact ? 15 : 20;
+      ctx.font = `700 ${size}px Orbitron, sans-serif`;
+      while (size > 10 && ctx.measureText(text).width > Math.max(160, room)) {
+        size -= 1;
+        ctx.font = `700 ${size}px Orbitron, sans-serif`;
+      }
+      ctx.fillText(text, this.cssW / 2, pad + (this.cssH < 460 ? 74 : compact ? 78 : 96));
       ctx.globalAlpha = 1;
     }
+
+    ctx.restore();
+    this.drawInventory(game);
 
     // --- fuera de linea
     if (game.dead && !game.result) {
@@ -759,7 +791,7 @@ export class Renderer {
       this.minimap = off;
       this.minimapSeed = game.map.seed;
     }
-    const x = this.cssW - mw - pad;
+    const x = this.cssW - mw - pad - this.safe.r;
     const y = pad;
     ctx.drawImage(this.minimap, x, y);
     ctx.strokeStyle = 'rgba(25, 242, 255, 0.4)';
@@ -789,38 +821,75 @@ export class Renderer {
     }
   }
 
+  /** Icono de cada objeto, dibujado alrededor del origen actual. */
+  private drawItemIcon(kind: number, color: string, scale: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    if (ITEM_KINDS[kind] === 'patch') {
+      ctx.fillRect(-2.5, -8, 5, 16);
+      ctx.fillRect(-8, -2.5, 16, 5);
+    } else if (ITEM_KINDS[kind] === 'overclock') {
+      ctx.beginPath();
+      ctx.moveTo(3, -9);
+      ctx.lineTo(-5, 1);
+      ctx.lineTo(0, 1);
+      ctx.lineTo(-3, 9);
+      ctx.lineTo(6, -2);
+      ctx.lineTo(1, -2);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawInventory(game: ClientGame): void {
     const ctx = this.ctx;
     const inv = game.inventory;
     const touch = this.input.mode === 'touch';
+    const layout = this.input.layout;
     for (let i = 0; i < 3; i++) {
       let cx: number;
       let cy: number;
       let r: number;
       if (touch) {
-        const c = slotCircle({ w: this.cssW, h: this.cssH }, i);
+        const c = slotCircle(layout, i);
         cx = c.x;
         cy = c.y;
         r = c.r;
       } else {
         r = 24;
         cx = this.cssW / 2 + (i - 1) * 60;
-        cy = this.cssH - 44;
+        cy = this.cssH - 44 - this.safe.b;
       }
       const item = inv[i] ?? -1;
-      const color = item >= 0 ? (ITEM_COLOR[item] ?? C.green) : 'rgba(255,255,255,0.18)';
-      ctx.fillStyle = 'rgba(4, 8, 18, 0.72)';
+      const color = item >= 0 ? (ITEM_COLOR[item] ?? C.green) : 'rgba(255,255,255,0.22)';
+      ctx.fillStyle = item >= 0 ? 'rgba(4, 8, 18, 0.82)' : 'rgba(4, 8, 18, 0.5)';
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = color;
-      ctx.lineWidth = item >= 0 ? 2 : 1;
+      ctx.lineWidth = item >= 0 ? 2.5 : 1.2;
       ctx.stroke();
       ctx.textAlign = 'center';
       if (item >= 0) {
+        ctx.save();
+        ctx.translate(cx, cy - (touch ? 5 : 3));
+        this.drawItemIcon(item, color, touch ? 1.3 : 1.1);
+        ctx.restore();
         ctx.fillStyle = color;
-        ctx.font = '700 10px Rajdhani, sans-serif';
-        ctx.fillText(ITEM_NAME[item] ?? '', cx, cy + 4);
+        ctx.font = `700 ${touch ? 11 : 10}px Rajdhani, sans-serif`;
+        ctx.fillText(ITEM_NAME[item] ?? '', cx, cy + r * 0.62);
       }
       if (!touch) {
         ctx.fillStyle = C.dim;
@@ -859,16 +928,25 @@ export class Renderer {
     if (sx > margin && sx < this.cssW - margin && sy > margin && sy < this.cssH - margin) return;
 
     const ctx = this.ctx;
+    const touch = this.input.mode === 'touch';
     const cx = this.cssW / 2;
     const cy = this.cssH / 2;
     const dx = sx - cx;
     const dy = sy - cy;
-    const k = Math.min(
-      (cx - margin) / Math.max(Math.abs(dx), 1e-6),
-      (cy - margin - 40) / Math.max(Math.abs(dy), 1e-6),
-    );
+    // Limites de la flecha: lejos del HUD arriba y de los controles tactiles abajo.
+    const left = this.safe.l + margin;
+    const right = this.cssW - this.safe.r - margin;
+    const top = this.safe.t + 96;
+    const bottom = this.cssH - this.safe.b - 70;
+    const kx = dx > 0 ? (right - cx) / dx : dx < 0 ? (left - cx) / dx : Infinity;
+    const ky = dy > 0 ? (bottom - cy) / dy : dy < 0 ? (top - cy) / dy : Infinity;
+    const k = Math.min(kx, ky);
     const ax = cx + dx * k;
-    const ay = cy + dy * k;
+    let ay = cy + dy * k;
+    // En el telefono se evita que la flecha caiga sobre el joystick o sobre los botones.
+    if (touch && ay > this.cssH - 215 && (ax < 300 || ax > this.cssW - 340)) {
+      ay = Math.max(top, this.cssH - 215);
+    }
     const ang = Math.atan2(dy, dx);
     const color = exitOpen ? C.magenta : C.amber;
     ctx.save();
@@ -889,16 +967,8 @@ export class Renderer {
     ctx.font = '700 12px Rajdhani, sans-serif';
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.95;
-    ctx.fillText(`${label} · ${meters} m`, ax - Math.cos(ang) * 38, ay - Math.sin(ang) * 26 + 4);
+    ctx.fillText(`${label} · ${meters} m`, ax - Math.cos(ang) * 50, ay - Math.sin(ang) * 28 + 4);
     ctx.globalAlpha = 1;
-  }
-
-  private drawRotateHint(): void {
-    const ctx = this.ctx;
-    ctx.textAlign = 'center';
-    ctx.font = '700 14px Rajdhani, sans-serif';
-    ctx.fillStyle = C.amber;
-    ctx.fillText('Gira el teléfono para jugar mejor', this.cssW / 2, 96);
   }
 
   private drawReconnecting(): void {
@@ -927,16 +997,16 @@ export class Renderer {
     ctx.fillRect(0, 0, this.cssW, this.cssH);
   }
 
-  /** Joystick abajo a la izquierda y boton de accion abajo a la derecha, dibujados en el canvas. */
+  /** Joystick (flotante, por defecto abajo a la izquierda) y boton de fuego abajo a la derecha. */
   private drawTouchControls(game: ClientGame): void {
     void game;
     const ctx = this.ctx;
-    const layout = { w: this.cssW, h: this.cssH };
-    const stick = joystickCircle(layout);
+    const layout = this.input.layout;
+    const stick = this.input.stickBase();
     const action = actionCircle(layout);
     const s = this.input.stick;
 
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = s.active ? 0.7 : 0.5;
     ctx.lineWidth = 2;
     ctx.strokeStyle = C.cyan;
     ctx.fillStyle = 'rgba(25, 242, 255, 0.08)';
@@ -948,24 +1018,25 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(stick.x, stick.y, stick.r * 0.45, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = s.active ? 0.85 : 0.5;
+    ctx.globalAlpha = s.active ? 0.9 : 0.5;
     ctx.fillStyle = C.cyan;
     ctx.beginPath();
     ctx.arc(stick.x + s.x * stick.r, stick.y + s.y * stick.r, stick.r * 0.42, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.globalAlpha = this.input.actionHeld ? 0.85 : 0.5;
+    ctx.globalAlpha = this.input.actionHeld ? 0.9 : 0.55;
     ctx.strokeStyle = C.magenta;
-    ctx.fillStyle = this.input.actionHeld ? 'rgba(255, 43, 214, 0.5)' : 'rgba(255, 43, 214, 0.12)';
+    ctx.lineWidth = 2.5;
+    ctx.fillStyle = this.input.actionHeld ? 'rgba(255, 43, 214, 0.5)' : 'rgba(255, 43, 214, 0.14)';
     ctx.beginPath();
     ctx.arc(action.x, action.y, action.r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.95;
     ctx.fillStyle = C.text;
-    ctx.font = '700 13px Rajdhani, sans-serif';
+    ctx.font = '700 15px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('FUEGO', action.x, action.y + 4);
+    ctx.fillText('FUEGO', action.x, action.y + 5);
     ctx.globalAlpha = 1;
   }
 }

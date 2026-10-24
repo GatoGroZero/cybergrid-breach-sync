@@ -4,6 +4,11 @@ export interface Layout {
   /** Tamano de la pantalla en pixeles CSS. */
   w: number;
   h: number;
+  /** Margenes seguros (muesca, esquinas redondeadas y barra inferior del iPhone). */
+  l: number;
+  r: number;
+  t: number;
+  b: number;
 }
 
 export interface Circle {
@@ -12,21 +17,30 @@ export interface Circle {
   r: number;
 }
 
-/** Geometria de los controles tactiles. Se dibujan en el canvas y se leen con Pointer Events. */
+const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+
+/**
+ * Geometria de los controles tactiles. Se dibujan en el canvas y se leen con Pointer Events.
+ * El joystick vive por defecto abajo a la izquierda, pero es flotante: aparece donde apoyas el
+ * pulgar dentro de la mitad izquierda de la pantalla.
+ */
 export function joystickCircle(l: Layout): Circle {
-  const r = Math.max(46, Math.min(74, l.h * 0.13));
-  return { x: r + 34, y: l.h - r - 34, r };
+  const r = clamp(l.h * 0.15, 52, 80);
+  return { x: l.l + r + 40, y: l.h - l.b - r - 32, r };
 }
 
 export function actionCircle(l: Layout): Circle {
-  const r = Math.max(40, Math.min(58, l.h * 0.1));
-  return { x: l.w - r - 38, y: l.h - r - 38, r };
+  const r = clamp(l.h * 0.12, 46, 64);
+  return { x: l.w - l.r - r - 42, y: l.h - l.b - r - 32, r };
 }
 
+/** Los tres objetos forman un arco alrededor del boton de fuego, al alcance del mismo pulgar. */
 export function slotCircle(l: Layout, i: number): Circle {
   const a = actionCircle(l);
-  const r = 24;
-  return { x: a.x - a.r - 40 - i * 58, y: a.y + a.r - r - 6, r };
+  const r = clamp(l.h * 0.08, 28, 36);
+  const dist = a.r + r + 18;
+  const angle = Math.PI + (i * Math.PI) / 4;
+  return { x: a.x + Math.cos(angle) * dist, y: a.y + Math.sin(angle) * dist, r };
 }
 
 const inCircle = (c: Circle, x: number, y: number, pad = 1): boolean =>
@@ -47,11 +61,13 @@ export class Input {
   mode: ControlMode;
   /** Solo reacciona a teclas y toques mientras hay una partida en curso. */
   active = false;
-  layout: Layout = { w: 960, h: 540 };
+  layout: Layout = { w: 960, h: 540, l: 0, r: 0, t: 0, b: 0 };
   /** Posicion del raton en pixeles CSS dentro del canvas, o null si no se ha usado. */
   mouse: { x: number; y: number } | null = null;
   /** Posicion del joystick y estado visual de los controles tactiles. */
   stick = { x: 0, y: 0, active: false };
+  /** Centro del joystick mientras esta apoyado el pulgar (flotante). */
+  private stickOrigin: { x: number; y: number } | null = null;
   actionHeld = false;
 
   private readonly keys = new Set<string>();
@@ -102,6 +118,7 @@ export class Input {
 
   private releaseTouch(): void {
     this.stickPointer = null;
+    this.stickOrigin = null;
     this.actionPointer = null;
     this.stick = { x: 0, y: 0, active: false };
     this.actionHeld = false;
@@ -163,19 +180,27 @@ export class Input {
       this.setMode('touch');
       e.preventDefault();
       this.canvas.setPointerCapture?.(e.pointerId);
-      const stick = joystickCircle(this.layout);
-      const action = actionCircle(this.layout);
+      const L = this.layout;
+      const action = actionCircle(L);
       for (let i = 0; i < 3; i++) {
-        if (inCircle(slotCircle(this.layout, i), p.x, p.y, 1.2)) {
+        if (inCircle(slotCircle(L, i), p.x, p.y, 1.35)) {
           this.pendingUse.push(i);
+          this.buzz(10);
           return;
         }
       }
-      if (this.actionPointer === null && inCircle(action, p.x, p.y, 1.35)) {
+      const onAction = inCircle(action, p.x, p.y, 1.7) || (p.x > L.w * 0.6 && p.y > L.h * 0.42);
+      if (this.actionPointer === null && onAction) {
         this.actionPointer = e.pointerId;
         this.actionHeld = true;
-      } else if (this.stickPointer === null && inCircle(stick, p.x, p.y, 1.9)) {
+        this.buzz(8);
+      } else if (this.stickPointer === null && p.x < L.w * 0.46 && p.y > L.h * 0.2) {
         this.stickPointer = e.pointerId;
+        const base = joystickCircle(L);
+        this.stickOrigin = {
+          x: clamp(p.x, L.l + base.r + 8, L.w * 0.46),
+          y: clamp(p.y, L.h * 0.34, L.h - L.b - base.r - 8),
+        };
         this.updateStick(p.x, p.y);
       }
       return;
@@ -185,8 +210,14 @@ export class Input {
     if (e.button === 0) this.mouseDown = true;
   };
 
+  /** Circulo actual del joystick: donde esta el pulgar, o la esquina cuando esta libre. */
+  stickBase(): Circle {
+    const base = joystickCircle(this.layout);
+    return this.stickOrigin ? { ...base, x: this.stickOrigin.x, y: this.stickOrigin.y } : base;
+  }
+
   private updateStick(x: number, y: number): void {
-    const c = joystickCircle(this.layout);
+    const c = this.stickBase();
     let dx = (x - c.x) / c.r;
     let dy = (y - c.y) / c.r;
     const len = Math.hypot(dx, dy);
@@ -195,6 +226,11 @@ export class Input {
       dy /= len;
     }
     this.stick = { x: dx, y: dy, active: true };
+  }
+
+  /** Vibracion corta donde el navegador la permite (Android). */
+  buzz(ms: number): void {
+    if (this.mode === 'touch' && typeof navigator.vibrate === 'function') navigator.vibrate(ms);
   }
 
   private readonly onPointerMove = (e: PointerEvent): void => {
@@ -213,6 +249,7 @@ export class Input {
     }
     if (e.pointerId === this.stickPointer) {
       this.stickPointer = null;
+      this.stickOrigin = null;
       this.stick = { x: 0, y: 0, active: false };
     }
     if (e.pointerId === this.actionPointer) {

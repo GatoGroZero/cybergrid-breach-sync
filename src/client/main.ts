@@ -52,6 +52,23 @@ let roomsTimer: number | null = null;
 let lastCountdown = -1;
 let toastTimer: number | null = null;
 
+// ---------------------------------------------------------------- pantalla completa en moviles
+
+const isTouchDevice = (): boolean =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+
+/** Android permite pantalla completa y bloquear la orientacion; iOS no, ahi se usa la pantalla de aviso. */
+function enterImmersive(): void {
+  if (!isTouchDevice()) return;
+  const root = document.documentElement;
+  if (typeof root.requestFullscreen !== 'function' || document.fullscreenElement) return;
+  const orientation = screen.orientation as unknown as { lock?: (o: string) => Promise<void> };
+  root
+    .requestFullscreen({ navigationUI: 'hide' })
+    .then(() => orientation.lock?.('landscape'))
+    .catch(() => undefined);
+}
+
 // ---------------------------------------------------------------- utilidades de interfaz
 
 function toast(message: string): void {
@@ -334,6 +351,7 @@ async function joinRoom(code: string): Promise<void> {
 
 $<HTMLFormElement>('create-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  enterImmersive();
   const name = $<HTMLInputElement>('room-name').value.trim();
   await createRoom($<HTMLInputElement>('room-private').checked, name);
 });
@@ -344,6 +362,7 @@ $<HTMLFormElement>('join-form').addEventListener('submit', async (event) => {
 });
 
 $('btn-solo').addEventListener('click', async () => {
+  enterImmersive();
   if (!net) return;
   if (await createRoom(true)) {
     await net.ack('room:ready', { ready: true });
@@ -359,6 +378,7 @@ $('btn-leave').addEventListener('click', async () => {
 });
 
 $('btn-ready').addEventListener('click', async () => {
+  enterImmersive();
   if (!net || !room || !user) return;
   const me = room.members.find((m) => m.userId === user?.id);
   await net.ack('room:ready', { ready: !me?.ready });
@@ -446,7 +466,7 @@ function startGame(payload: GameStartPayload): void {
   $('hud-mode').textContent = input.mode === 'touch' ? 'táctil' : 'teclado';
   sfx.go();
   game.banner = {
-    text: 'Abran los 3 nodos y luego sincronicen en la salida',
+    text: 'Abran 3 nodos y sincronicen en la salida',
     until: performance.now() + 5000,
     tone: 'info',
   };
