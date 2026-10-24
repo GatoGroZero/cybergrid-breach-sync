@@ -1,0 +1,86 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1c2c;
+  --card: #333c57;
+  --line: #566c86;
+  --text: #f4f4f4;
+  --dim: #94b0c2;
+  --yellow: #ffcd75;
+  --cyan: #73eff7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 24px 16px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    18px/1.6 ui-monospace,
+    'Cascadia Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--card);
+  border: 3px solid var(--line);
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  color: var(--yellow);
+}
+
+h2 {
+  margin: 28px 0 8px;
+  font-size: 20px;
+  color: var(--cyan);
+}
+
+p,
+li {
+  margin: 8px 0;
+}
+
+ul {
+  padding-left: 22px;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+a {
+  color: var(--cyan);
+}
+
+code {
+  padding: 0 4px;
+  background: var(--bg);
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 520px) {
+  body {
+    padding: 12px 8px 32px;
+    font-size: 17px;
+  }
+
+  main {
+    padding: 16px;
+  }
+}

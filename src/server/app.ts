@@ -71,6 +71,8 @@ export function createApp(deps: AppDeps): Express {
     app.use(
       express.static(config.staticDir, {
         index: false,
+        // /privacidad responde con privacidad.html.
+        extensions: ['html'],
         setHeaders: (res, path) => {
           const hashed = path.includes('/assets/');
           res.setHeader(

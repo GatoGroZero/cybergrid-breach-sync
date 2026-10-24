@@ -156,4 +156,26 @@ test.describe('Flujo 6: acceso con Google, correo e invitado', () => {
     await registerViaUi(page, uniqueName('e2e_loc'));
     await expect(page.getByTestId('nick-panel')).toBeHidden();
   });
+  test('la política de privacidad existe, se enlaza desde el acceso y cabe en el móvil', async ({
+    page,
+    request,
+  }) => {
+    const res = await request.get('/privacidad');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toContain('text/html');
+    expect(await res.text()).toContain('Política de privacidad');
+
+    await page.goto('/');
+    const link = page.getByTestId('link-privacidad');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', '/privacidad');
+    await page.goto('/privacidad');
+    await expect(page.getByRole('heading', { name: 'Política de privacidad' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Volver al juego' })).toBeVisible();
+    // Sin barra de desplazamiento horizontal en pantallas angostas.
+    await page.setViewportSize({ width: 360, height: 740 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
 });
