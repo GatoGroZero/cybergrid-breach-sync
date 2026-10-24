@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
-import { pingSchema, type PongPayload } from '../shared/protocol';
+import { pingSchema, type PongPayload } from '../shared/br/protocol';
 import { sessionFromHeader } from './auth';
 import type { Config } from './config';
 import type { Repo } from './db';
