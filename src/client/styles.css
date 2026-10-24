@@ -657,6 +657,18 @@ input::placeholder {
 
 /* ------------------------------------------------------------ partida: HUD y paneles */
 
+#hud-rtt[data-q='ok'] {
+  color: var(--lime);
+}
+
+#hud-rtt[data-q='warn'] {
+  color: var(--yellow);
+}
+
+#hud-rtt[data-q='bad'] {
+  color: #ff8fa3;
+}
+
 #hud {
   position: fixed;
   left: 50%;

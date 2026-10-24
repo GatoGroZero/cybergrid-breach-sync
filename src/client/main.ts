@@ -594,6 +594,8 @@ function updateHud(g: ClientBR, n: Net): void {
   }
   $('hud-fps').textContent = `${fps} FPS`;
   $('hud-rtt').textContent = n.connected ? `ping ${Math.round(n.rttMedian)} ms` : 'sin red';
+  $('hud-rtt').dataset.q =
+    !n.connected || n.rttMedian >= 160 ? 'bad' : n.rttMedian >= 100 ? 'warn' : 'ok';
   if (!specBar.hidden) {
     const spec = g.latest?.spectating;
     $('spec-name').textContent =

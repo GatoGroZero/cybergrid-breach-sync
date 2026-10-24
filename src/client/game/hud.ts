@@ -529,13 +529,14 @@ export class Hud {
       detail = `${def.damage[item.rarity]} dmg${def.pellets > 1 ? ' x' + def.pellets : ''}   ${ITEM_NAMES[def.ammo]}: ${ammo}`;
     } else {
       title = ITEM_NAMES[item.kind].toUpperCase();
+      const use = touch ? 'toca FUEGO' : 'clic';
       detail =
         item.kind === 'medkit'
-          ? '+10 vida por segundo'
+          ? `+10 vida por segundo, ${use} para usar`
           : item.kind === 'shield'
-            ? '+5 escudo por segundo'
+            ? `+5 escudo por segundo, ${use} para usar`
             : item.kind === 'wall'
-              ? 'Clic para colocar'
+              ? `${use} para colocar`
               : `Cantidad: ${item.qty}`;
     }
     ctx.font = `20px ${VT}`;

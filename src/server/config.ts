@@ -60,7 +60,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
     testKit: process.env.TEST_KIT === 'true' && env !== 'production',
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
-    version: '1.0.0',
+    version: '2.0.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
