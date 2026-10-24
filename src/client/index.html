@@ -2,11 +2,216 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>CyberGrid: Breach & Sync</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#04060c" />
+    <meta
+      name="description"
+      content="CyberGrid: Breach & Sync. Juego cooperativo en tiempo real con servidor autoritativo, WebSockets y Canvas 2D."
+    />
+    <title>CyberGrid: Breach &amp; Sync</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <main id="app">CyberGrid</main>
+    <canvas id="game" hidden aria-label="Área de juego de CyberGrid"></canvas>
+
+    <main id="screen-auth" class="screen" hidden data-testid="screen-auth">
+      <section class="card auth-card">
+        <h1 class="logo">CYBER<span>GRID</span></h1>
+        <p class="tagline">Breach &amp; Sync</p>
+        <div class="tabs" role="tablist" aria-label="Acceso">
+          <button
+            id="tab-login"
+            class="tab is-active"
+            role="tab"
+            aria-selected="true"
+            type="button"
+          >
+            Entrar
+          </button>
+          <button id="tab-register" class="tab" role="tab" aria-selected="false" type="button">
+            Crear cuenta
+          </button>
+        </div>
+        <form id="auth-form" novalidate>
+          <label class="field">
+            <span>Usuario</span>
+            <input
+              id="auth-user"
+              name="username"
+              data-testid="auth-user"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="20"
+              required
+            />
+          </label>
+          <label class="field">
+            <span>Contraseña</span>
+            <input
+              id="auth-pass"
+              name="password"
+              data-testid="auth-pass"
+              type="password"
+              autocomplete="current-password"
+              maxlength="128"
+              required
+            />
+          </label>
+          <p id="auth-error" class="error" role="alert" data-testid="auth-error"></p>
+          <button id="auth-submit" class="btn primary wide" type="submit" data-testid="auth-submit">
+            Entrar
+          </button>
+        </form>
+        <p class="hint">
+          Cuenta de prueba: <code>demo1</code> / <code>CyberGrid26</code>
+          <button id="fill-demo" class="link" type="button">usar</button>
+        </p>
+      </section>
+    </main>
+
+    <main id="screen-lobby" class="screen" hidden data-testid="screen-lobby">
+      <header class="topbar">
+        <h1 class="logo small">CYBER<span>GRID</span></h1>
+        <div class="topbar-right">
+          <span id="lobby-net" class="chip" data-testid="lobby-net" data-state="offline"
+            >sin conexión</span
+          >
+          <span id="lobby-user" class="chip user" data-testid="lobby-user"></span>
+          <button id="btn-logout" class="btn ghost" type="button">Salir</button>
+        </div>
+      </header>
+
+      <div id="lobby-browse" class="lobby-grid">
+        <section class="card">
+          <h2>Operaciones</h2>
+          <button id="btn-solo" class="btn primary wide big" type="button" data-testid="btn-solo">
+            Jugar solo
+          </button>
+          <p class="muted small">
+            Sala privada que empieza al instante. Ideal para probar el juego.
+          </p>
+          <hr />
+          <form id="create-form" novalidate>
+            <label class="field">
+              <span>Nombre de la sala</span>
+              <input id="room-name" data-testid="room-name" maxlength="24" placeholder="Mi sala" />
+            </label>
+            <label class="check">
+              <input id="room-private" data-testid="room-private" type="checkbox" />
+              <span>Privada (solo entra quien tenga el código)</span>
+            </label>
+            <button class="btn wide" type="submit" data-testid="btn-create">Crear sala</button>
+          </form>
+          <hr />
+          <form id="join-form" novalidate>
+            <label class="field">
+              <span>Unirse con código</span>
+              <input
+                id="join-code"
+                data-testid="join-code"
+                maxlength="5"
+                autocapitalize="characters"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="AB3CD"
+              />
+            </label>
+            <button class="btn wide" type="submit" data-testid="btn-join">Entrar a la sala</button>
+          </form>
+          <p id="lobby-error" class="error" role="alert" data-testid="lobby-error"></p>
+        </section>
+
+        <section class="card">
+          <h2>Salas públicas</h2>
+          <ul id="room-list" class="room-list" data-testid="room-list"></ul>
+          <p id="room-empty" class="muted">No hay salas públicas ahora mismo. Crea la primera.</p>
+          <hr />
+          <h3>Controles</h3>
+          <ul class="help">
+            <li>
+              <b>PC:</b> WASD o flechas para moverte, ratón para apuntar, clic o espacio para
+              disparar, teclas 1 a 3 para objetos, M para silenciar.
+            </li>
+            <li>
+              <b>Móvil:</b> joystick abajo a la izquierda, botón FUEGO abajo a la derecha. Los
+              controles aparecen solos.
+            </li>
+            <li>
+              <b>Objetivo:</b> abre los 3 nodos (BREACH) y luego lleven a todo el equipo a la salida
+              (SYNC).
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <section id="room-view" class="card room-card" hidden data-testid="room-view">
+        <div class="room-head">
+          <div>
+            <h2 id="room-title"></h2>
+            <p class="muted small" id="room-meta"></p>
+          </div>
+          <div class="room-code">
+            <span class="muted small">Código</span>
+            <strong id="room-code" data-testid="room-code"></strong>
+            <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
+          </div>
+        </div>
+        <ul id="member-list" class="member-list" data-testid="member-list"></ul>
+        <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
+        <div class="row">
+          <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
+            Estoy listo
+          </button>
+          <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
+            Salir de la sala
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <div id="hud" hidden data-testid="hud" aria-hidden="true">
+      <span id="hud-fps" data-testid="hud-fps">-- FPS</span>
+      <span id="hud-rtt" data-testid="hud-rtt">-- ms</span>
+      <span id="hud-coords" data-testid="hud-coords" data-x="0" data-y="0">0, 0</span>
+      <span id="hud-mode" data-testid="hud-mode">teclado</span>
+    </div>
+    <button id="btn-mute" class="mute" type="button" hidden aria-label="Silenciar o activar sonido">
+      Sonido
+    </button>
+
+    <div id="countdown" class="overlay" hidden data-testid="countdown">
+      <div class="count-number" id="count-number">3</div>
+      <p class="muted">La partida empieza en…</p>
+    </div>
+
+    <div id="results" class="overlay" hidden data-testid="results">
+      <section class="card results-card">
+        <h2 id="results-title" class="results-title"></h2>
+        <p id="results-sub" class="muted"></p>
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Jugador</th>
+              <th>Bajas</th>
+              <th>Caídas</th>
+              <th>Daño</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <button id="btn-back" class="btn primary wide" type="button" data-testid="btn-back">
+          Volver a la sala
+        </button>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" data-testid="toast"></div>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
