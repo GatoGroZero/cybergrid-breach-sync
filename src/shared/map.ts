@@ -132,7 +132,7 @@ function tryGenerate(seed: number, attemptSeed: number, w: number, h: number): G
   const tiles = new Uint8Array(w * h).fill(WALL);
   const rooms: Room[] = [];
 
-  for (let i = 0; i < 400 && rooms.length < 10; i++) {
+  for (let i = 0; i < 600 && rooms.length < 14; i++) {
     const rw = rng.int(7, 13);
     const rh = rng.int(6, 10);
     const room: Room = {
@@ -144,7 +144,7 @@ function tryGenerate(seed: number, attemptSeed: number, w: number, h: number): G
     if (rooms.some((other) => overlaps(room, other, 3))) continue;
     rooms.push(room);
   }
-  if (rooms.length < 7) return null;
+  if (rooms.length < 8) return null;
 
   rooms.sort((a, b) => a.x - b.x);
   for (const room of rooms) carveRoom(tiles, w, room);
@@ -152,7 +152,7 @@ function tryGenerate(seed: number, attemptSeed: number, w: number, h: number): G
     carveCorridor(tiles, w, h, rooms[i - 1] as Room, rooms[i] as Room);
   }
   // Cortes extra para que haya rutas alternas y no solo una cadena.
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const a = rng.int(0, rooms.length - 1);
     const b = rng.int(0, rooms.length - 1);
     if (a !== b) carveCorridor(tiles, w, h, rooms[a] as Room, rooms[b] as Room);

@@ -1,6 +1,6 @@
 export const TILE = 32;
-export const MAP_W = 64;
-export const MAP_H = 40;
+export const MAP_W = 80;
+export const MAP_H = 50;
 export const WORLD_W = MAP_W * TILE;
 export const WORLD_H = MAP_H * TILE;
 
@@ -18,8 +18,8 @@ export const PLAYER = {
   maxHp: 100,
   respawns: 2,
   respawnDelay: 6,
-  invulnSeconds: 2.5,
-  fireCooldown: 0.28,
+  invulnSeconds: 3,
+  fireCooldown: 0.22,
   projectileSpeed: 540,
   projectileLife: 0.8,
   projectileRadius: 4,
@@ -30,12 +30,12 @@ export const PLAYER = {
 export const BOOST = { speedMul: 1.35, seconds: 6 } as const;
 export const NODE = {
   radius: 42,
-  captureSeconds: 4,
-  decaySeconds: 8,
+  captureSeconds: 12,
+  decaySeconds: 6,
   count: 3,
   healOnBreach: 25,
 } as const;
-export const EXIT = { radius: 58, syncSeconds: 3 } as const;
+export const EXIT = { radius: 58, syncSeconds: 6 } as const;
 export const ITEMS = {
   slots: 3,
   patchHeal: 35,

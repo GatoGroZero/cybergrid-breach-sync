@@ -1,28 +1,28 @@
 import type { Server as HttpServer } from 'node:http';
-import { Server, type Socket } from 'socket.io';
+import { Server } from 'socket.io';
 import { pingSchema, type PongPayload } from '../shared/protocol';
-import { sessionFromHeader, type SessionUser } from './auth';
+import { sessionFromHeader } from './auth';
 import type { Config } from './config';
+import type { Repo } from './db';
+import { Lobby } from './lobby';
 import type { Metrics } from './metrics';
 import type { RuntimeInfo } from './testApi';
 
 export interface RealtimeDeps {
   config: Config;
   metrics: Metrics;
+  repo: Repo;
 }
 
 export interface Realtime {
   io: Server;
+  lobby: Lobby;
   runtime(): RuntimeInfo;
   close(): Promise<void>;
 }
 
-export function userOf(socket: Socket): SessionUser {
-  return socket.data.user as SessionUser;
-}
-
 export function createRealtime(http: HttpServer, deps: RealtimeDeps): Realtime {
-  const { config, metrics } = deps;
+  const { config, metrics, repo } = deps;
 
   const io = new Server(http, {
     // Solo WebSocket: sin sondeo largo, asi el primer frame ya es un frame de WebSocket.
@@ -43,6 +43,8 @@ export function createRealtime(http: HttpServer, deps: RealtimeDeps): Realtime {
     },
   });
 
+  const lobby = new Lobby(io, repo, config);
+
   io.use(async (socket, next) => {
     const user = await sessionFromHeader(config.sessionSecret, socket.request.headers.cookie);
     if (!user) return next(new Error('unauthorized'));
@@ -58,15 +60,19 @@ export function createRealtime(http: HttpServer, deps: RealtimeDeps): Realtime {
       const pong: PongPayload = { t: parsed.data.t, ts: Date.now() };
       socket.emit('pong', pong);
     });
+    lobby.attach(socket);
   });
 
   return {
     io,
-    runtime: () => ({
-      rooms: 0,
-      players: io.of('/').sockets.size,
-      sockets: io.engine.clientsCount,
-    }),
-    close: () => io.close().then(() => undefined),
+    lobby,
+    runtime: () => {
+      const { rooms, players } = lobby.stats();
+      return { rooms, players, sockets: io.engine.clientsCount };
+    },
+    close: async () => {
+      lobby.shutdown();
+      await io.close();
+    },
   };
 }

@@ -31,7 +31,7 @@ export async function startServer(overrides: Partial<Config> = {}): Promise<Test
   const repo = new Repo(config.dbPath);
   const metrics = new Metrics();
   const http = createServer();
-  const realtime = createRealtime(http, { config, metrics });
+  const realtime = createRealtime(http, { config, metrics, repo });
   const app = createApp({ config, repo, metrics, runtime: realtime.runtime });
   http.on('request', app);
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
