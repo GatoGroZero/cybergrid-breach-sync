@@ -82,16 +82,16 @@ export function normalizeMove(mx: number, my: number): MoveInput {
 }
 
 /** Un paso de movimiento del gato. Lo ejecutan igual el servidor y el cliente (prediccion). */
-export function stepCat(m: BRMap, motion: Motion, input: MoveInput, dt: number): void {
+export function stepCat(
+  m: BRMap,
+  motion: Motion,
+  input: MoveInput,
+  dt: number,
+  speedMul = 1,
+): void {
   const n = normalizeMove(input.mx, input.my);
-  const next = moveBox(
-    m,
-    motion.x,
-    motion.y,
-    n.mx * CAT.speed * dt,
-    n.my * CAT.speed * dt,
-    CAT.half,
-  );
+  const speed = CAT.speed * speedMul;
+  const next = moveBox(m, motion.x, motion.y, n.mx * speed * dt, n.my * speed * dt, CAT.half);
   motion.x = next.x;
   motion.y = next.y;
 }

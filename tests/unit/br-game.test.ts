@@ -1,22 +1,27 @@
 import { CLAWS } from '../../src/shared/br/items';
 import { describe, expect, it } from 'vitest';
 import { CAT, TICK_DT, TILE, WALL_ITEM, SPAWN_GRACE_S } from '../../src/shared/br/constants';
-import { countKind } from '../../src/shared/br/inventory';
-import type { Item, Rarity, WeaponKind } from '../../src/shared/br/items';
+import type { AmmoKind, Item, Rarity, WeaponKind } from '../../src/shared/br/items';
 import { G, isSolidTile } from '../../src/shared/br/map';
 import { defaultSkin } from '../../src/shared/br/skin';
 import { BRGame, type Cat } from '../../src/server/br/Game';
 
 const input = (
   seq: number,
-  patch: Partial<{ mx: number; my: number; aim: number; fire: boolean; assist: boolean }> = {},
+  patch: Partial<{
+    mx: number;
+    my: number;
+    aim: number;
+    fire: boolean;
+    hold: boolean;
+    run: boolean;
+  }> = {},
 ) => ({
   seq,
   mx: 0,
   my: 0,
   aim: 0,
   fire: false,
-  assist: false,
   ...patch,
 });
 
@@ -61,7 +66,9 @@ function arena(mapKind: 'bosque' | 'casa' | 'piscina' = 'bosque') {
 }
 
 const give = (cat: Cat, slot: number, item: Item): void => {
-  cat.inv[slot] = item;
+  // Las balas no ocupan espacios: van a su propio compartimento.
+  if (item.kind.startsWith('ammo_')) cat.ammo[item.kind as AmmoKind] += item.qty;
+  else cat.inv[slot] = item;
 };
 const weapon = (kind: WeaponKind, rarity: Rarity): Item => ({ kind, qty: 1, rarity });
 const run = (game: BRGame, ticks: number): void => {
@@ -163,7 +170,7 @@ describe('armas, balas y daño', () => {
       pistol.game.fireControl(pistol.a, 0, true, false);
       pistol.game.step();
     }
-    expect(countKind(pistol.a.inv, 'ammo_pistol')).toBe(30 - 1);
+    expect(pistol.a.ammo['ammo_pistol']).toBe(30 - 1);
 
     const rifle = arena();
     give(rifle.a, 0, weapon('rifle', 0));
@@ -173,7 +180,7 @@ describe('armas, balas y daño', () => {
       rifle.game.fireControl(rifle.a, 0, true, false);
       rifle.game.step();
     }
-    expect(90 - countKind(rifle.a.inv, 'ammo_rifle')).toBeGreaterThanOrEqual(8);
+    expect(90 - rifle.a.ammo['ammo_rifle']).toBeGreaterThanOrEqual(8);
   });
 
   it('la escopeta gasta 2 cartuchos y dispara varios perdigones; sin balas no dispara', () => {
@@ -183,7 +190,7 @@ describe('armas, balas y daño', () => {
     give(a, 1, { kind: 'ammo_shotgun', qty: 3, rarity: 0 });
     game.select(1, 0);
     game.fireControl(a, 0, true, false);
-    expect(countKind(a.inv, 'ammo_shotgun')).toBe(1);
+    expect(a.ammo['ammo_shotgun']).toBe(1);
     run(game, 20);
     expect(b.hp).toBeLessThan(100);
     expect(100 - b.hp).toBeGreaterThanOrEqual(30);
@@ -192,7 +199,7 @@ describe('armas, balas y daño', () => {
     const hpBefore = b.hp;
     game.fireControl(a, 0, true, false);
     run(game, 20);
-    expect(countKind(a.inv, 'ammo_shotgun')).toBe(1);
+    expect(a.ammo['ammo_shotgun']).toBe(1);
     expect(b.hp).toBe(hpBefore);
   });
 
@@ -489,5 +496,164 @@ describe('autoridad del servidor', () => {
     expect(snap.inv).toBeDefined();
     game.endTick();
     expect(game.snapshotFor(1)!.inv).toBeUndefined();
+  });
+});
+
+describe('correr y estamina', () => {
+  /** Avanza `ticks` pasos con el gato 1 empujando a la derecha, corriendo o no. */
+  function walk(game: BRGame, ticks: number, run: boolean, mx = 1): void {
+    for (let i = 0; i < ticks; i++) {
+      game.pushInput(1, input(1000 + game.tick, { mx, run }));
+      game.step();
+    }
+  }
+
+  it('corre a 1.55 veces la velocidad de caminar y gasta la barra en unos 5 segundos', () => {
+    const walking = arena();
+    const x0 = walking.a.x;
+    walk(walking.game, 30, false);
+    const walked = walking.a.x - x0;
+
+    const running = arena();
+    const r0 = running.a.x;
+    walk(running.game, 30, true);
+    const ran = running.a.x - r0;
+    expect(ran / walked).toBeGreaterThan(1.5);
+    expect(ran / walked).toBeLessThan(1.6);
+    expect(running.a.running).toBe(true);
+    expect(running.a.stamina.value).toBeLessThan(85);
+    expect(running.a.stamina.value).toBeGreaterThan(75);
+  });
+
+  it('al agotarse deja de correr hasta recuperar un poco y la barra tarda 4 s en llenarse', () => {
+    const { game, a } = arena();
+    walk(game, 200, true, 0.1);
+    // con un vector tan chico no cuenta como moverse: no gasta nada
+    expect(a.stamina.value).toBe(100);
+    const bounds = arena();
+    walk(bounds.game, 150, true, 1);
+    expect(bounds.a.stamina.value).toBeLessThan(0.5);
+    expect(bounds.a.stamina.tired).toBe(true);
+    const xTired = bounds.a.x;
+    walk(bounds.game, 10, true, 1);
+    // cansado: camina a velocidad normal aunque pida correr
+    expect(bounds.a.running).toBe(false);
+    expect(bounds.a.x - xTired).toBeLessThan(10 * (CAT.speed * TICK_DT) + 0.5);
+    // quieto o caminando se recupera: 100 en 4 segundos
+    walk(bounds.game, 120, false, 0);
+    expect(bounds.a.stamina.value).toBe(100);
+    expect(bounds.a.stamina.tired).toBe(false);
+  });
+
+  it('a media recuperacion se puede volver a correr y la recuperacion se detiene ahi', () => {
+    const { game, a } = arena();
+    walk(game, 90, true, 1);
+    const low = a.stamina.value;
+    expect(low).toBeLessThan(60);
+    walk(game, 30, false, 0);
+    const half = a.stamina.value;
+    expect(half).toBeGreaterThan(low + 20);
+    walk(game, 5, true, 1);
+    expect(a.running).toBe(true);
+    // mientras corre no se recupera: solo baja
+    expect(a.stamina.value).toBeLessThan(half);
+  });
+
+  it('pedir correr sin moverse no gasta nada, y la estamina viaja en la instantanea', () => {
+    const { game, a } = arena();
+    walk(game, 20, true, 0);
+    expect(a.stamina.value).toBe(100);
+    walk(game, 30, true, 1);
+    const snap = game.snapshotFor(1);
+    expect(snap?.me.stamina).toBeLessThan(100);
+    expect(snap?.me.tired).toBe(false);
+    // los demas ven que corre: la bandera 64 va en la tupla del gato
+    const seenByOther = game.snapshotFor(2)?.cats.find((t) => t[0] === 1);
+    expect(((seenByOther?.[3] ?? 0) & 64) !== 0).toBe(true);
+  });
+});
+
+describe('balas en su propio compartimento', () => {
+  it('recoger balas de un cofre no ocupa espacios y respeta el tope de 100', () => {
+    const { game, a } = arena();
+    const chest = [...game['containers'].values()][0];
+    expect(chest).toBeDefined();
+    chest!.x = a.x;
+    chest!.y = a.y;
+    chest!.items = [
+      { kind: 'ammo_pistol', qty: 70, rarity: 0 },
+      { kind: 'ammo_pistol', qty: 50, rarity: 0 },
+      { kind: 'ammo_rifle', qty: 30, rarity: 0 },
+      { kind: 'medkit', qty: 1, rarity: 0 },
+    ];
+    const opened = game.interact(1);
+    expect(opened?.items).toHaveLength(4);
+    const left = game.lootTakeAll(1, chest!.id);
+    expect(a.ammo.ammo_pistol).toBe(100);
+    expect(a.ammo.ammo_rifle).toBe(30);
+    expect(a.inv.filter(Boolean)).toHaveLength(1);
+    expect(a.inv[0]?.kind).toBe('medkit');
+    // 70 + 50 = 120: sobran 20 en el cofre
+    expect(left?.items).toEqual([{ kind: 'ammo_pistol', qty: 20, rarity: 0 }]);
+    const snap = game.snapshotFor(1);
+    expect(snap?.ammo).toEqual([100, 0, 0, 0, 30]);
+  });
+
+  it('tirar balas las deja en el suelo y se pueden volver a tomar; al morir van a la lapida', () => {
+    const { game, a, b } = arena();
+    a.ammo.ammo_shotgun = 40;
+    expect(game.ammoDrop(1, 'ammo_shotgun', 15)).toBe(true);
+    expect(a.ammo.ammo_shotgun).toBe(25);
+    expect(game.ammoDrop(1, 'ammo_sniper')).toBe(false);
+    const dropped = game.interact(1);
+    expect(dropped?.items).toEqual([{ kind: 'ammo_shotgun', qty: 15, rarity: 0 }]);
+
+    a.ammo.ammo_rifle = 60;
+    game.damageCat(a, 999, b);
+    expect(a.ammo.ammo_rifle).toBe(0);
+    const tomb = [...game['containers'].values()].find((c) => c.kind === 'tomb');
+    expect(tomb?.items).toEqual(
+      expect.arrayContaining([
+        { kind: 'ammo_shotgun', qty: 25, rarity: 0 },
+        { kind: 'ammo_rifle', qty: 60, rarity: 0 },
+      ]),
+    );
+  });
+
+  it('con hold el arma de un clic repite sola al cargarse; sin hold exige un clic por bala', () => {
+    const held = arena();
+    give(held.a, 0, weapon('pistol', 2));
+    give(held.a, 1, { kind: 'ammo_pistol', qty: 50, rarity: 0 });
+    held.game.select(1, 0);
+    for (let i = 0; i < 60; i++) {
+      held.game.pushInput(1, input(i + 1, { fire: true, hold: true }));
+      held.game.step();
+    }
+    // 2 segundos con cooldown de 0.32 s: unas 6 balas
+    expect(50 - held.a.ammo.ammo_pistol).toBeGreaterThanOrEqual(5);
+
+    const clicked = arena();
+    give(clicked.a, 0, weapon('pistol', 2));
+    give(clicked.a, 1, { kind: 'ammo_pistol', qty: 50, rarity: 0 });
+    clicked.game.select(1, 0);
+    for (let i = 0; i < 60; i++) {
+      clicked.game.pushInput(1, input(i + 1, { fire: true }));
+      clicked.game.step();
+    }
+    expect(50 - clicked.a.ammo.ammo_pistol).toBe(1);
+  });
+
+  it('ya no existe el auto apuntado: el disparo sale exactamente hacia donde se apunta', () => {
+    const { game, a, b } = arena();
+    give(a, 0, weapon('rifle', 2));
+    give(a, 1, { kind: 'ammo_rifle', qty: 90, rarity: 0 });
+    game.select(1, 0);
+    b.hp = 100;
+    // se apunta hacia arriba, lejos del enemigo que esta a la derecha
+    for (let i = 0; i < 30; i++) {
+      game.pushInput(1, input(i + 1, { fire: true, aim: -Math.PI / 2 }));
+      game.step();
+    }
+    expect(b.hp).toBe(100);
   });
 });

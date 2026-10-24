@@ -5,6 +5,7 @@ import { MAX_PLAYERS, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, TICK_HZ } from '../s
 import { MAP_KINDS, type MapKind } from '../shared/br/map';
 import {
   createRoomSchema,
+  dropAmmoSchema,
   dropSchema,
   inputSchema,
   joinRoomSchema,
@@ -24,6 +25,7 @@ import {
   type RoomPhase,
   type RoomState,
 } from '../shared/br/protocol';
+import type { AmmoKind } from '../shared/br/items';
 import { defaultSkin, isValidSkin, randomSkin, type Skin } from '../shared/br/skin';
 import { createRng } from '../shared/rng';
 import type { SessionUser } from './auth';
@@ -53,6 +55,9 @@ interface Room {
   game: BRGame | null;
   loop: NodeJS.Timeout | null;
   resetTimer: NodeJS.Timeout | null;
+  /** Si la partida ya termino: hasta cuando dura la celebracion antes de mostrar resultados. */
+  celebrateUntil: number | null;
+  persisted: boolean;
 }
 
 const MAX_ROOMS = 40;
@@ -254,6 +259,14 @@ export class Lobby {
       m.game.invDrop(m.member.catId, parsed.data.slot);
       ack?.({ ok: true });
     });
+    socket.on('ammo:drop', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = dropAmmoSchema.safeParse(raw);
+      const m = me();
+      if (!parsed.success || !m?.game) return ack?.(fail('datos_invalidos'));
+      m.game.ammoDrop(m.member.catId, parsed.data.kind as AmmoKind, parsed.data.qty);
+      ack?.({ ok: true });
+    });
     socket.on('spectate:next', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = spectateSchema.safeParse(raw);
@@ -328,6 +341,8 @@ export class Lobby {
       game: null,
       loop: null,
       resetTimer: null,
+      celebrateUntil: null,
+      persisted: false,
     };
     this.rooms.set(room.code, room);
     this.addMember(room, user, socket);
@@ -378,8 +393,8 @@ export class Lobby {
 
     if (room.members.size === 0) {
       // Si se van todos a media partida, igual se guarda el resultado hasta ese momento.
-      if (room.phase === 'playing' && room.game && !room.game.over) {
-        room.game.forceFinish(null);
+      if (room.phase === 'playing' && room.game) {
+        if (!room.game.over) room.game.forceFinish(null);
         if (room.game.result) this.persist(room, room.game, room.game.result, everyone);
       }
       this.disposeRoom(room);
@@ -552,14 +567,25 @@ export class Lobby {
     let next = performance.now() + stepMs;
     const run = (): void => {
       let guard = 0;
-      while (next <= performance.now() && guard < 4 && !game.over) {
-        game.step();
+      while (next <= performance.now() && guard < 4) {
+        // Con la partida terminada el mundo se congela: solo se siguen enviando instantaneas
+        // para que todos vean la celebracion del ganador.
+        if (!game.over) game.step();
         next += stepMs;
         guard++;
         this.sendSnapshots(room, game);
+        if (game.over && room.celebrateUntil === null) {
+          room.celebrateUntil = performance.now() + this.config.celebrationSeconds * 1000;
+          const result = game.result;
+          const winner = result ? game.cat(result.winnerId ?? -1) : undefined;
+          this.io.to(room.code).emit('game:win', {
+            winnerId: result?.winnerId ?? null,
+            winnerName: winner?.name ?? null,
+          });
+        }
       }
       if (next < performance.now() - stepMs * 4) next = performance.now();
-      if (game.over) {
+      if (game.over && room.celebrateUntil !== null && performance.now() >= room.celebrateUntil) {
         this.endGame(room);
         return;
       }
@@ -614,6 +640,8 @@ export class Lobby {
     result: GameEndPayload,
     members: Member[] = [...room.members.values()],
   ): void {
+    if (room.persisted) return;
+    room.persisted = true;
     try {
       this.repo.saveMatch({
         code: room.code,

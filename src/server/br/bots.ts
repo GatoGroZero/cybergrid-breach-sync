@@ -1,5 +1,11 @@
-import { CAT, INVENTORY_SLOTS, SPAWN_GRACE_S, TICK_DT, TILE } from '../../shared/br/constants';
-import { countKind } from '../../shared/br/inventory';
+import {
+  AMMO_MAX,
+  CAT,
+  INVENTORY_SLOTS,
+  SPAWN_GRACE_S,
+  TICK_DT,
+  TILE,
+} from '../../shared/br/constants';
 import { ITEM_KINDS, STACK_MAX, WEAPONS, isAmmo, isWeapon, type Item } from '../../shared/br/items';
 import { G, isSolidTile, type BRMap } from '../../shared/br/map';
 import { hasLineOfSight, stepCat, dist } from '../../shared/br/physics';
@@ -234,7 +240,7 @@ export class BotBrain {
     c.inv.forEach((item, i) => {
       if (!item || !isWeapon(item.kind)) return;
       const def = WEAPONS[item.kind];
-      if (countKind(c.inv, def.ammo) < def.ammoPerShot) return;
+      if (c.ammo[def.ammo] < def.ammoPerShot) return;
       const score = this.weaponScore(item);
       if (score > bestScore) {
         bestScore = score;
@@ -283,10 +289,8 @@ export class BotBrain {
       return !owned.some((o) => o.kind === item.kind && o.rarity >= item.rarity);
     }
     if (isAmmo(item.kind)) {
-      const weaponOwned = c.inv.some(
-        (it) => it && isWeapon(it.kind) && WEAPONS[it.kind].ammo === item.kind,
-      );
-      return (weaponOwned || !c.inv.some((it) => it && isWeapon(it.kind))) && (free || stackRoom);
+      // Las balas van en su propio compartimento: solo importa si todavia caben.
+      return c.ammo[item.kind] < AMMO_MAX;
     }
     if (item.kind === 'wall') return free && c.inv.filter((it) => it === null).length >= 2;
     return free || stackRoom;

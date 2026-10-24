@@ -84,7 +84,7 @@ describe('esquemas Zod del inventario y del pelaje', () => {
 });
 
 describe('esquemas Zod del protocolo de juego', () => {
-  const valid = { seq: 10, mx: 1, my: -0.5, aim: 1.2, assist: false, fire: true };
+  const valid = { seq: 10, mx: 1, my: -0.5, aim: 1.2, fire: true };
 
   it('acepta un input valido', () => {
     expect(inputSchema.safeParse(valid).success).toBe(true);

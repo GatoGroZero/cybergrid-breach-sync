@@ -18,6 +18,8 @@ export interface Config {
   countdownSeconds: number;
   /** Acelera la ola (solo pruebas): 1 es el ritmo real. */
   zoneTimeScale: number;
+  /** Segundos de celebracion (fuegos artificiales) antes de la tabla de resultados. */
+  celebrationSeconds: number;
   /** Solo pruebas: los humanos arrancan con un fusil, botiquines, escudos y muros. */
   testKit: boolean;
   version: string;
@@ -59,6 +61,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     snapshotEvery: Math.max(1, int(process.env.SNAPSHOT_EVERY, 1)),
     countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
     testKit: process.env.TEST_KIT === 'true' && env !== 'production',
+    celebrationSeconds: Math.min(20, Math.max(0, int(process.env.CELEBRATION_SECONDS, 7))),
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     version: '2.0.0',
     limits: {

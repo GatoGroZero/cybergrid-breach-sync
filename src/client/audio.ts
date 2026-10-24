@@ -106,6 +106,43 @@ export class Sfx {
         this.tone(900, 0.07, 'square', 0.05 * v, 420);
     }
   }
+  /** Pisada suave; al correr suena mas rapida y fuerte. */
+  step(running: boolean, v = 1): void {
+    this.noise(0.04, (running ? 0.05 : 0.03) * v, running ? 900 : 650);
+  }
+  /** Se puso un muro. */
+  place(): void {
+    this.noise(0.08, 0.1, 500);
+    this.tone(150, 0.12, 'square', 0.06, 90);
+  }
+  /** Un muro se rompe. */
+  wallBreak(v = 1): void {
+    this.noise(0.3, 0.14 * v, 800);
+    this.tone(110, 0.2, 'sawtooth', 0.06 * v, 50);
+  }
+  /** Sin aire: el gato resopla. */
+  huff(): void {
+    this.noise(0.16, 0.05, 1200);
+    this.tone(210, 0.14, 'sine', 0.03, 140);
+  }
+  /** Poca vida: latido. */
+  heartbeat(): void {
+    this.tone(70, 0.1, 'sine', 0.12, 50);
+    window.setTimeout(() => this.tone(60, 0.12, 'sine', 0.09, 45), 140);
+  }
+  /** Soltar un objeto al suelo. */
+  drop(): void {
+    this.tone(260, 0.08, 'triangle', 0.06, 160);
+  }
+  /** Clic de interfaz. */
+  click(): void {
+    this.tone(520, 0.04, 'square', 0.025, 380);
+  }
+  /** Estallido de un fuego artificial. */
+  pop(v = 1): void {
+    this.tone(1300, 0.1, 'triangle', 0.05 * v, 300);
+    this.noise(0.25, 0.1 * v, 2600);
+  }
   boom(v = 1): void {
     this.noise(0.5, 0.2 * v, 1300);
     this.tone(95, 0.4, 'sawtooth', 0.1 * v, 35);

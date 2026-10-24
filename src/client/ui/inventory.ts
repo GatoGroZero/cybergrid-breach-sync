@@ -1,5 +1,6 @@
-import { INVENTORY_SLOTS } from '../../shared/br/constants';
+import { AMMO_MAX, INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
+  AMMO_KINDS,
   ITEM_NAMES,
   RARITY_NAMES,
   WEAPONS,
@@ -11,7 +12,7 @@ import type { Assets } from '../pixel/art';
 import type { ClientBR } from '../game/state';
 import { $, el } from './dom';
 
-type Zone = 'inv' | 'loot';
+type Zone = 'inv' | 'loot' | 'ammo';
 
 interface DragState {
   zone: Zone;
@@ -34,7 +35,8 @@ export function describeItem(item: Item): string {
         : '';
     return `${name} ${RARITY_NAMES[item.rarity]}: ${dmg} de daño${pellets}. ${def.auto ? 'Ráfaga automática.' : 'Un disparo por clic.'}`;
   }
-  if (isAmmo(item.kind)) return `${name}: munición (${item.qty}).`;
+  if (isAmmo(item.kind))
+    return `${name}: se guardan aparte de tus 5 espacios, hasta ${AMMO_MAX} de cada arma.`;
   if (item.kind === 'medkit')
     return `Botiquín (${item.qty}): +10 de vida por segundo hasta 100. Si cambias de objeto se cancela.`;
   if (item.kind === 'shield')
@@ -95,6 +97,7 @@ export class InventoryPanel {
     this.renderSlots(this.slotsEl, g.inv, 'inv', g.me?.sel ?? 0);
     const used = g.inv.filter((i) => i !== null).length;
     $('inv-count').textContent = `${used}/${INVENTORY_SLOTS}`;
+    this.renderAmmo(g);
     const block = $('loot-block');
     if (g.loot) {
       block.hidden = false;
@@ -105,6 +108,38 @@ export class InventoryPanel {
       block.hidden = true;
     }
     $('inv-detail').textContent = this.detail;
+  }
+
+  private renderAmmo(g: ClientBR): void {
+    const list = $('ammo-slots');
+    list.replaceChildren();
+    AMMO_KINDS.forEach((kind, i) => {
+      const n = g.ammo[i] ?? 0;
+      const li = el('li');
+      const b = el('button', `ammo-chip${n === 0 ? ' empty' : ''}${n >= AMMO_MAX ? ' full' : ''}`);
+      b.type = 'button';
+      b.dataset.zone = 'ammo';
+      b.dataset.index = String(i);
+      b.dataset.testid = 'ammo-chip';
+      b.setAttribute('aria-label', `${ITEM_NAMES[kind]}: ${n} de ${AMMO_MAX}`);
+      const c = el('canvas');
+      c.width = 16;
+      c.height = 16;
+      (c.getContext('2d') as CanvasRenderingContext2D).drawImage(this.assets.icon[kind], 0, 0);
+      b.append(c, el('span', 'name', ITEM_NAMES[kind]), el('span', 'count', `${n}`));
+      b.addEventListener('pointerdown', (e) => {
+        if (n > 0 && e.button <= 0) this.beginDrag(e, 'ammo', i);
+      });
+      b.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.detail = `${ITEM_NAMES[kind]}: ${n} de ${AMMO_MAX}. Arrástralas afuera para tirarlas.`;
+          this.refresh();
+        }
+      });
+      li.append(b);
+      list.append(li);
+    });
   }
 
   private renderSlots(
@@ -141,6 +176,8 @@ export class InventoryPanel {
         );
         b.append(c);
         if (item.qty > 1) b.append(el('span', 'qty', String(item.qty)));
+        if (isAmmo(item.kind))
+          b.append(el('span', 'cap', ITEM_NAMES[item.kind].replace('Balas de ', '')));
       } else {
         b.setAttribute('aria-label', zone === 'inv' ? `Espacio ${i + 1} vacío` : 'Vacío');
         b.disabled = zone === 'loot';
@@ -174,6 +211,10 @@ export class InventoryPanel {
 
   private onDown(e: PointerEvent, zone: Zone, index: number, item: Item | null): void {
     if (!item || e.button > 0) return;
+    this.beginDrag(e, zone, index);
+  }
+
+  private beginDrag(e: PointerEvent, zone: Zone, index: number): void {
     this.drag = {
       zone,
       index,
@@ -191,8 +232,11 @@ export class InventoryPanel {
     if (!d.active && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 8) {
       d.active = true;
       const g = this.game();
-      const item = d.zone === 'inv' ? g?.inv[d.index] : g?.loot?.items[d.index];
-      if (!item) {
+      const kind =
+        d.zone === 'ammo'
+          ? AMMO_KINDS[d.index]
+          : (d.zone === 'inv' ? g?.inv[d.index] : g?.loot?.items[d.index])?.kind;
+      if (!kind) {
         this.cancelDrag();
         return;
       }
@@ -200,7 +244,7 @@ export class InventoryPanel {
       const c = el('canvas');
       c.width = 16;
       c.height = 16;
-      (c.getContext('2d') as CanvasRenderingContext2D).drawImage(this.assets.icon[item.kind], 0, 0);
+      (c.getContext('2d') as CanvasRenderingContext2D).drawImage(this.assets.icon[kind], 0, 0);
       ghost.append(c);
       document.body.append(ghost);
       d.ghost = ghost;
@@ -223,6 +267,13 @@ export class InventoryPanel {
     this.root.querySelectorAll('.drop-target').forEach((n) => n.classList.remove('drop-target'));
     if (!g) return;
     if (!d.active) {
+      if (d.zone === 'ammo') {
+        const kind = AMMO_KINDS[d.index];
+        if (kind)
+          this.detail = `${ITEM_NAMES[kind]}: ${g.ammo[d.index] ?? 0} de ${AMMO_MAX}. Arrástralas afuera para tirarlas.`;
+        this.refresh();
+        return;
+      }
       const item = d.zone === 'inv' ? g.inv[d.index] : g.loot?.items[d.index];
       this.activate(d.zone, d.index, item ?? null);
       return;
@@ -230,7 +281,10 @@ export class InventoryPanel {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const slot = target?.closest<HTMLElement>('.slot');
     const card = target?.closest('.inv-card');
-    if (slot && slot.dataset.zone === 'inv') {
+    if (d.zone === 'ammo') {
+      const kind = AMMO_KINDS[d.index];
+      if (kind && !card) g.dropAmmo(kind);
+    } else if (slot && slot.dataset.zone === 'inv') {
       const to = Number(slot.dataset.index);
       if (d.zone === 'inv') {
         if (to !== d.index) g.moveItem(d.index, to);

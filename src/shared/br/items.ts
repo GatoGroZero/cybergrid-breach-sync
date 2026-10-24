@@ -1,4 +1,5 @@
 import type { Rng } from '../rng';
+import { AMMO_MAX } from './constants';
 
 export const WEAPON_KINDS = ['pistol', 'shotgun', 'sniper', 'bazooka', 'rifle'] as const;
 export type WeaponKind = (typeof WEAPON_KINDS)[number];
@@ -127,10 +128,10 @@ export const ITEM_NAMES: Record<ItemKind, string> = {
   sniper: 'Sniper',
   bazooka: 'Bazuca',
   rifle: 'Fusil',
-  ammo_pistol: 'Balas',
-  ammo_shotgun: 'Cartuchos',
-  ammo_sniper: 'Balas largas',
-  ammo_bazooka: 'Misiles',
+  ammo_pistol: 'Balas de pistola',
+  ammo_shotgun: 'Balas de escopeta',
+  ammo_sniper: 'Balas de sniper',
+  ammo_bazooka: 'Balas de bazuca',
   ammo_rifle: 'Balas de fusil',
   medkit: 'Botiquín',
   shield: 'Escudo',
@@ -143,11 +144,11 @@ export const STACK_MAX: Record<ItemKind, number> = {
   sniper: 1,
   bazooka: 1,
   rifle: 1,
-  ammo_pistol: 60,
-  ammo_shotgun: 24,
-  ammo_sniper: 16,
-  ammo_bazooka: 6,
-  ammo_rifle: 90,
+  ammo_pistol: AMMO_MAX,
+  ammo_shotgun: AMMO_MAX,
+  ammo_sniper: AMMO_MAX,
+  ammo_bazooka: AMMO_MAX,
+  ammo_rifle: AMMO_MAX,
   medkit: 3,
   shield: 3,
   wall: 5,

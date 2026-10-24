@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { INVENTORY_SLOTS, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, SKIN_CELLS } from './constants';
+import { AMMO_KINDS } from './items';
 import { BASE_COATS } from './skin';
 import type { Item } from './items';
 
@@ -30,8 +31,10 @@ export const inputSchema = z.object({
   my: z.number().min(-1).max(1),
   aim: z.number().min(-10).max(10),
   fire: z.boolean(),
-  /** Ayuda de apuntado (movil): el servidor corrige hacia el enemigo mas cercano. */
-  assist: z.boolean(),
+  /** Mantener el disparo (joystick de la mira en el movil): las armas de un clic repiten solas. */
+  hold: z.boolean().optional(),
+  /** Quiere correr (Shift o joystick al maximo). El servidor decide si hay aire. */
+  run: z.boolean().optional(),
 });
 
 const slot = z
@@ -42,6 +45,10 @@ const slot = z
 export const selectSchema = z.object({ slot });
 export const moveItemSchema = z.object({ from: slot, to: slot });
 export const dropSchema = z.object({ slot });
+export const dropAmmoSchema = z.object({
+  kind: z.enum(AMMO_KINDS as unknown as [string, ...string[]]),
+  qty: z.number().int().min(1).max(100).optional(),
+});
 export const lootIdSchema = z.object({ id: z.number().int().min(1).max(1_000_000) });
 export const lootTakeSchema = z.object({
   id: z.number().int().min(1).max(1_000_000),
@@ -125,6 +132,11 @@ export interface GameStartPayload {
   you: number;
   cats: CatInfo[];
   tickHz: number;
+}
+
+export interface WinPayload {
+  winnerId: number | null;
+  winnerName: string | null;
 }
 
 export interface PlacementRow {

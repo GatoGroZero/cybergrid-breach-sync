@@ -1,8 +1,9 @@
 import { CAT, INTEREST_RADIUS, TICK_DT, TILE } from '../../shared/br/constants';
 import { SnapshotBuffer } from '../../shared/interp';
-import { ITEM_KINDS, type Item } from '../../shared/br/items';
+import { AMMO_KINDS, ITEM_KINDS, type AmmoKind, type Item } from '../../shared/br/items';
 import { generateMap, type BRMap, type MapKind } from '../../shared/br/map';
 import { stepCat } from '../../shared/br/physics';
+import { STAMINA, fullStamina, stepStamina, type StaminaState } from '../../shared/br/stamina';
 import type {
   CatInfo,
   DiedPayload,
@@ -10,6 +11,7 @@ import type {
   GameStartPayload,
   InputPayload,
   LootContents,
+  WinPayload,
 } from '../../shared/br/protocol';
 import type { BREvent, BRSnapshot, ContainerTuple, MeState, ZoneView } from '../../shared/br/types';
 import { FixedStepper } from '../../shared/timing';
@@ -24,6 +26,7 @@ export interface CatView {
   /** Apuntado en radianes (el buffer lo interpola como `ang`). */
   ang: number;
   flags: number;
+  running: boolean;
   /** Objeto en mano: indice de ITEM_KINDS * 3 + rareza, o -1. */
   held: number;
   moving: boolean;
@@ -47,6 +50,7 @@ interface Pending {
   seq: number;
   mx: number;
   my: number;
+  run: boolean;
 }
 
 const INTERP_DELAY_MS = 90;
@@ -78,6 +82,11 @@ export class ClientBR {
   latest: BRSnapshot | null = null;
   me: MeState | null = null;
   inv: (Item | null)[] = [null, null, null, null, null];
+  /** Balas de cada arma (orden de AMMO_KINDS): no ocupan los 5 espacios. */
+  ammo: number[] = [0, 0, 0, 0, 0];
+  /** Aire para correr: se predice igual que en el servidor. */
+  stamina: StaminaState = fullStamina();
+  running = false;
   zone: ZoneView | null = null;
   boxes: ContainerTuple[] = [];
 
@@ -88,8 +97,13 @@ export class ClientBR {
   private haveOffset = false;
   private readonly knownWalls = new Map<number, { tx: number; ty: number }>();
   private lastZonePhase = 0;
+  /** El servidor congela el mundo al terminar: no se manda ni se predice movimiento. */
+  private inputFrozen = false;
 
   result: GameEndPayload | null = null;
+  /** Quien gano, apenas termina la partida (antes de la tabla de resultados): inicia la celebracion. */
+  win: WinPayload | null = null;
+  winAt = 0;
   died: DiedPayload | null = null;
   loot: LootContents | null = null;
   banner: Banner | null = null;
@@ -169,6 +183,7 @@ export class ClientBR {
     this.boxes = snap.boxes;
     if (snap.inv) {
       this.inv = snap.inv;
+      if (snap.ammo) this.ammo = snap.ammo;
       this.onInventory();
     }
 
@@ -189,6 +204,7 @@ export class ClientBR {
         ang: t[4] * DEG,
         held: t[5],
         moving: (t[3] & 4) !== 0,
+        running: (t[3] & 64) !== 0,
       });
     }
     this.catBuf.push(snap.t, cats);
@@ -208,7 +224,7 @@ export class ClientBR {
     if (snap.zone.phase !== this.lastZonePhase) {
       this.lastZonePhase = snap.zone.phase;
     }
-    if (snap.me.alive) this.reconcile(snap.me.x, snap.me.y, snap.ack);
+    if (snap.me.alive) this.reconcile(snap.me.x, snap.me.y, snap.ack, snap.me);
     else {
       this.x = snap.me.x;
       this.y = snap.me.y;
@@ -245,6 +261,19 @@ export class ClientBR {
     this.onLootChanged();
   }
 
+  /** La partida termino: el mundo se congela y empieza la celebracion del ganador. */
+  onWin(payload: WinPayload): void {
+    this.win = payload;
+    this.winAt = performance.now();
+    this.inputFrozen = true;
+    if (payload.winnerId === this.you) {
+      this.say('¡VICTORIA REAL!', 'good', 6500);
+      this.sfx.win();
+    } else if (payload.winnerName) {
+      this.say(`¡Ganó ${payload.winnerName}!`, 'info', 6500);
+    }
+  }
+
   onEnd(payload: GameEndPayload): void {
     this.result = payload;
     if (payload.winnerId === this.you) this.sfx.win();
@@ -253,12 +282,24 @@ export class ClientBR {
 
   // ---------------------------------------------------------------- prediccion
 
-  private reconcile(sx: number, sy: number, ack: number): void {
+  private reconcile(sx: number, sy: number, ack: number, me: MeState): void {
     const beforeX = this.x;
     const beforeY = this.y;
     while (this.pending.length > 0 && (this.pending[0] as Pending).seq <= ack) this.pending.shift();
     const motion = { x: sx, y: sy };
-    for (const p of this.pending) stepCat(this.map, motion, { mx: p.mx, my: p.my }, TICK_DT);
+    // Se repiten los inputs que el servidor todavia no confirmo, con su estamina incluida.
+    const st: StaminaState = { value: me.stamina, tired: me.tired };
+    for (const p of this.pending) {
+      const running = stepStamina(st, p.run, Math.min(1, Math.hypot(p.mx, p.my)), TICK_DT);
+      stepCat(
+        this.map,
+        motion,
+        { mx: p.mx, my: p.my },
+        TICK_DT,
+        running ? STAMINA.runMultiplier : 1,
+      );
+    }
+    this.stamina = st;
     this.x = motion.x;
     this.y = motion.y;
     this.prevX = this.x - this.stepDX;
@@ -289,7 +330,7 @@ export class ClientBR {
   }
 
   private fixedStep(): void {
-    if (this.result || !this.net.connected) return;
+    if (this.result || this.inputFrozen || !this.net.connected) return;
     const sample = this.input.sample(this);
     if (!this.alive) {
       this.stepDX = this.stepDY = 0;
@@ -309,11 +350,13 @@ export class ClientBR {
       my,
       aim: Math.round(sample.aim * 100) / 100,
       fire: sample.fire,
-      assist: sample.assist,
+      hold: sample.hold,
+      run: sample.run,
     };
     const before = { x: this.x, y: this.y };
     const motion = { x: this.x, y: this.y };
-    stepCat(this.map, motion, { mx, my }, TICK_DT);
+    this.running = stepStamina(this.stamina, sample.run, Math.min(1, Math.hypot(mx, my)), TICK_DT);
+    stepCat(this.map, motion, { mx, my }, TICK_DT, this.running ? STAMINA.runMultiplier : 1);
     this.prevX = before.x;
     this.prevY = before.y;
     this.x = motion.x;
@@ -321,7 +364,7 @@ export class ClientBR {
     this.stepDX = this.x - before.x;
     this.stepDY = this.y - before.y;
     this.moving = Math.hypot(this.stepDX, this.stepDY) > 0.05;
-    this.pending.push({ seq: payload.seq, mx, my });
+    this.pending.push({ seq: payload.seq, mx, my, run: sample.run });
     if (this.pending.length > 90) this.pending.shift();
     this.net.socket.emit('game:input', payload);
   }
@@ -421,6 +464,7 @@ export class ClientBR {
       index,
       slot,
     });
+    if (res.ok) this.sfx.pickup();
     this.loot = res.ok ? (res.data ?? null) : null;
     this.onLootChanged();
   }
@@ -428,6 +472,7 @@ export class ClientBR {
   async lootTakeAll(): Promise<void> {
     if (!this.loot) return;
     const res = await this.net.ack<LootContents | null>('loot:takeAll', { id: this.loot.id });
+    if (res.ok) this.sfx.pickup();
     this.loot = res.ok ? (res.data ?? null) : null;
     this.onLootChanged();
   }
@@ -442,7 +487,17 @@ export class ClientBR {
   }
 
   dropItem(slot: number): void {
+    this.sfx.drop();
     this.net.socket.emit('inv:drop', { slot });
+  }
+
+  dropAmmo(kind: AmmoKind, qty?: number): void {
+    this.sfx.drop();
+    this.net.socket.emit('ammo:drop', { kind, qty });
+  }
+
+  ammoOf(kind: AmmoKind): number {
+    return this.ammo[AMMO_KINDS.indexOf(kind)] ?? 0;
   }
 
   spectate(dir: 1 | -1): void {

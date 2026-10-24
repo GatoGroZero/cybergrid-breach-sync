@@ -24,7 +24,11 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
         await page.getByTestId('loot-all').click();
         // El inventario nuevo llega con la siguiente instantanea del servidor.
         await expect
-          .poll(() => page.locator('[data-testid="inv-slot"]:not(.empty)').count())
+          .poll(
+            async () =>
+              (await page.locator('[data-testid="inv-slot"]:not(.empty)').count()) +
+              (await page.locator('[data-testid="ammo-chip"]:not(.empty)').count()),
+          )
           .toBeGreaterThanOrEqual(1);
         taken = true;
       } else {
@@ -128,10 +132,10 @@ test.describe('Flujo 4b: ordenar y tirar objetos arrastrando', () => {
       await page.mouse.up();
     };
 
-    // Intercambiar el fusil (espacio 1) con el escudo (espacio 4).
+    // Intercambiar el fusil (espacio 1) con los muros (espacio 4).
     await drag(0, await center(3));
     await expect.poll(async () => (await inv())[3]).toBe('rifle');
-    expect((await inv())[0]).toBe('shield');
+    expect((await inv())[0]).toBe('wall');
 
     // Soltar fuera de la tarjeta tira el objeto al suelo.
     await drag(2, { x: 30, y: 30 });
@@ -166,9 +170,9 @@ test.describe('Flujo 4c: ajustes', () => {
     await page.locator('#set-tab-touch').click();
     await page.getByTestId('touch-edit').click();
     await expect(page.getByTestId('touch-editor')).toBeVisible();
-    // Arrastrar el boton de fuego a otro lugar y agrandarlo.
+    // Arrastrar la mira a otro lugar y agrandarla.
     const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
-    await page.mouse.move(size.w * 0.88, size.h * 0.74);
+    await page.mouse.move(size.w * 0.87, size.h * 0.7);
     await page.mouse.down();
     await page.mouse.move(size.w * 0.7, size.h * 0.55, { steps: 6 });
     await page.mouse.up();
@@ -177,9 +181,9 @@ test.describe('Flujo 4c: ajustes', () => {
     const layout = await page.evaluate(() =>
       JSON.parse(window.localStorage.getItem('cg_touch') ?? '{}'),
     );
-    expect(layout.fire.x).toBeCloseTo(0.7, 1);
-    expect(layout.fire.y).toBeCloseTo(0.55, 1);
-    expect(layout.fire.s).toBeGreaterThan(1.1);
+    expect(layout.aim.x).toBeCloseTo(0.7, 1);
+    expect(layout.aim.y).toBeCloseTo(0.55, 1);
+    expect(layout.aim.s).toBeGreaterThan(1.1);
     await expect(page.getByTestId('touch-editor')).toBeHidden();
     await page.locator('#settings-close').click();
     await expect(page.getByTestId('settings')).toBeHidden();

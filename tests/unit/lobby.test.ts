@@ -35,7 +35,7 @@ describe('lobby y proteccion de salas', () => {
   };
 
   beforeAll(async () => {
-    server = await startServer({ countdownSeconds: 1 });
+    server = await startServer({ countdownSeconds: 1, celebrationSeconds: 0.3 });
   });
   afterAll(async () => {
     sockets.forEach((s) => s.close());
@@ -120,7 +120,6 @@ describe('lobby y proteccion de salas', () => {
       mx: 0,
       my: 0,
       aim: 0,
-      assist: false,
       fire: false,
       x: 9999,
       y: 9999,
