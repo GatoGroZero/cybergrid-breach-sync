@@ -84,3 +84,101 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     expect(again.paint).toBe(saved.paint);
   });
 });
+
+test.describe('Flujo 4b: ordenar y tirar objetos arrastrando', () => {
+  test('arrastrar cambia el orden del inventario y soltar fuera tira el objeto', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_drg'), true);
+    await startSoloGame(page);
+    await page.evaluate(() =>
+      (window as unknown as { __net: { socket: { emit(e: string): void } } }).__net.socket.emit(
+        'dev:kit',
+      ),
+    );
+    const inv = (): Promise<(string | null)[]> =>
+      page.evaluate(() =>
+        (window as unknown as { __game: { inv: ({ kind: string } | null)[] } }).__game.inv.map(
+          (i) => i?.kind ?? null,
+        ),
+      );
+    await expect.poll(async () => (await inv())[0]).toBe('rifle');
+    await page.keyboard.press('KeyI');
+    await expect(page.getByTestId('inv')).toBeVisible();
+
+    const slot = (i: number) => page.getByTestId('inv-slot').nth(i);
+    const center = async (i: number) => {
+      const b = (await slot(i).boundingBox()) as {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    };
+    const drag = async (from: number, to: { x: number; y: number }): Promise<void> => {
+      const a = await center(from);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      await page.mouse.move((a.x + to.x) / 2, (a.y + to.y) / 2, { steps: 4 });
+      await page.mouse.move(to.x, to.y, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    // Intercambiar el fusil (espacio 1) con el escudo (espacio 4).
+    await drag(0, await center(3));
+    await expect.poll(async () => (await inv())[3]).toBe('rifle');
+    expect((await inv())[0]).toBe('shield');
+
+    // Soltar fuera de la tarjeta tira el objeto al suelo.
+    await drag(2, { x: 30, y: 30 });
+    await expect.poll(async () => (await inv())[2]).toBeNull();
+  });
+});
+
+test.describe('Flujo 4c: ajustes', () => {
+  test('reasignar una tecla se guarda y el editor de botones tactiles mueve y guarda', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_aju'));
+    await page.getByTestId('btn-settings').click();
+    await expect(page.getByTestId('settings')).toBeVisible();
+    const row = page.locator('#key-list button[data-action="interact"]');
+    await expect(row).toHaveText('E');
+    await row.click();
+    await expect(row).toHaveText('Pulsa una tecla');
+    await page.keyboard.press('KeyF');
+    await expect(row).toHaveText('F');
+    const saved = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('cg_keys') ?? '{}'),
+    );
+    expect(saved.interact).toBe('KeyF');
+
+    // Si se elige una tecla que ya usa otra accion, se intercambian.
+    await row.click();
+    await page.keyboard.press('KeyW');
+    await expect(row).toHaveText('W');
+    await expect(page.locator('#key-list button[data-action="up"]')).toHaveText('F');
+
+    await page.locator('#set-tab-touch').click();
+    await page.getByTestId('touch-edit').click();
+    await expect(page.getByTestId('touch-editor')).toBeVisible();
+    // Arrastrar el boton de fuego a otro lugar y agrandarlo.
+    const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    await page.mouse.move(size.w * 0.88, size.h * 0.74);
+    await page.mouse.down();
+    await page.mouse.move(size.w * 0.7, size.h * 0.55, { steps: 6 });
+    await page.mouse.up();
+    await page.locator('#editor-plus').click();
+    await page.locator('#editor-save').click();
+    const layout = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('cg_touch') ?? '{}'),
+    );
+    expect(layout.fire.x).toBeCloseTo(0.7, 1);
+    expect(layout.fire.y).toBeCloseTo(0.55, 1);
+    expect(layout.fire.s).toBeGreaterThan(1.1);
+    await expect(page.getByTestId('touch-editor')).toBeHidden();
+    await page.locator('#settings-close').click();
+    await expect(page.getByTestId('settings')).toBeHidden();
+  });
+});

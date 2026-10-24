@@ -66,4 +66,57 @@ test.describe('Móvil: controles táctiles', () => {
     await expect(page.getByTestId('rotate')).toBeHidden();
     await expect(page.getByTestId('btn-solo')).toBeVisible();
   });
+
+  test('el inventario se abre con la lata y se ordena arrastrando con el dedo', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_dedo'), true);
+    await startSoloGame(page);
+    await page.evaluate(() =>
+      (window as unknown as { __net: { socket: { emit(e: string): void } } }).__net.socket.emit(
+        'dev:kit',
+      ),
+    );
+    const inv = (): Promise<(string | null)[]> =>
+      page.evaluate(() =>
+        (window as unknown as { __game: { inv: ({ kind: string } | null)[] } }).__game.inv.map(
+          (i) => i?.kind ?? null,
+        ),
+      );
+    await expect.poll(async () => (await inv())[0]).toBe('rifle');
+
+    const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    const cdp = await page.context().newCDPSession(page);
+    const touch = async (
+      type: 'touchStart' | 'touchEnd' | 'touchMove',
+      x?: number,
+      y?: number,
+    ): Promise<void> => {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: x === undefined ? [] : [{ x, y: y as number, id: 7 }],
+      });
+    };
+    // La lata de sardinas esta a la derecha, a media altura.
+    await touch('touchStart', size.w * 0.94, size.h * 0.44);
+    await touch('touchEnd');
+    await expect(page.getByTestId('inv')).toBeVisible();
+
+    const center = async (i: number): Promise<{ x: number; y: number }> => {
+      const b = (await page.getByTestId('inv-slot').nth(i).boundingBox()) as {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    };
+    const a = await center(0);
+    const b = await center(3);
+    await touch('touchStart', a.x, a.y);
+    for (let k = 1; k <= 8; k++)
+      await touch('touchMove', a.x + ((b.x - a.x) * k) / 8, a.y + ((b.y - a.y) * k) / 8);
+    await touch('touchEnd');
+    await expect.poll(async () => (await inv())[3]).toBe('rifle');
+  });
 });

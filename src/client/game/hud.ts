@@ -205,6 +205,7 @@ export class Hud {
     }
     this.drawWarnings(f);
     this.drawBanner(f);
+    if (!g.connected) this.drawOffline(f);
     if (f.mapOpen) this.drawBigMap(f);
     if (!touch && g.alive && !g.result) this.drawCrosshair(f);
   }
@@ -747,6 +748,25 @@ export class Hud {
     const y = Math.round(h * 0.24);
     panel(ctx, Math.round(w / 2 - tw / 2), y - 20, tw, 40, 'rgba(26,28,44,0.88)', C.black);
     text(ctx, b.text, w / 2, y + 1, 15, color, 'center', PIX, null);
+    ctx.globalAlpha = 1;
+  }
+
+  private drawOffline(f: HudFrame): void {
+    const { ctx, w, h } = f;
+    const msg = 'Sin conexión, reconectando...';
+    ctx.font = `14px ${PIX}`;
+    const tw = ctx.measureText(msg).width + 40;
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(f.now / 250);
+    panel(
+      ctx,
+      Math.round(w / 2 - tw / 2),
+      Math.round(h * 0.4),
+      tw,
+      44,
+      'rgba(177,62,83,0.92)',
+      C.black,
+    );
+    text(ctx, msg, w / 2, Math.round(h * 0.4) + 23, 14, C.white, 'center', PIX, null);
     ctx.globalAlpha = 1;
   }
 

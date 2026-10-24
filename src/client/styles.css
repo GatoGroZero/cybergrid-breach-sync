@@ -1163,6 +1163,11 @@ input::placeholder {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* En pantallas angostas primero se juega y despues se pinta al gato. */
+  .lobby-grid > .painter {
+    order: 2;
+  }
+
   .logo {
     font-size: 20px;
   }
