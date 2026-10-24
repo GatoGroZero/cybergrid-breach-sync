@@ -76,6 +76,13 @@ test.describe('Flujo 6: fin de la partida', () => {
     await expect(page.getByTestId('results')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('#results-body tr')).toHaveCount(10);
     await expect(page.locator('#results-body tr.me')).toHaveCount(1);
+
+    // La partida terminada entra a la telemetria (solo cuentan las personas, no los bots).
+    const res = await page.request.get('/api/test/telemetry');
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.matches.total).toBeGreaterThanOrEqual(1);
+    expect(body.survivability.survivalRate).toBeGreaterThanOrEqual(0);
     await page.getByTestId('btn-back').click();
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
     await expect(page.getByTestId('room-view')).toBeVisible();

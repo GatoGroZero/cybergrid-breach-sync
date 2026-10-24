@@ -87,6 +87,9 @@ export class BRRenderer {
   private lastHealFx = 0;
   private lastStepFx = 0;
   private labels: Label[] = [];
+  private ambientAcc = 0;
+  private celebrated = false;
+  private confettiUntil = 0;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -152,6 +155,8 @@ export class BRRenderer {
     this.fx.floaters.length = 0;
     this.shake = 0;
     this.mapOpen = false;
+    this.celebrated = false;
+    this.confettiUntil = 0;
     if (!game) {
       this.map = null;
       this.ground = null;
@@ -359,8 +364,10 @@ export class BRRenderer {
         if ((ev.v >= 4 || ev.kill) && !this.hiddenByRoof(ev.x, ev.y))
           fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
         const d = this.distToMe(ev.x, ev.y);
-        if (d < 12 && g?.alive) this.sfx.hurt();
-        else if (d < 240) this.sfx.hit(Math.max(0.3, 1 - d / 240));
+        if (d < 12 && g?.alive) {
+          this.sfx.hurt();
+          this.shake = Math.max(this.shake, 2);
+        } else if (d < 240) this.sfx.hit(Math.max(0.3, 1 - d / 240));
         break;
       }
       case 'boom': {
@@ -489,6 +496,78 @@ export class BRRenderer {
     }
   }
 
+  // ------------------------------------------------------------------ ambiente
+
+  /** Detalles que le dan vida al mapa: hojas, polvo en la casa y destellos en el agua. */
+  private ambient(dt: number, now: number): void {
+    const g = this.game;
+    const map = this.map;
+    if (!g || !map) return;
+    const camX = this.camX;
+    const camY = this.camY;
+    const rate = map.kind === 'bosque' ? 1.6 : map.kind === 'casa' ? 2 : 2.4;
+    this.ambientAcc += dt * rate;
+    while (this.ambientAcc >= 1) {
+      this.ambientAcc -= 1;
+      const x = camX + Math.random() * this.viewW;
+      const y = camY + Math.random() * this.viewH;
+      if (map.kind === 'bosque') {
+        const colors = [C.grassL, C.lime, C.yellow];
+        this.fx.add({
+          x,
+          y: camY - 2,
+          vx: 6 + Math.random() * 8,
+          vy: 14 + Math.random() * 10,
+          life: 4,
+          max: 4,
+          color: colors[Math.floor(Math.random() * 3)] as string,
+          size: 1,
+          grav: 0,
+          kind: 0,
+          r: 0,
+        });
+      } else if (map.kind === 'casa') {
+        this.fx.add({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: -2 - Math.random() * 3,
+          life: 3.5,
+          max: 3.5,
+          color: '#f4f4f4',
+          size: 1,
+          grav: 0,
+          kind: 0,
+          r: 0,
+        });
+      } else if (isWaterAtPx(map, x, y)) {
+        this.fx.star(x, y, C.white, 0.7, 0);
+      }
+    }
+    if (g.result && g.result.winnerId === g.you && !this.celebrated) {
+      this.celebrated = true;
+      this.confettiUntil = now + 3200;
+    }
+    if (now < this.confettiUntil) {
+      const colors = [C.yellow, C.red, C.cyan, C.lime, C.pink, C.orange];
+      for (let i = 0; i < 4; i++) {
+        this.fx.add({
+          x: camX + Math.random() * this.viewW,
+          y: camY - 3,
+          vx: (Math.random() - 0.5) * 40,
+          vy: 40 + Math.random() * 60,
+          life: 3,
+          max: 3,
+          color: colors[Math.floor(Math.random() * colors.length)] as string,
+          size: 2,
+          grav: 30,
+          kind: 0,
+          r: 0,
+        });
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ cuadro
 
   /** Un cuadro completo: mundo en el buffer, escalado y luego el HUD en pantalla. */
@@ -506,6 +585,7 @@ export class BRRenderer {
     g.processEvents();
     this.fx.update(dt);
     this.shake = Math.max(0, this.shake - dt * 10);
+    this.ambient(dt, now);
 
     const { cats, shots } = g.sampleWorld();
     const target = g.cameraTarget(cats);
