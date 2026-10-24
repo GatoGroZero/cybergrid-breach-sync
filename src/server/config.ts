@@ -13,6 +13,7 @@ export interface Config {
   trustProxy: number | boolean;
   tickHz: number;
   snapshotEvery: number;
+  countdownSeconds: number;
   version: string;
   limits: {
     login: number;
@@ -45,8 +46,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     testEndpoints: process.env.ENABLE_TEST_ENDPOINTS !== 'false',
     demoAccounts: process.env.DEMO_ACCOUNTS !== 'false',
     trustProxy: int(process.env.TRUST_PROXY, env === 'production' ? 2 : 0),
-    tickHz: int(process.env.TICK_HZ, SIM_HZ),
+    tickHz: SIM_HZ,
     snapshotEvery: Math.max(1, int(process.env.SNAPSHOT_EVERY, 1)),
+    countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
     version: '1.0.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),

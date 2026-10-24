@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const metrics = new Metrics();
 
   const http = createServer();
-  const realtime = createRealtime(http, { config, metrics });
+  const realtime = createRealtime(http, { config, metrics, repo });
   const app = createApp({ config, repo, metrics, runtime: realtime.runtime });
   http.on('request', app);
 
