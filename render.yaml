@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cybergrid-breach-sync
+    runtime: node
+    plan: free
+    region: ohio
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/test/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
