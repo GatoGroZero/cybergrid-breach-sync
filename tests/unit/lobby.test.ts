@@ -70,14 +70,14 @@ describe('lobby y proteccion de salas', () => {
     expect(again).toEqual({ ok: false, error: 'ya_estas_en_una_sala' });
   });
 
-  it('las salas publicas se listan y se llenan a 10 gatos', async () => {
+  it('las salas publicas se listan y se llenan a 12 gatos', async () => {
     const host = await login('publico_host');
     const created = await emitAck<{ code: string }>(host, 'room:create', { isPrivate: false });
     const code = created.ok ? created.data!.code : '';
     const listed = await emitAck<PublicRoom[]>(host, 'rooms:list');
     expect(listed.ok && listed.data!.find((r) => r.code === code)?.players).toBe(1);
 
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= 11; i++) {
       const s = await login(`relleno_${i}`);
       expect((await emitAck(s, 'room:join', { code })).ok).toBe(true);
     }
@@ -88,7 +88,7 @@ describe('lobby y proteccion de salas', () => {
     });
   });
 
-  it('con todos en Listo arranca la cuenta regresiva y la partida con 10 gatos; un input falsificado se ignora', async () => {
+  it('con todos en Listo arranca la cuenta regresiva y la partida con 12 gatos; un input falsificado se ignora', async () => {
     const a = await login('equipo_a');
     const b = await login('equipo_b');
     const created = await emitAck<{ code: string }>(a, 'room:create', {
@@ -103,8 +103,8 @@ describe('lobby y proteccion de salas', () => {
     expect((await emitAck(a, 'room:ready', { ready: true })).ok).toBe(true);
     expect((await emitAck(b, 'room:ready', { ready: true })).ok).toBe(true);
     const [sa, sb] = await Promise.all([startA, startB]);
-    expect(sa.cats).toHaveLength(10);
-    expect(sa.cats.filter((c) => c.bot)).toHaveLength(8);
+    expect(sa.cats).toHaveLength(12);
+    expect(sa.cats.filter((c) => c.bot)).toHaveLength(10);
     expect(sa.map).toBe('bosque');
     expect(sa.seed).toBe(sb.seed);
     expect(sa.you).not.toBe(sb.you);
@@ -156,7 +156,7 @@ describe('lobby y proteccion de salas', () => {
     const game = lobby.rooms.get(code)!.game!;
     game.forceFinish(game.cats.find((c) => c.bot)!.id);
     const result = await ended;
-    expect(result.rows).toHaveLength(10);
+    expect(result.rows).toHaveLength(12);
     expect(result.humanWon).toBe(false);
     const totals = server.repo.totals();
     expect(totals.real.matches).toBe(before + 1);
@@ -183,7 +183,7 @@ describe('lobby y proteccion de salas', () => {
         name: 'Con amigos',
         host: 'anfitrion_pub',
         players: 1,
-        maxPlayers: 6,
+        maxPlayers: 8,
         bots: 4,
         phase: 'lobby',
       });
@@ -197,11 +197,11 @@ describe('lobby y proteccion de salas', () => {
       expect((await second).find((r) => r.code === code)?.players).toBe(2);
     });
 
-    it('con bots exactos se reservan sus lugares: no caben mas personas que 10 menos los bots', async () => {
+    it('con bots exactos se reservan sus lugares: no caben mas personas que 12 menos los bots', async () => {
       const host = await login('cupo_host');
       const created = await emitAck<{ code: string }>(host, 'room:create', {
         isPrivate: true,
-        bots: 8,
+        bots: 10,
       });
       const code = created.ok ? created.data!.code : '';
       expect((await emitAck(await login('cupo_2'), 'room:join', { code })).ok).toBe(true);
@@ -227,8 +227,8 @@ describe('lobby y proteccion de salas', () => {
         ok: false,
         error: 'datos_invalidos',
       });
-      // Con 2 personas dentro no se pueden reservar 9 bots.
-      expect(await emitAck(host, 'room:settings', { bots: 9 })).toEqual({
+      // Con 2 personas dentro no se pueden reservar 11 bots.
+      expect(await emitAck(host, 'room:settings', { bots: 11 })).toEqual({
         ok: false,
         error: 'demasiados_jugadores',
       });
@@ -241,7 +241,7 @@ describe('lobby y proteccion de salas', () => {
       expect(next).toMatchObject({
         bots: 6,
         botCount: 6,
-        maxHumans: 4,
+        maxHumans: 6,
         map: 'piscina',
         isPrivate: true,
         canStart: true,

@@ -19,6 +19,7 @@ export const ACTIONS = [
   'fireKey',
   'run',
   'mute',
+  'emote',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -38,6 +39,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   fireKey: 'Disparar (además del clic)',
   run: 'Correr (mantener)',
   mute: 'Silenciar',
+  emote: 'Abrir los emotes',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -56,6 +58,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   fireKey: 'Space',
   run: 'ShiftLeft',
   mute: 'KeyN',
+  emote: 'KeyT',
 };
 
 /** Las flechas siempre mueven al gato, ademas de las teclas que cada jugador elija. */
@@ -115,7 +118,16 @@ export function saveKeys(keys: Record<Action, string>): void {
 
 // ------------------------------------------------------------------ botones tactiles
 
-export const TOUCH_IDS = ['stick', 'aim', 'interact', 'bag', 'hotbar', 'menu', 'map'] as const;
+export const TOUCH_IDS = [
+  'stick',
+  'aim',
+  'interact',
+  'bag',
+  'hotbar',
+  'menu',
+  'map',
+  'emote',
+] as const;
 export type TouchId = (typeof TOUCH_IDS)[number];
 
 export interface TouchSpot {
@@ -135,6 +147,7 @@ export const TOUCH_LABELS: Record<TouchId, string> = {
   hotbar: 'Objetos',
   menu: 'Menú',
   map: 'Mapa',
+  emote: 'Emotes',
 };
 
 export const DEFAULT_TOUCH: TouchLayout = {
@@ -145,6 +158,7 @@ export const DEFAULT_TOUCH: TouchLayout = {
   hotbar: { x: 0.5, y: 0.9, s: 1 },
   menu: { x: 0.04, y: 0.1, s: 0.9 },
   map: { x: 0.955, y: 0.3, s: 0.9 },
+  emote: { x: 0.04, y: 0.5, s: 0.85 },
 };
 
 export function loadTouchLayout(): TouchLayout {
@@ -219,6 +233,7 @@ export function touchCircles(
     hotbar: { x: hot.x * w, y: hot.y * h, r: slotR * 5.6 },
     menu: c('menu', 20),
     map: c('map', 20),
+    emote: c('emote', 24),
     slots,
   };
 }
@@ -258,6 +273,8 @@ export interface InputCallbacks {
   onMenu: () => void;
   onSelect: (slot: number) => void;
   onMute: () => void;
+  /** Mando el emote `kind` (0 a 4). */
+  onEmote: (kind: number) => void;
   onFirstGesture: () => void;
   onModeChange: (mode: ControlMode) => void;
 }
@@ -277,6 +294,9 @@ export class InputController {
   playerScreen = { x: 480, y: 270 };
   /** Rectangulos de la barra de objetos en pantalla (modo PC), puestos por el renderizador. */
   hotbarRects: { x: number; y: number; w: number; h: number }[] = [];
+  /** La barra de emotes esta abierta; el renderizador pone aqui sus botones mientras lo este. */
+  emoteOpen = false;
+  emoteRects: { x: number; y: number; w: number; h: number }[] = [];
   mouse: { x: number; y: number } | null = null;
   stick = { x: 0, y: 0, active: false };
   aimPad: AimPad = { active: false, x: 0, y: 0, aiming: false };
@@ -352,7 +372,8 @@ export class InputController {
     if (!this.active) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (e.code === 'Escape') {
-      if (!e.repeat) this.cb.onMenu();
+      if (this.emoteOpen) this.emoteOpen = false;
+      else if (!e.repeat) this.cb.onMenu();
       return;
     }
     const action = this.actionFor(e.code);
@@ -360,8 +381,15 @@ export class InputController {
     e.preventDefault();
     this.cb.onFirstGesture();
     this.setMode('keyboard');
+    if (this.emoteOpen) {
+      // Con la barra abierta, los numeros eligen emote en vez de objeto.
+      if (!e.repeat && action.startsWith('slot')) this.pickEmote(Number(action.slice(4)) - 1);
+      else if (!e.repeat && action === 'emote') this.emoteOpen = false;
+      return;
+    }
     if (!this.down.has(e.code) && !e.repeat) {
-      if (action === 'interact') this.cb.onInteract();
+      if (action === 'emote') this.emoteOpen = true;
+      else if (action === 'interact') this.cb.onInteract();
       else if (action === 'bag') this.cb.onBag();
       else if (action === 'map') this.cb.onMap();
       else if (action === 'mute') this.cb.onMute();
@@ -370,6 +398,23 @@ export class InputController {
     }
     this.down.add(e.code);
   };
+
+  /** Elige un emote de la barra: lo manda y la cierra. */
+  private pickEmote(kind: number): void {
+    this.emoteOpen = false;
+    if (kind >= 0 && kind < this.emoteRects.length) this.cb.onEmote(kind);
+  }
+
+  /** Si hay una barra de emotes abierta, atiende el toque. Devuelve true si lo uso. */
+  private emotePress(x: number, y: number): boolean {
+    if (!this.emoteOpen) return false;
+    const i = this.emoteRects.findIndex(
+      (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h,
+    );
+    if (i >= 0) this.pickEmote(i);
+    else this.emoteOpen = false;
+    return true;
+  }
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.down.delete(e.code);
@@ -394,6 +439,7 @@ export class InputController {
     this.setMode('keyboard');
     this.mouse = p;
     if (e.button !== 0) return;
+    if (this.emotePress(p.x, p.y)) return;
     const slot = this.hotbarRects.findIndex(
       (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h,
     );
@@ -407,6 +453,7 @@ export class InputController {
 
   private touchDown(id: number, x: number, y: number): void {
     const { w, h } = this.screen;
+    if (this.emotePress(x, y)) return;
     const circles = touchCircles(this.touchLayout, w, h);
     for (let i = 0; i < 5; i++) {
       if (inside(circles.slots[i] as Circle, x, y, 1.15)) {
@@ -427,6 +474,7 @@ export class InputController {
     if (tap('bag', this.cb.onBag)) return;
     if (tap('menu', this.cb.onMenu)) return;
     if (tap('map', this.cb.onMap)) return;
+    if (tap('emote', () => (this.emoteOpen = true))) return;
     if (inside(circles.aim, x, y, 1.6) || (x > w * 0.6 && y > h * 0.3 && y < h * 0.97)) {
       this.pointers.set(id, { id: 'aim', startX: circles.aim.x, startY: circles.aim.y });
       this.pressed.add('aim');

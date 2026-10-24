@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  HEAL,
   applyDamage,
   healDuration,
   healMissing,
@@ -49,18 +50,28 @@ describe('vida, escudo y curación', () => {
     expect(healMissing('medkit', { hp: 100, shield: 0 })).toBe(0);
   });
 
-  it('el escudo sube 5 por segundo hasta 100, sin tocar la vida', () => {
-    let v = { hp: 40, shield: 70 };
+  it('cada escudo da 10 por segundo durante 5 segundos (50 en total), sin tocar la vida', () => {
+    let v = { hp: 40, shield: 10 };
+    let left: number = HEAL.shield.total;
     const trace: number[] = [];
     for (let i = 0; i < 10; i++) {
-      const r = healStep('shield', v);
+      const r = healStep('shield', v, left);
       v = { hp: r.hp, shield: r.shield };
+      left = r.left;
       trace.push(r.shield);
       if (r.done) break;
     }
-    expect(trace).toEqual([75, 80, 85, 90, 95, 100]);
+    expect(trace).toEqual([20, 30, 40, 50, 60]);
     expect(v.hp).toBe(40);
-    expect(healDuration('shield', { hp: 100, shield: 0 })).toBe(20);
+    expect(HEAL.shield.total).toBe(50);
+    expect(healDuration('shield', { hp: 100, shield: 0 })).toBe(5);
+    expect(healDuration('shield', { hp: 100, shield: 80 })).toBe(2);
+    expect(healMissing('shield', { hp: 100, shield: 100 })).toBe(0);
+    // Con 90 de escudo solo se llega a 100 y el sobrante del escudo no se acumula.
+    expect(healStep('shield', { hp: 100, shield: 95 }, 50)).toMatchObject({
+      shield: 100,
+      done: true,
+    });
   });
 
   it('la explosión daña más en el centro y menos en el borde', () => {
@@ -90,38 +101,56 @@ describe('zona de ola: tres zonas aleatorias y partida de máximo 15 minutos', (
     }
   });
 
-  it('los primeros 4 minutos no hay daño y a los 4, 8 y 12 minutos llega cada zona', () => {
+  it('30 s de calma, cierra en 10 s, avisa 20 s, cierra en 15 s, cuenta 10 s y colapsa', () => {
     const plan = planZones(createRng(3), W, H);
     const full = fullMapCircle(W, H);
+    const T = ZONE_TIMELINE;
+    expect([T.start1, T.shrink1, T.start2, T.shrink2, T.start3]).toEqual([30, 10, 60, 15, 85]);
+
+    // calma: sin daño y con el mapa entero a salvo
     expect(zoneAt(plan, W, H, 0)).toMatchObject({ phase: 0, dps: 0, shrinking: false });
-    expect(zoneAt(plan, W, H, 239).dps).toBe(0);
-    expect(zoneAt(plan, W, H, 239).circle.r).toBe(full.r);
+    expect(zoneAt(plan, W, H, 29).dps).toBe(0);
+    expect(zoneAt(plan, W, H, 29).circle.r).toBe(full.r);
+    expect(zoneAt(plan, W, H, 29).nextIn).toBe(1);
 
-    const t4 = zoneAt(plan, W, H, ZONE_TIMELINE.start1 + 1);
-    expect(t4.phase).toBe(1);
-    expect(t4.shrinking).toBe(true);
-    expect(t4.circle.r).toBeLessThan(full.r);
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.start1 + ZONE_TIMELINE.shrink1 + 1).circle).toEqual(
-      plan[0],
-    );
+    // primera ola: 10 segundos para cerrar hasta la zona 1
+    const closing = zoneAt(plan, W, H, 35);
+    expect(closing).toMatchObject({ phase: 1, shrinking: true });
+    expect(closing.circle.r).toBeLessThan(full.r);
+    expect(closing.circle.r).toBeGreaterThan(plan[0].r);
+    expect(zoneAt(plan, W, H, 40).circle).toEqual(plan[0]);
 
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.start2 + 1).phase).toBe(2);
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.start2 + ZONE_TIMELINE.shrink2 + 1).circle).toEqual(
-      plan[1],
-    );
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.start3 + 1).phase).toBe(3);
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.start3 + ZONE_TIMELINE.shrink3 + 1).circle).toEqual(
-      plan[2],
-    );
+    // aviso: en 20 segundos se cierra la segunda ola
+    const wait = zoneAt(plan, W, H, 40);
+    expect(wait).toMatchObject({ phase: 1, shrinking: false });
+    expect(wait.nextIn).toBe(20);
+    expect(wait.next).toEqual(plan[1]);
+
+    // segunda ola: 15 segundos hasta la zona 2
+    expect(zoneAt(plan, W, H, 60)).toMatchObject({ phase: 2, shrinking: true });
+    expect(zoneAt(plan, W, H, 67).circle.r).toBeLessThan(plan[0].r);
+    expect(zoneAt(plan, W, H, 75).circle).toEqual(plan[1]);
+
+    // ultima ola: cuenta de 10 segundos con el refugio final a la vista
+    const last = zoneAt(plan, W, H, 75);
+    expect(last).toMatchObject({ phase: 3, shrinking: false });
+    expect(last.nextIn).toBe(10);
+    expect(last.next).toEqual(plan[2]);
+    expect(zoneAt(plan, W, H, 84).circle).toEqual(plan[1]);
+
+    // colapso: empieza a cerrar hasta inundar todo
+    expect(zoneAt(plan, W, H, 85)).toMatchObject({ phase: 4, shrinking: true });
+    expect(zoneAt(plan, W, H, 105).circle.r).toBeLessThan(plan[1].r);
   });
 
-  it('a los 15 minutos ya no queda zona libre y el daño sube con cada fase', () => {
+  it('a los 2 minutos ya no queda zona libre y el daño sube con cada fase', () => {
     const plan = planZones(createRng(4), W, H);
-    const end = zoneAt(plan, W, H, ZONE_TIMELINE.end);
-    expect(end.circle.r).toBe(0);
-    expect(zoneAt(plan, W, H, ZONE_TIMELINE.end - 5).circle.r).toBeLessThan(plan[2].r);
-    expect(ZONE_TIMELINE.end).toBe(900);
-    const dps = [1, 300, 500, 740, 850].map((t) => zoneAt(plan, W, H, t).dps);
+    const T = ZONE_TIMELINE;
+    expect(zoneAt(plan, W, H, T.start3 + T.collapse).circle.r).toBe(0);
+    expect(zoneAt(plan, W, H, T.start3 + T.collapse - 5).circle.r).toBeLessThan(plan[1].r);
+    expect(zoneAt(plan, W, H, T.end).circle.r).toBe(0);
+    expect(T.end).toBeLessThanOrEqual(150);
+    const dps = [1, 35, 50, 70, 90, 120].map((t) => zoneAt(plan, W, H, t).dps);
     for (let i = 1; i < dps.length; i++)
       expect(dps[i]).toBeGreaterThanOrEqual(dps[i - 1] as number);
     expect(ZONE_DPS[4]).toBeGreaterThan(ZONE_DPS[1]);
@@ -130,7 +159,7 @@ describe('zona de ola: tres zonas aleatorias y partida de máximo 15 minutos', (
   it('el radio de la zona nunca crece y insideCircle distingue dentro y fuera', () => {
     const plan = planZones(createRng(9), W, H);
     let prev = Infinity;
-    for (let t = 0; t <= 900; t += 5) {
+    for (let t = 0; t <= ZONE_TIMELINE.end; t += 1) {
       const r = zoneAt(plan, W, H, t).circle.r;
       expect(r).toBeLessThanOrEqual(prev + 1e-9);
       prev = r;

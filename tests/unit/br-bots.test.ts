@@ -183,21 +183,25 @@ describe('conducta de los bots', () => {
     const game = botGame('bosque', 77);
     const human = game.cat(1) as Cat;
     human.bot = false;
-    while (game.time < 40) {
+    while (game.time < 20) {
       game.step();
       game.endTick();
     }
     game.damageCat(human, 9999, game.cat(2) as Cat);
-    const before = new Map(game.cats.filter((c) => c.alive).map((c) => [c.id, { x: c.x, y: c.y }]));
-    while (game.time < 70 && !game.over) {
+    // Con la ola tan rapida se mide el camino recorrido, no el desplazamiento neto.
+    const last = new Map(game.cats.map((c) => [c.id, { x: c.x, y: c.y }]));
+    const walked = new Map<number, number>();
+    while (game.time < 50 && !game.over) {
       game.step();
       game.endTick();
+      for (const c of game.cats) {
+        const l = last.get(c.id);
+        if (!c.alive || !l) continue;
+        walked.set(c.id, (walked.get(c.id) ?? 0) + Math.hypot(c.x - l.x, c.y - l.y));
+        last.set(c.id, { x: c.x, y: c.y });
+      }
     }
-    let moved = 0;
-    for (const c of game.cats) {
-      const b = before.get(c.id);
-      if (c.alive && b && Math.hypot(c.x - b.x, c.y - b.y) > 20) moved++;
-    }
-    expect(game.over || moved >= 3).toBe(true);
+    const movers = [...walked.values()].filter((d) => d > 40).length;
+    expect(game.over || movers >= 4).toBe(true);
   });
 });

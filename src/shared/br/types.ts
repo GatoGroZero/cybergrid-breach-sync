@@ -17,10 +17,11 @@ export type BREvent =
   | { e: 'wallbreak'; x: number; y: number }
   | { e: 'place'; x: number; y: number }
   | { e: 'death'; x: number; y: number; id: number }
-  | { e: 'open'; x: number; y: number; golden: boolean }
+  | { e: 'open'; x: number; y: number; golden: boolean; ammo?: boolean }
+  | { e: 'emote'; x: number; y: number; id: number; k: number }
   | { e: 'splash'; x: number; y: number }
   | { e: 'heal'; x: number; y: number; kind: 'hp' | 'shield' }
-  | { e: 'zone'; phase: number }
+  | { e: 'zone'; phase: number; shrinking: boolean }
   | { e: 'claw'; x: number; y: number; a: number };
 
 export interface MeState {

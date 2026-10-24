@@ -608,14 +608,173 @@ function medkitIcon(): HTMLCanvasElement {
   return outline(cv, C.black);
 }
 
+/** Escudo de caballero: borde de metal, campo azul en dos tonos y una gema amarilla al centro. */
 function shieldIcon(): HTMLCanvasElement {
   const [cv, c] = make(16, 16);
-  disc(c, 8, 10, 5, C.blue);
-  disc(c, 7, 9, 3.5, C.sky);
-  rect(c, 6, 2, 4, 4, '#d9d2c0');
-  rect(c, 7, 1, 2, 2, '#8b5e3c');
-  px(c, 5, 8, C.white);
-  px(c, 6, 7, C.white);
+  // columnas que ocupa cada fila: recto arriba y en punta abajo
+  const span = (y: number): [number, number] => {
+    if (y <= 8) return [2, 13];
+    if (y <= 10) return [3, 12];
+    if (y === 11) return [4, 11];
+    if (y === 12) return [5, 10];
+    if (y === 13) return [6, 9];
+    return [7, 8];
+  };
+  for (let y = 1; y <= 14; y++) {
+    const [l, r] = span(y);
+    rect(c, l, y, r - l + 1, 1, C.white);
+    if (y >= 2 && y <= 13) {
+      for (let x = l + 1; x <= r - 1; x++) px(c, x, y, x < 8 ? C.sky : C.blue);
+      px(c, r, y, C.lgray);
+    }
+  }
+  rect(c, 3, 2, 10, 1, '#d8e2ea');
+  // gema central
+  for (const [y, a, b] of [
+    [4, 7, 8],
+    [5, 6, 9],
+    [6, 5, 10],
+    [7, 6, 9],
+    [8, 7, 8],
+  ] as const)
+    rect(c, a, y, b - a + 1, 1, C.yellow);
+  px(c, 7, 5, C.white);
+  px(c, 8, 8, C.orange);
+  px(c, 9, 7, C.orange);
+  return outline(cv, C.black);
+}
+
+/** Caja de municion militar: verde oliva con correas y balas pintadas; abierta muestra las balas. */
+function ammoCrateSprite(open: boolean): HTMLCanvasElement {
+  const [cv, c] = make(16, 16);
+  ell(c, 8, 14, 7, 2, 'rgba(26,28,44,0.3)');
+  const body = '#5b6e3a';
+  const dark = '#3f4d28';
+  const light = '#7f9650';
+  rect(c, 2, 7, 12, 7, body);
+  rect(c, 2, 12, 12, 2, dark);
+  rect(c, 2, 7, 1, 7, dark);
+  rect(c, 13, 7, 1, 7, dark);
+  rect(c, 3, 7, 1, 7, C.gray);
+  rect(c, 12, 7, 1, 7, C.gray);
+  if (!open) {
+    rect(c, 2, 4, 12, 4, light);
+    rect(c, 2, 4, 12, 1, '#a3b86c');
+    rect(c, 2, 7, 12, 1, dark);
+    rect(c, 7, 6, 2, 2, C.lgray);
+    for (const x of [6, 9]) {
+      rect(c, x, 9, 1, 3, C.yellow);
+      px(c, x, 8, C.orange);
+    }
+  } else {
+    rect(c, 3, 7, 10, 2, C.black);
+    for (let i = 0; i < 5; i++) {
+      rect(c, 4 + i * 2, 5, 1, 3, C.yellow);
+      px(c, 4 + i * 2, 4, C.orange);
+      px(c, 4 + i * 2, 6, '#d9a574');
+    }
+    rect(c, 2, 0, 12, 3, light);
+    rect(c, 2, 2, 12, 1, dark);
+  }
+  return outline(cv, C.black);
+}
+
+// ------------------------------------------------------------------ emotes
+
+const EMOTE_DARK = '#2a1a1a';
+
+/** Cara o simbolo de un emote en 13 x 13: 0 risa, 1 llanto, 2 enojo, 3 bandera blanca, 4 paz. */
+function emoteFace(kind: number): HTMLCanvasElement {
+  const [cv, c] = make(13, 13);
+  const head = (color: string): void => {
+    disc(c, 6, 6, 6.3, C.black);
+    disc(c, 6, 6, 5.3, color);
+  };
+  if (kind === 0) {
+    head(C.yellow);
+    for (const x of [3, 7]) {
+      px(c, x, 5, EMOTE_DARK);
+      px(c, x + 1, 4, EMOTE_DARK);
+      px(c, x + 2, 5, EMOTE_DARK);
+    }
+    rect(c, 3, 7, 7, 2, '#7b1e2b');
+    rect(c, 4, 9, 5, 1, '#7b1e2b');
+    rect(c, 4, 7, 5, 1, C.white);
+    px(c, 6, 9, C.rose);
+    px(c, 7, 9, C.rose);
+    px(c, 1, 7, C.cyan);
+    px(c, 11, 7, C.cyan);
+  } else if (kind === 1) {
+    head(C.yellow);
+    rect(c, 3, 5, 3, 1, EMOTE_DARK);
+    rect(c, 7, 5, 3, 1, EMOTE_DARK);
+    px(c, 3, 4, EMOTE_DARK);
+    px(c, 9, 4, EMOTE_DARK);
+    for (const x of [3, 9]) {
+      rect(c, x, 6, 1, 5, C.sky);
+      px(c, x, 6, C.cyan);
+    }
+    rect(c, 5, 9, 3, 1, EMOTE_DARK);
+    px(c, 4, 10, EMOTE_DARK);
+    px(c, 8, 10, EMOTE_DARK);
+  } else if (kind === 2) {
+    head(C.orange);
+    for (const [x, y] of [
+      [2, 3],
+      [3, 4],
+      [4, 5],
+      [5, 5],
+      [10, 3],
+      [9, 4],
+      [8, 5],
+      [7, 5],
+    ] as const)
+      px(c, x, y, EMOTE_DARK);
+    rect(c, 3, 6, 2, 2, EMOTE_DARK);
+    rect(c, 8, 6, 2, 2, EMOTE_DARK);
+    px(c, 4, 10, EMOTE_DARK);
+    rect(c, 5, 9, 3, 1, EMOTE_DARK);
+    px(c, 8, 10, EMOTE_DARK);
+  } else if (kind === 3) {
+    // bandera blanca de rendicion
+    rect(c, 2, 1, 1, 11, '#8b5e3c');
+    px(c, 2, 0, C.yellow);
+    for (let x = 3; x <= 11; x++) {
+      const y0 = 1 + (Math.floor((x - 3) / 2) % 2 === 0 ? 0 : 1);
+      rect(c, x, y0, 1, 6, C.white);
+      px(c, x, y0 + 5, '#c9d4dc');
+    }
+    rect(c, 0, 12, 5, 1, C.gray);
+  } else {
+    head(C.green);
+    for (let a = 0; a < 360; a += 12) {
+      const r = (a * Math.PI) / 180;
+      px(c, 6 + Math.cos(r) * 3.7, 6 + Math.sin(r) * 3.7, C.white);
+    }
+    rect(c, 6, 2, 1, 9, C.white);
+    for (const [x, y] of [
+      [5, 7],
+      [4, 8],
+      [3, 9],
+      [7, 7],
+      [8, 8],
+      [9, 9],
+    ] as const)
+      px(c, x, y, C.white);
+  }
+  return outline(cv, kind === 3 ? C.black : 'rgba(0,0,0,0)');
+}
+
+/** Globo de dialogo blanco con el emote adentro y una colita hacia el gato. */
+function emoteBubble(kind: number): HTMLCanvasElement {
+  const [cv, c] = make(19, 21);
+  rect(c, 1, 0, 17, 17, C.white);
+  rect(c, 0, 1, 19, 15, C.white);
+  rect(c, 8, 17, 3, 1, C.white);
+  rect(c, 9, 18, 1, 1, C.white);
+  rect(c, 0, 14, 19, 2, '#e0e6ec');
+  const face = emoteFace(kind);
+  c.drawImage(face, Math.round((19 - face.width) / 2), 2);
   return outline(cv, C.black);
 }
 
@@ -774,6 +933,8 @@ export interface Assets {
     goldOpen: HTMLCanvasElement;
   };
   tomb: HTMLCanvasElement;
+  ammoCrate: { closed: HTMLCanvasElement; open: HTMLCanvasElement };
+  emote: { face: HTMLCanvasElement[]; bubble: HTMLCanvasElement[] };
   wall: HTMLCanvasElement[];
   icon: Record<ItemKind, HTMLCanvasElement>;
   heart: HTMLCanvasElement;
@@ -880,6 +1041,11 @@ export function buildAssets(): Assets {
       goldOpen: chestSprite(true, true),
     },
     tomb: tombSprite(),
+    ammoCrate: { closed: ammoCrateSprite(false), open: ammoCrateSprite(true) },
+    emote: {
+      face: [0, 1, 2, 3, 4].map(emoteFace),
+      bubble: [0, 1, 2, 3, 4].map(emoteBubble),
+    },
     wall: [0, 1, 2, 3].map(wallSprite),
     icon,
     heart: heartIcon(),

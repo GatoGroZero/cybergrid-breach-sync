@@ -120,8 +120,8 @@ describe('esquemas Zod del protocolo de juego', () => {
     expect(createRoomSchema.safeParse({ map: 'luna' }).success).toBe(false);
     expect(createRoomSchema.parse({}).bots).toBe('llenar');
     expect(createRoomSchema.parse({ bots: 0 }).bots).toBe(0);
-    expect(createRoomSchema.parse({ bots: 9 }).bots).toBe(9);
-    for (const bad of [10, -1, 1.5, 'muchos', null])
+    expect(createRoomSchema.parse({ bots: 11 }).bots).toBe(11);
+    for (const bad of [12, -1, 1.5, 'muchos', null])
       expect(createRoomSchema.safeParse({ bots: bad }).success).toBe(false);
     expect(pingSchema.safeParse({ t: 123.4 }).success).toBe(true);
     expect(pingSchema.safeParse({ t: 'x' }).success).toBe(false);

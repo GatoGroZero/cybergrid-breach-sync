@@ -107,6 +107,9 @@ export class ClientBR {
   died: DiedPayload | null = null;
   loot: LootContents | null = null;
   banner: Banner | null = null;
+  /** Emote que tiene cada gato sobre la cabeza: clase (0 a 4) y cuando salio. */
+  readonly emotes = new Map<number, { k: number; at: number }>();
+  private lastEmoteAt = 0;
   feed: { text: string; until: number }[] = [];
   snapshotsPerSecond = 0;
   private snapCount = 0;
@@ -406,6 +409,19 @@ export class ClientBR {
     if (this.eventQueue.length > 400) this.eventQueue.splice(0, this.eventQueue.length - 400);
   }
 
+  /** Manda un emote (con un respiro de 1.5 s entre uno y otro, igual que el servidor). */
+  /** Cuando mande mi ultimo emote (para atenuar la barra mientras se espera). */
+  get lastEmoteTime(): number {
+    return this.lastEmoteAt;
+  }
+
+  sendEmote(kind: number): void {
+    const now = performance.now();
+    if (!this.alive || !this.net.connected || now - this.lastEmoteAt < 1500) return;
+    this.lastEmoteAt = now;
+    this.net.socket.emit('game:emote', { k: kind });
+  }
+
   say(text: string, tone: Banner['tone'] = 'info', ms = 2800): void {
     this.banner = { text, until: performance.now() + ms, tone };
   }
@@ -420,16 +436,21 @@ export class ClientBR {
         break;
       }
       case 'zone': {
-        const labels = [
-          '',
-          '¡La ola avanza hacia la zona 1!',
-          '¡La ola avanza hacia la zona 2!',
-          '¡La ola avanza hacia la zona 3!',
-          '¡La ola lo cubre todo!',
-        ];
-        this.say(labels[ev.phase] ?? '', 'bad', 3600);
+        // Cada paso de la ola avisa: empieza a cerrar, se queda quieta, ultima ola, colapso.
+        let text = '';
+        if (ev.phase === 1)
+          text = ev.shrinking
+            ? '¡LA OLA SE CIERRA! Corre al círculo'
+            : 'En 20 segundos se cerrará la segunda ola';
+        else if (ev.phase === 2) text = '¡La segunda ola se cierra!';
+        else if (ev.phase === 3) text = '¡ÚLTIMA OLA CERRÁNDOSE!';
+        else if (ev.phase === 4) text = '¡La ola lo cubre todo!';
+        if (text) this.say(text, 'bad', ev.phase === 3 ? 4200 : 3600);
         break;
       }
+      case 'emote':
+        this.emotes.set(ev.id, { k: ev.k, at: performance.now() });
+        break;
       case 'heal':
         if (Math.hypot(ev.x - this.x, ev.y - this.y) < 10) this.healPulse = 1;
         break;

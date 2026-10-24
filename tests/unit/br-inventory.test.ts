@@ -29,23 +29,23 @@ describe('inventario de 5 espacios', () => {
     expect(INVENTORY_SLOTS).toBe(5);
   });
 
-  it('las balas no ocupan espacios: van a su compartimento y se detienen en 100 de cada arma', () => {
+  it('las balas no ocupan espacios: van a su compartimento y se detienen en 120 de cada arma', () => {
     const inv = emptyInventory();
     const ammo = emptyAmmo();
     expect(giveItem(inv, ammo, ammoItem(60))).toBeNull();
     expect(giveItem(inv, ammo, ammoItem(30))).toBeNull();
     expect(ammo.ammo_pistol).toBe(90);
     expect(inv.every((s) => s === null)).toBe(true);
-    // solo caben 10 mas: el resto se queda donde estaba
+    // solo caben 30 mas: el resto se queda donde estaba
     const left = giveItem(inv, ammo, ammoItem(40));
-    expect(left).toMatchObject({ kind: 'ammo_pistol', qty: 30 });
+    expect(left).toMatchObject({ kind: 'ammo_pistol', qty: 10 });
     expect(ammo.ammo_pistol).toBe(AMMO_MAX);
-    expect(AMMO_MAX).toBe(100);
+    expect(AMMO_MAX).toBe(120);
     // cada arma tiene su propio tope
-    expect(giveItem(inv, ammo, { kind: 'ammo_rifle', qty: 100, rarity: 0 })).toBeNull();
-    expect(ammo.ammo_rifle).toBe(100);
-    expect(ammoToArray(ammo)).toEqual([100, 0, 0, 0, 100]);
-    expect(ammoFromArray([5, 6, 7, 8, 999])).toMatchObject({ ammo_pistol: 5, ammo_rifle: 100 });
+    expect(giveItem(inv, ammo, { kind: 'ammo_rifle', qty: 120, rarity: 0 })).toBeNull();
+    expect(ammo.ammo_rifle).toBe(120);
+    expect(ammoToArray(ammo)).toEqual([120, 0, 0, 0, 120]);
+    expect(ammoFromArray([5, 6, 7, 8, 999])).toMatchObject({ ammo_pistol: 5, ammo_rifle: 120 });
   });
 
   it('addItem y placeInSlot rechazan las balas, y spendAmmo solo gasta lo que hay', () => {

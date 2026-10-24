@@ -1,6 +1,13 @@
 import { CLAWS } from '../../src/shared/br/items';
 import { describe, expect, it } from 'vitest';
-import { CAT, TICK_DT, TILE, WALL_ITEM, SPAWN_GRACE_S } from '../../src/shared/br/constants';
+import {
+  AMMO_MAX,
+  CAT,
+  TICK_DT,
+  TILE,
+  WALL_ITEM,
+  SPAWN_GRACE_S,
+} from '../../src/shared/br/constants';
 import type { AmmoKind, Item, Rarity, WeaponKind } from '../../src/shared/br/items';
 import { G, isSolidTile } from '../../src/shared/br/map';
 import { defaultSkin } from '../../src/shared/br/skin';
@@ -54,7 +61,17 @@ function arena(mapKind: 'bosque' | 'casa' | 'piscina' = 'bosque') {
       if (ok) spot = { x, y };
     }
   }
-  if (!spot) throw new Error('sin tramo despejado');
+  if (!spot) {
+    // El mapa de esta semilla no trae un tramo recto libre: se despeja uno para la prueba.
+    spot = { x: 8, y: Math.floor(m.h / 2) };
+    for (let k = 0; k < 20; k++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const i = (spot.y + dy) * m.w + spot.x + k;
+        m.solid[i] = 0;
+        if (m.ground[i] === G.WATER) m.ground[i] = G.GRASS;
+      }
+    }
+  }
   const [a, b, c] = game.cats as [Cat, Cat, Cat];
   a.x = spot.x * TILE + 8;
   a.y = spot.y * TILE + 8;
@@ -117,18 +134,83 @@ describe('vida, escudo y curación en partida', () => {
     expect(a.inv[0]).toBeNull();
   });
 
-  it('el escudo sube 5 por segundo hasta 100 y también se cancela al cambiar', () => {
+  it('el escudo sube 10 por segundo y también se cancela al cambiar', () => {
     const { game, a } = arena();
     give(a, 0, { kind: 'shield', qty: 1, rarity: 0 });
     give(a, 1, weapon('rifle', 0));
     game.select(1, 0);
     game.fireControl(a, 0, true, false);
     run(game, 95);
-    expect(a.shield).toBe(15);
+    expect(a.shield).toBe(30);
     game.select(1, 1);
     run(game, 60);
-    expect(a.shield).toBe(15);
+    expect(a.shield).toBe(30);
     expect(a.hp).toBe(100);
+  });
+
+  it('cada escudo da 50 en 5 segundos y se detiene solo; dos llenan la barra', () => {
+    const { game, a } = arena();
+    give(a, 0, { kind: 'shield', qty: 2, rarity: 0 });
+    game.select(1, 0);
+    game.fireControl(a, 0, true, false);
+    game.fireControl(a, 0, false, false);
+    expect(a.inv[0]?.qty).toBe(1);
+    run(game, 30 * 4 + 5);
+    expect(a.shield).toBe(40);
+    expect(a.heal).not.toBeNull();
+    run(game, 30 * 2);
+    expect(a.shield).toBe(50);
+    expect(a.heal).toBeNull();
+    game.fireControl(a, 0, true, false);
+    run(game, 30 * 6);
+    expect(a.shield).toBe(100);
+    expect(a.inv[0]).toBeNull();
+    // Con el escudo lleno ya no se puede usar otro.
+    give(a, 0, { kind: 'shield', qty: 1, rarity: 0 });
+    game.fireControl(a, 0, false, false);
+    game.fireControl(a, 0, true, false);
+    expect(a.heal).toBeNull();
+    expect(a.inv[0]?.qty).toBe(1);
+  });
+
+  it('un escudo a medio llenar solo gasta lo que falta y el sobrante se pierde', () => {
+    const { game, a } = arena();
+    a.shield = 80;
+    give(a, 0, { kind: 'shield', qty: 1, rarity: 0 });
+    game.select(1, 0);
+    game.fireControl(a, 0, true, false);
+    run(game, 30 * 3);
+    expect(a.shield).toBe(100);
+    expect(a.heal).toBeNull();
+  });
+
+  it('las garras rompen los muros colocados, uno por zarpazo, y liberan el paso', () => {
+    const { game, a } = arena();
+    // un muro justo enfrente
+    const tx = Math.floor((a.x + 20) / TILE);
+    const ty = Math.floor(a.y / TILE);
+    give(a, 0, { kind: 'wall', qty: 1, rarity: 0 });
+    game.select(1, 0);
+    a.aim = 0;
+    game.fireControl(a, 0, true, false);
+    game.fireControl(a, 0, false, false);
+    const wall = [...game['walls'].values()][0];
+    expect(wall).toBeDefined();
+    expect(game.map.solid[wall!.ty * game.map.w + wall!.tx]).toBe(2);
+    void tx;
+    void ty;
+    // sin objeto en la mano las garras golpean el muro
+    a.inv[0] = null;
+    let swipes = 0;
+    while (game['walls'].size > 0 && swipes < 20) {
+      game.fireControl(a, 0, true, false);
+      game.fireControl(a, 0, false, false);
+      a.cooldownUntil = 0;
+      swipes++;
+    }
+    expect(game['walls'].size).toBe(0);
+    expect(swipes).toBe(Math.ceil(WALL_ITEM.hp / CLAWS.wallDamage));
+    expect(game.map.solid[wall!.ty * game.map.w + wall!.tx]).toBe(0);
   });
 
   it('no se puede usar un botiquín con la vida llena', () => {
@@ -393,13 +475,13 @@ describe('agua y zona de ola', () => {
     expect(a.hp).toBe(90);
   });
 
-  it('antes de los 4 minutos la ola no hace daño y después daña a quien queda fuera', () => {
+  it('los primeros 30 segundos la ola no hace daño y después daña a quien queda fuera', () => {
     const { game, a } = arena();
     a.x = 20;
     a.y = 20;
     run(game, 30 * 10);
     expect(a.hp).toBe(100);
-    game.time = 300;
+    game.time = 50;
     a.x = game.zone.circle.cx + game.zone.circle.r + 500;
     a.y = game.zone.circle.cy;
     game.step();
@@ -574,14 +656,14 @@ describe('correr y estamina', () => {
 });
 
 describe('balas en su propio compartimento', () => {
-  it('recoger balas de un cofre no ocupa espacios y respeta el tope de 100', () => {
+  it('recoger balas de un cofre no ocupa espacios y respeta el tope de 120', () => {
     const { game, a } = arena();
     const chest = [...game['containers'].values()][0];
     expect(chest).toBeDefined();
     chest!.x = a.x;
     chest!.y = a.y;
     chest!.items = [
-      { kind: 'ammo_pistol', qty: 70, rarity: 0 },
+      { kind: 'ammo_pistol', qty: 100, rarity: 0 },
       { kind: 'ammo_pistol', qty: 50, rarity: 0 },
       { kind: 'ammo_rifle', qty: 30, rarity: 0 },
       { kind: 'medkit', qty: 1, rarity: 0 },
@@ -589,14 +671,14 @@ describe('balas en su propio compartimento', () => {
     const opened = game.interact(1);
     expect(opened?.items).toHaveLength(4);
     const left = game.lootTakeAll(1, chest!.id);
-    expect(a.ammo.ammo_pistol).toBe(100);
+    expect(a.ammo.ammo_pistol).toBe(120);
     expect(a.ammo.ammo_rifle).toBe(30);
     expect(a.inv.filter(Boolean)).toHaveLength(1);
     expect(a.inv[0]?.kind).toBe('medkit');
-    // 70 + 50 = 120: sobran 20 en el cofre
-    expect(left?.items).toEqual([{ kind: 'ammo_pistol', qty: 20, rarity: 0 }]);
+    // 100 + 50 = 150: caben 120 y sobran 30 en el cofre
+    expect(left?.items).toEqual([{ kind: 'ammo_pistol', qty: 30, rarity: 0 }]);
     const snap = game.snapshotFor(1);
-    expect(snap?.ammo).toEqual([100, 0, 0, 0, 30]);
+    expect(snap?.ammo).toEqual([120, 0, 0, 0, 30]);
   });
 
   it('tirar balas las deja en el suelo y se pueden volver a tomar; al morir van a la lapida', () => {
@@ -655,5 +737,87 @@ describe('balas en su propio compartimento', () => {
       game.step();
     }
     expect(b.hp).toBe(100);
+  });
+});
+
+describe('avisos de la ola y emotes', () => {
+  /** Avanza hasta justo despues de `t` segundos y devuelve los avisos de ola de ese tick. */
+  const zoneEvents = (game: BRGame, t: number): { phase: number; shrinking: boolean }[] => {
+    game.time = t - TICK_DT / 2;
+    game.step();
+    const events = (game.snapshotFor(1)?.ev ?? []).filter((e) => e.e === 'zone');
+    game.endTick();
+    return events.map((e) => ({
+      phase: (e as { phase: number }).phase,
+      shrinking: (e as { shrinking: boolean }).shrinking,
+    }));
+  };
+
+  it('la ola avisa a los 30 s, 40 s, 60 s, 75 s y 85 s, una sola vez cada paso', () => {
+    const { game } = arena();
+    expect(zoneEvents(game, 5)).toEqual([]);
+    expect(zoneEvents(game, 30)).toEqual([{ phase: 1, shrinking: true }]);
+    expect(zoneEvents(game, 31)).toEqual([]);
+    expect(zoneEvents(game, 40)).toEqual([{ phase: 1, shrinking: false }]);
+    expect(zoneEvents(game, 60)).toEqual([{ phase: 2, shrinking: true }]);
+    expect(zoneEvents(game, 75)).toEqual([{ phase: 3, shrinking: false }]);
+    expect(zoneEvents(game, 85)).toEqual([{ phase: 4, shrinking: true }]);
+  });
+
+  it('un emote lo ven los gatos cercanos, tiene respiro de 1.5 s y solo vale de 0 a 4', () => {
+    const { game, a, b } = arena();
+    expect(game.emote(1, 2)).toBe(true);
+    expect(game.emote(1, 2)).toBe(false);
+    const seen = game
+      .snapshotFor(2)
+      ?.ev.filter((e) => e.e === 'emote')
+      .map((e) => ({ id: (e as { id: number }).id, k: (e as { k: number }).k }));
+    expect(seen).toEqual([{ id: 1, k: 2 }]);
+    game.endTick();
+    expect(b.id).toBe(2);
+    expect(a.id).toBe(1);
+    game.time += 1.6;
+    expect(game.emote(1, 4)).toBe(true);
+    game.time += 1.6;
+    for (const bad of [-1, 5, 1.5, Number.NaN]) expect(game.emote(1, bad)).toBe(false);
+    a.alive = false;
+    game.time += 1.6;
+    expect(game.emote(1, 0)).toBe(false);
+  });
+});
+
+describe('cajas de municion y botin', () => {
+  it('cada mapa trae cajas de municion con 4 clases de balas, sin pasar de 120 por arma', () => {
+    for (const kind of ['bosque', 'casa', 'piscina'] as const) {
+      const { game } = arena(kind);
+      const crates = [...game['containers'].values()].filter((c) => c.kind === 'ammo');
+      expect(crates.length).toBeGreaterThanOrEqual(12);
+      for (const c of crates) {
+        expect(c.title).toBe('Caja de munición');
+        expect(c.items).toHaveLength(4);
+        expect(new Set(c.items.map((i) => i.kind)).size).toBe(4);
+        for (const it of c.items) {
+          expect(it.kind.startsWith('ammo_')).toBe(true);
+          expect(it.qty).toBeGreaterThanOrEqual(4);
+          expect(it.qty).toBeLessThanOrEqual(AMMO_MAX);
+        }
+      }
+    }
+  });
+
+  it('una caja de municion se abre, se toma entera y llena el compartimento de balas', () => {
+    const { game, a } = arena();
+    const crate = [...game['containers'].values()].find((c) => c.kind === 'ammo')!;
+    crate.x = a.x;
+    crate.y = a.y;
+    const total = crate.items.reduce((s, i) => s + i.qty, 0);
+    const opened = game.interact(1);
+    expect(opened?.kind).toBe('ammo');
+    game.lootTakeAll(1, crate.id);
+    const got = Object.values(a.ammo).reduce((s, n) => s + n, 0);
+    expect(got).toBe(total);
+    expect(a.inv.every((s) => s === null)).toBe(true);
+    const tuple = game.snapshotFor(1)?.boxes.find((bx) => bx[0] === crate.id);
+    expect(tuple?.[3]).toBe(4);
   });
 });

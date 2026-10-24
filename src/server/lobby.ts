@@ -7,6 +7,7 @@ import {
   createRoomSchema,
   dropAmmoSchema,
   dropSchema,
+  emoteSchema,
   inputSchema,
   joinRoomSchema,
   lootIdSchema,
@@ -213,6 +214,12 @@ export class Lobby {
       const parsed = inputSchema.safeParse(raw);
       const m = me();
       if (parsed.success && m?.game) m.game.pushInput(m.member.catId, parsed.data);
+    });
+    socket.on('game:emote', (raw: unknown) => {
+      if (!allow(actionBucket)) return;
+      const parsed = emoteSchema.safeParse(raw);
+      const m = me();
+      if (parsed.success && m?.game) m.game.emote(m.member.catId, parsed.data.k);
     });
     socket.on('dev:kit', (kind?: unknown) => {
       const m = me();
@@ -600,7 +607,7 @@ export class Lobby {
         skin: isValidSkin(m.skin) ? m.skin : defaultSkin(),
       };
     });
-    // Los bots que pidio el anfitrion (o los que falten hasta 10 gatos).
+    // Los bots que pidio el anfitrion (o los que falten hasta 12 gatos).
     const taken = new Set(members.map((m) => m.name.toLowerCase()));
     const names = rng.shuffle(BOT_NAMES.filter((n) => !taken.has(n.toLowerCase())));
     const total = members.length + botsFor(room.bots, members.length);

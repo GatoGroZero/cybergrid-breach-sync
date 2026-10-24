@@ -120,7 +120,7 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
 };
 
 /** Ataque de garras cuando no llevas arma: siempre disponible, sin balas. */
-export const CLAWS = { damage: 3, cooldown: 0.7, range: 18 } as const;
+export const CLAWS = { damage: 3, cooldown: 0.7, range: 18, wallDamage: 25 } as const;
 
 export const ITEM_NAMES: Record<ItemKind, string> = {
   pistol: 'Pistola',
@@ -150,7 +150,7 @@ export const STACK_MAX: Record<ItemKind, number> = {
   ammo_bazooka: AMMO_MAX,
   ammo_rifle: AMMO_MAX,
   medkit: 3,
-  shield: 3,
+  shield: 4,
   wall: 5,
 };
 
@@ -180,9 +180,10 @@ export const RARITY_WEIGHTS = {
   golden: [30, 44, 26],
 } as const;
 
+/** La municion es lo que mas falta en una partida: pesa mas que cualquier otra cosa en los cofres. */
 const CATEGORY_WEIGHTS = {
-  normal: { weapon: 30, ammo: 30, medkit: 14, shield: 14, wall: 12 },
-  golden: { weapon: 40, ammo: 24, medkit: 13, shield: 13, wall: 10 },
+  normal: { weapon: 28, ammo: 42, medkit: 12, shield: 10, wall: 8 },
+  golden: { weapon: 38, ammo: 34, medkit: 11, shield: 10, wall: 7 },
 } as const;
 
 type ChestTier = 'normal' | 'golden';
@@ -213,18 +214,43 @@ export function rollWeapon(rng: Rng, tier: ChestTier): Item {
   return { kind: rollWeaponKind(rng), qty: 1, rarity: rollRarity(rng, tier) };
 }
 
+/** Municion suelta en un cofre. */
 const AMMO_QTY: Record<WeaponKind, [number, number]> = {
-  pistol: [12, 24],
-  shotgun: [6, 10],
-  sniper: [4, 8],
-  bazooka: [2, 4],
-  rifle: [24, 45],
+  pistol: [20, 40],
+  shotgun: [8, 16],
+  sniper: [5, 10],
+  bazooka: [3, 5],
+  rifle: [36, 64],
 };
 
-export function rollAmmo(rng: Rng): Item {
-  const weapon = rollWeaponKind(rng);
+/** Municion en una caja de municion: mucho mas, y de varias armas a la vez. */
+const CRATE_QTY: Record<WeaponKind, [number, number]> = {
+  pistol: [40, 70],
+  shotgun: [16, 30],
+  sniper: [8, 16],
+  bazooka: [4, 8],
+  rifle: [60, 100],
+};
+
+/** Cuantas clases distintas de municion trae una caja de municion. */
+export const CRATE_KINDS = 4;
+
+export function rollAmmo(rng: Rng, weapon: WeaponKind = rollWeaponKind(rng)): Item {
   const [min, max] = AMMO_QTY[weapon];
   return { kind: `ammo_${weapon}`, qty: rng.int(min, max), rarity: 0 };
+}
+
+/** Caja de municion: 4 de las 5 clases, sin repetir, con cantidades grandes. */
+export function rollAmmoCrate(rng: Rng): Item[] {
+  const pool: Record<string, number> = { ...WEAPON_WEIGHTS };
+  const items: Item[] = [];
+  for (let i = 0; i < CRATE_KINDS; i++) {
+    const weapon = pickWeighted(rng, pool) as WeaponKind;
+    delete pool[weapon];
+    const [min, max] = CRATE_QTY[weapon];
+    items.push({ kind: `ammo_${weapon}`, qty: Math.min(AMMO_MAX, rng.int(min, max)), rarity: 0 });
+  }
+  return items;
 }
 
 export function rollItem(rng: Rng, tier: ChestTier): Item {
@@ -250,6 +276,13 @@ export function rollChest(rng: Rng, tier: ChestTier): Item[] {
   for (let i = 0; i < count; i++) items.push(rollItem(rng, tier));
   if (!items.some((it) => isWeapon(it.kind) || isAmmo(it.kind))) {
     items[count - 1] = rng.chance(0.5) ? rollWeapon(rng, tier) : rollAmmo(rng);
+  }
+  // Un arma sin balas no sirve: casi siempre viene acompanada de las suyas.
+  for (const it of [...items]) {
+    if (!isWeapon(it.kind) || items.some((o) => o.kind === `ammo_${it.kind}`)) continue;
+    if (!rng.chance(0.7)) continue;
+    const spare = items.findIndex((o) => !isWeapon(o.kind) && !isAmmo(o.kind));
+    if (spare >= 0) items[spare] = rollAmmo(rng, it.kind);
   }
   return items;
 }

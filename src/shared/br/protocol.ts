@@ -62,6 +62,8 @@ export const lootTakeSchema = z.object({
   index: z.number().int().min(0).max(63),
   slot: slot.optional(),
 });
+/** Emotes: 0 risa, 1 llanto, 2 enojo, 3 bandera blanca, 4 paz. */
+export const emoteSchema = z.object({ k: z.number().int().min(0).max(4) });
 export const spectateSchema = z.object({ dir: z.union([z.literal(1), z.literal(-1)]) });
 
 export const skinSchema = z.object({
@@ -209,7 +211,7 @@ export interface DiedPayload {
 
 export interface LootContents {
   id: number;
-  kind: 'chest' | 'golden' | 'tomb' | 'drop';
+  kind: 'chest' | 'golden' | 'ammo' | 'tomb' | 'drop';
   title: string;
   items: Item[];
 }

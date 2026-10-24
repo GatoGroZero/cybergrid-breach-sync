@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_PLAYERS, TILE } from '../../src/shared/br/constants';
-import { G, MAP_KINDS, generateMap, isSolidTile, reachable } from '../../src/shared/br/map';
+import {
+  G,
+  MAP_KINDS,
+  generateMap,
+  generateMapReport,
+  isSolidTile,
+  reachable,
+} from '../../src/shared/br/map';
 
 describe.each(MAP_KINDS)('generador procedural del mapa %s', (kind) => {
   it('es determinista: la misma semilla da exactamente el mismo mundo', () => {
@@ -33,7 +40,7 @@ describe.each(MAP_KINDS)('generador procedural del mapa %s', (kind) => {
     }
   });
 
-  it('hay 10 puntos de aparición separados y todo es alcanzable desde ellos', () => {
+  it('hay 12 puntos de aparición separados y todo es alcanzable desde ellos', () => {
     for (const seed of [10, 11, 12, 13]) {
       const m = generateMap(kind, seed);
       expect(m.spawns).toHaveLength(MAX_PLAYERS);
@@ -110,6 +117,82 @@ describe.each(MAP_KINDS)('robustez del generador de %s', (kind) => {
       const m = generateMap(kind, i * 7919);
       expect(m.seed).toBe(i * 7919);
       expect(m.houses.every((h) => h.doors.length >= 2)).toBe(true);
+    }
+  });
+});
+
+describe.each(MAP_KINDS)('botin y variedad en el mapa %s para 12 jugadores', (kind) => {
+  it('hay al menos 2 cofres y una caja de municion por jugador, todos alcanzables', () => {
+    for (let i = 1; i <= 40; i++) {
+      const m = generateMap(kind, i * 104729);
+      const chests = m.chests.filter((c) => !c.ammo);
+      const crates = m.chests.filter((c) => c.ammo);
+      expect(chests.length).toBeGreaterThanOrEqual(MAX_PLAYERS * 2);
+      expect(crates.length).toBeGreaterThanOrEqual(MAX_PLAYERS);
+      expect(crates.every((c) => !c.golden)).toBe(true);
+      const start = m.spawns[0]!;
+      const seen = reachable(m, Math.floor(start.x / TILE), Math.floor(start.y / TILE));
+      for (const c of m.chests) {
+        const tx = Math.floor(c.x / TILE);
+        const ty = Math.floor(c.y / TILE);
+        const reachableSide = [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ].some(([dx, dy]) => seen[(ty + dy!) * m.w + tx + dx!] === 1);
+        expect(reachableSide).toBe(true);
+      }
+    }
+  });
+
+  it('desde cada punto de aparicion hay un cofre o caja cerca (menos de 25 casillas)', () => {
+    for (let i = 1; i <= 40; i++) {
+      const m = generateMap(kind, i * 15485863);
+      for (const sp of m.spawns) {
+        const nearest = Math.min(...m.chests.map((c) => Math.hypot(c.x - sp.x, c.y - sp.y)));
+        expect(nearest).toBeLessThan(25 * TILE);
+      }
+    }
+  });
+
+  it('cada partida pone los cofres y las cajas en lugares distintos', () => {
+    const layouts = new Set<string>();
+    for (let seed = 1; seed <= 30; seed++) {
+      const m = generateMap(kind, seed * 7919);
+      layouts.add(m.chests.map((c) => `${c.x},${c.y},${c.ammo ? 1 : 0}`).join(';'));
+    }
+    expect(layouts.size).toBe(30);
+    // Y ningun cofre cae siempre en la misma casilla.
+    const spots = new Map<string, number>();
+    for (let seed = 1; seed <= 30; seed++) {
+      for (const c of generateMap(kind, seed * 7919).chests) {
+        const key = `${c.x},${c.y}`;
+        spots.set(key, (spots.get(key) ?? 0) + 1);
+      }
+    }
+    expect(Math.max(...spots.values())).toBeLessThanOrEqual(6);
+  });
+
+  it('casi nunca hace falta reintentar y el mapa se genera rapido', () => {
+    let retries = 0;
+    const t0 = performance.now();
+    for (let i = 1; i <= 100; i++) {
+      const { map, problems } = generateMapReport(kind, i * 7919);
+      expect(map).not.toBeNull();
+      retries += problems.length;
+    }
+    expect(retries).toBeLessThanOrEqual(8);
+    expect((performance.now() - t0) / 100).toBeLessThan(25);
+  });
+});
+
+describe.each(MAP_KINDS)('nombres de las casas de %s', (kind) => {
+  it('nunca se repite el nombre de un lugar en el mismo mapa', () => {
+    for (let i = 1; i <= 60; i++) {
+      const m = generateMap(kind, i * 7919);
+      const names = m.houses.map((h) => h.name);
+      expect(new Set(names).size).toBe(names.length);
     }
   });
 });

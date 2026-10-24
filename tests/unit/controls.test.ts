@@ -18,7 +18,7 @@ describe('controles tactiles (geometria)', () => {
     [1180, 820],
   ])('en %i x %i los botones caben en pantalla y no se encima ninguno', (w, h) => {
     const c = touchCircles(DEFAULT_TOUCH, w, h);
-    const singles: Circle[] = [c.stick, c.aim, c.interact, c.bag, c.menu, c.map];
+    const singles: Circle[] = [c.stick, c.aim, c.interact, c.bag, c.menu, c.map, c.emote];
     for (const k of [...singles, ...c.slots]) {
       expect(k.x - k.r).toBeGreaterThanOrEqual(0);
       expect(k.x + k.r).toBeLessThanOrEqual(w);

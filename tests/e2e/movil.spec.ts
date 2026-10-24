@@ -191,4 +191,57 @@ test.describe('Móvil: controles táctiles', () => {
     await touch('touchEnd');
     await expect.poll(() => dbg((g) => g.latest?.walls.length ?? 0)).toBeGreaterThan(0);
   });
+  test('el boton de la carita abre los emotes y tocar uno lo manda', async ({ page }) => {
+    await registerViaUi(page, uniqueName('e2e_emot'), true);
+    await startSoloGame(page);
+    const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    const cdp = await page.context().newCDPSession(page);
+    const tap = async (x: number, y: number): Promise<void> => {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x, y, id: 5 }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    const emote = (): Promise<number | null> =>
+      page.evaluate(() => {
+        const g = (
+          window as unknown as { __game: { emotes: Map<number, { k: number }>; you: number } }
+        ).__game;
+        return g.emotes.get(g.you)?.k ?? null;
+      });
+    const bar = (): Promise<boolean> =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __game: { input: { emoteOpen: boolean } } }).__game.input
+            .emoteOpen,
+      );
+    expect(await emote()).toBeNull();
+
+    // Boton de la carita (4 % del ancho, mitad del alto).
+    await tap(size.w * 0.04, size.h * 0.5);
+    await expect.poll(bar).toBe(true);
+    // Los botones de la barra los dibuja el HUD: se toma el segundo.
+    const rects = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __game: { input: { emoteRects: { x: number; y: number; w: number; h: number }[] } };
+          }
+        ).__game.input.emoteRects,
+    );
+    expect(rects).toHaveLength(5);
+    const second = rects[1] as { x: number; y: number; w: number; h: number };
+    await tap(second.x + second.w / 2, second.y + second.h / 2);
+    await expect.poll(emote).toBe(1);
+    expect(await bar()).toBe(false);
+
+    // Tocar fuera de la barra solo la cierra.
+    await page.waitForTimeout(1600);
+    await tap(size.w * 0.04, size.h * 0.5);
+    await expect.poll(bar).toBe(true);
+    await tap(size.w * 0.5, size.h * 0.12);
+    await expect.poll(bar).toBe(false);
+    expect(await emote()).toBe(1);
+  });
 });

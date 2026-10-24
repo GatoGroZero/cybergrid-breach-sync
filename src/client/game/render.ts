@@ -69,6 +69,9 @@ export interface Safe {
  * enteros y sin suavizado, para que cada pixel del arte sea un cuadro nitido. El HUD se dibuja
  * encima, ya en pantalla, con fuentes de pixeles.
  */
+/** Cuanto dura un emote sobre la cabeza del gato. */
+const EMOTE_MS = 2800;
+
 export class BRRenderer {
   readonly assets: Assets = buildAssets();
   readonly fx = new Fx();
@@ -473,8 +476,12 @@ export class BRRenderer {
         break;
       }
       case 'open': {
-        const cols = ev.golden ? [C.yellow, C.white, C.orange] : [C.yellow, C.white];
-        for (let i = 0; i < (ev.golden ? 9 : 5); i++)
+        const cols = ev.ammo
+          ? [C.yellow, C.orange, '#a3b86c']
+          : ev.golden
+            ? [C.yellow, C.white, C.orange]
+            : [C.yellow, C.white];
+        for (let i = 0; i < (ev.golden || ev.ammo ? 9 : 5); i++)
           fx.star(
             ev.x + (Math.random() - 0.5) * 12,
             ev.y - 6 - Math.random() * 6,
@@ -508,6 +515,9 @@ export class BRRenderer {
         break;
       case 'zone':
         this.sfx.warn();
+        break;
+      case 'emote':
+        if (this.distToMe(ev.x, ev.y) < 220) this.sfx.pop(0.55);
         break;
       case 'claw': {
         const a = (ev.a * Math.PI) / 180;
@@ -821,6 +831,7 @@ export class BRRenderer {
       if (kind === 0) sprite = opened ? a.chest.open : a.chest.closed;
       else if (kind === 1) sprite = opened ? a.chest.goldOpen : a.chest.goldClosed;
       else if (kind === 2) sprite = a.tomb;
+      else if (kind === 4) sprite = opened ? a.ammoCrate.open : a.ammoCrate.closed;
       else {
         const idx = Math.floor(top / 3);
         sprite = a.icon[ITEM_KINDS[idx] ?? 'pistol'];
@@ -830,6 +841,9 @@ export class BRRenderer {
       const golden = kind === 1 && !opened;
       if (golden && Math.random() < dt * 2.2)
         this.fx.star(x + (Math.random() - 0.5) * 12, y - 8, C.yellow, 0.6, -10);
+      // las cajas de municion cerradas brillan un poco para encontrarlas de lejos
+      if (kind === 4 && !opened && Math.random() < dt * 1.4)
+        this.fx.star(x + (Math.random() - 0.5) * 12, y - 8, '#d9e8a0', 0.5, -9);
       list.push({
         y: kind === 3 ? y - 6 : y + 2,
         draw: () => {
@@ -1040,6 +1054,22 @@ export class BRRenderer {
           b.drawImage(crown, Math.round(sx + facing * 5 - crown.width / 2), sy - 21 + hop);
         }
         b.globalAlpha = 1;
+        // Emote: un globo con la cara sobre la cabeza. Sale con un saltito y se desvanece.
+        const emote = g.emotes.get(id);
+        if (emote) {
+          const age = now - emote.at;
+          if (age > EMOTE_MS) g.emotes.delete(id);
+          else if (age >= 0) {
+            const bubble = this.assets.emote.bubble[emote.k];
+            if (bubble) {
+              const pop = age < 160 ? Math.round((1 - age / 160) * 4) : 0;
+              const bob = Math.round(Math.sin(age / 260));
+              b.globalAlpha = age > EMOTE_MS - 450 ? Math.max(0, (EMOTE_MS - age) / 450) : 1;
+              b.drawImage(bubble, Math.round(sx - bubble.width / 2), sy - 44 + pop + bob + hop);
+              b.globalAlpha = 1;
+            }
+          }
+        }
       },
     });
     if (!isMe && info && !this.hiddenByRoof(x, y)) {

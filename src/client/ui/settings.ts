@@ -38,6 +38,7 @@ export class Settings {
     private readonly input: InputController,
     private readonly sfx: Sfx,
     private readonly bagIcon?: HTMLCanvasElement,
+    private readonly emoteIcon?: HTMLCanvasElement,
   ) {
     for (const tab of ['keys', 'touch', 'sound'] as const) {
       $(`set-tab-${tab}`).addEventListener('click', () => this.showTab(tab));
@@ -191,6 +192,7 @@ export class Settings {
       selected: this.selected,
       editing: true,
       bagIcon: this.bagIcon,
+      emoteIcon: this.emoteIcon,
     });
     $('editor-sel').textContent = this.selected
       ? `${TOUCH_LABELS[this.selected]} x${this.draft[this.selected].s.toFixed(1)}`
