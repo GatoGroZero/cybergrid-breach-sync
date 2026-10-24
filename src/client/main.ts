@@ -1,6 +1,7 @@
 import '@fontsource/press-start-2p/latin-400.css';
 import '@fontsource/vt323/latin-400.css';
 import './styles.css';
+import './zod-config';
 
 import { CAT } from '../shared/br/constants';
 import { MAP_KINDS, MAP_NAMES } from '../shared/br/map';
@@ -87,7 +88,7 @@ const input = new InputController(canvas, {
 });
 
 const inventory = new InventoryPanel(renderer.assets, () => game);
-const settings = new Settings(input, sfx);
+const settings = new Settings(input, sfx, renderer.assets.can);
 
 inventory.onClose = () => syncActive();
 settings.onClose = () => syncActive();
