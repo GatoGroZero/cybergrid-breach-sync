@@ -41,10 +41,10 @@ for (const kind of kinds) {
     const held = winner ? game.held(winner) : null;
     const key = held ? held.kind : 'garras';
     weaponWins[key] = (weaponWins[key] ?? 0) + 1;
-    if (!game.over) console.log(kind, 'seed', g, 'NO TERMINO', game.time);
+    if (!game.over) console.info(kind, 'seed', g, 'NO TERMINO', game.time);
   }
   const ms = performance.now() - t0;
-  console.log(
+  console.info(
     `${kind}: partidas=${games} duracion media=${Math.round(totalT / games)} s (max ${Math.round(maxT)} s), bajas medias=${(totalKills / games).toFixed(1)}, muertes=${(causes.dead / games).toFixed(1)}, ganadores por arma=`,
     weaponWins,
     `| CPU: ${(ms / ticks).toFixed(3)} ms por tick (10 gatos, 10 instantaneas)`,
