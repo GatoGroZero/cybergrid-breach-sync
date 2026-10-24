@@ -89,6 +89,23 @@ describe('endpoints de prueba /api/test/*', () => {
     }
   });
 
+  it('detras de Cloudflare toma la IP real del cliente de CF-Connecting-IP', async () => {
+    const behind = await startServer({ trustCloudflare: true });
+    const real = await request(behind.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', '203.0.113.7');
+    expect(real.body.clientIp).toBe('203.0.113.7');
+    const forged = await request(behind.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', 'no-es-una-ip');
+    expect(forged.body.clientIp).not.toBe('no-es-una-ip');
+    const direct = await request(server.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', '203.0.113.7');
+    expect(direct.body.clientIp).not.toBe('203.0.113.7');
+    await behind.close();
+  });
+
   it('health responde rapido y los endpoints se pueden apagar con la bandera', async () => {
     const health = await request(server.app).get('/api/test/health');
     expect(health.status).toBe(200);
