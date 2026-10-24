@@ -1,0 +1,61 @@
+{
+  "name": "cybergrid-breach-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Videojuego web multijugador en tiempo real con Canvas 2D, WebSockets y servidor autoritativo",
+  "license": "MIT",
+  "author": "GatoGroZero",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "vite",
+    "build:client": "vite build",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/server/index.js",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:text": "node scripts/check-text.mjs",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "verify": "npm run check:text && npm run typecheck && npm run lint && npm run test && npm run build",
+    "audit:prod": "node scripts/audit-prod.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jose": "^6.2.13",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@fontsource/orbitron": "^5.3.0",
+    "@fontsource/rajdhani": "^5.3.0",
+    "@playwright/test": "^1.64.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^5.0.5",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "socket.io-client": "^4.8.4",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
