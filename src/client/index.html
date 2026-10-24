@@ -211,11 +211,12 @@
               <li>Sé el último gato en pie. Los cofres tienen armas, balas, botiquines y muros.</li>
               <li>La ola de agua cubre el mapa en 3 zonas. Quédate dentro del círculo seguro.</li>
               <li>
-                <b>PC:</b> WASD mueve, ratón apunta, clic dispara, E abre, I inventario, M mapa.
+                <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre, I
+                inventario, M mapa.
               </li>
               <li>
-                <b>Móvil:</b> joystick a la izquierda, FUEGO a la derecha. Todo se puede mover en
-                Ajustes.
+                <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a
+                la derecha: se dispara solo mientras ves la línea. Todo se puede mover en Ajustes.
               </li>
             </ul>
           </section>
@@ -308,8 +309,10 @@
         </div>
         <h3>Tus cosas <span id="inv-count" class="muted">0/5</span></h3>
         <ul id="inv-slots" class="slots" data-testid="inv-slots"></ul>
+        <h3>Balas <span class="muted">(hasta 100 de cada arma)</span></h3>
+        <ul id="ammo-slots" class="ammo" data-testid="ammo-slots"></ul>
         <p id="inv-detail" class="muted detail"></p>
-        <p class="muted">Arrastra para ordenar o combinar. Suelta fuera para tirar.</p>
+        <p class="muted">Arrastra para ordenar. Suelta fuera de la tarjeta para tirar.</p>
       </section>
     </div>
 

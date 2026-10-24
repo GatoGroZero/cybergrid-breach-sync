@@ -18,7 +18,7 @@ describe('controles tactiles (geometria)', () => {
     [1180, 820],
   ])('en %i x %i los botones caben en pantalla y no se encima ninguno', (w, h) => {
     const c = touchCircles(DEFAULT_TOUCH, w, h);
-    const singles: Circle[] = [c.stick, c.fire, c.interact, c.bag, c.menu, c.map];
+    const singles: Circle[] = [c.stick, c.aim, c.interact, c.bag, c.menu, c.map];
     for (const k of [...singles, ...c.slots]) {
       expect(k.x - k.r).toBeGreaterThanOrEqual(0);
       expect(k.x + k.r).toBeLessThanOrEqual(w);
@@ -38,17 +38,17 @@ describe('controles tactiles (geometria)', () => {
     expect(c.slots).toHaveLength(5);
     const gaps = c.slots.slice(1).map((s, i) => s.x - (c.slots[i] as Circle).x);
     for (const g of gaps) expect(Math.abs(g - (gaps[0] as number))).toBeLessThan(0.01);
-    expect(c.fire.x).toBeGreaterThan(844 * 0.7);
-    expect(c.fire.y).toBeGreaterThan(390 * 0.5);
+    expect(c.aim.x).toBeGreaterThan(844 * 0.7);
+    expect(c.aim.y).toBeGreaterThan(390 * 0.5);
     expect(c.stick.x).toBeLessThan(844 * 0.3);
   });
 
   it('cambiar la escala de un boton agranda su circulo y no mueve el resto', () => {
     const big = structuredClone(DEFAULT_TOUCH);
-    big.fire.s = 1.8;
+    big.aim.s = 1.8;
     const a = touchCircles(DEFAULT_TOUCH, 844, 390);
     const b = touchCircles(big, 844, 390);
-    expect(b.fire.r).toBeGreaterThan(a.fire.r * 1.5);
+    expect(b.aim.r).toBeGreaterThan(a.aim.r * 1.5);
     expect(b.stick).toEqual(a.stick);
     expect(b.interact).toEqual(a.interact);
   });

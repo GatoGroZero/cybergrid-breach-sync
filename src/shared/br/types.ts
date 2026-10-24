@@ -15,6 +15,7 @@ export type BREvent =
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'wallhit'; x: number; y: number }
   | { e: 'wallbreak'; x: number; y: number }
+  | { e: 'place'; x: number; y: number }
   | { e: 'death'; x: number; y: number; id: number }
   | { e: 'open'; x: number; y: number; golden: boolean }
   | { e: 'splash'; x: number; y: number }
@@ -35,6 +36,10 @@ export interface MeState {
   healKind: 'medkit' | 'shield' | null;
   /** Segundos hasta poder disparar otra vez. */
   cooldown: number;
+  /** Aire para correr, de 0 a 100. */
+  stamina: number;
+  /** Se quedo sin aire: no corre hasta recuperar un poco. */
+  tired: boolean;
 }
 
 export interface ZoneView {
@@ -59,6 +64,8 @@ export interface BRSnapshot {
   me: MeState;
   /** Solo viaja cuando cambia. */
   inv?: (Item | null)[];
+  /** Balas de cada arma (orden de AMMO_KINDS). Viaja junto con `inv`. */
+  ammo?: number[];
   cats: CatTuple[];
   shots: ShotTuple[];
   walls: WallTuple[];

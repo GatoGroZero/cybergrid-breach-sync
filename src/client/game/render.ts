@@ -1,6 +1,21 @@
-import { FLAG, TILE } from '../../shared/br/constants';
-import { ITEM_KINDS, RARITY_COLORS, WEAPON_KINDS } from '../../shared/br/items';
-import { G, isWaterAtPx, type BRMap, type House, type PropKind } from '../../shared/br/map';
+import { CAT, FLAG, TILE, WALL_ITEM } from '../../shared/br/constants';
+import {
+  CLAWS,
+  ITEM_KINDS,
+  RARITY_COLORS,
+  WEAPONS,
+  WEAPON_KINDS,
+  isWeapon,
+} from '../../shared/br/items';
+import {
+  G,
+  isSolidTile,
+  isWaterAtPx,
+  type BRMap,
+  type House,
+  type PropKind,
+} from '../../shared/br/map';
+import { segmentSolidHit } from '../../shared/br/physics';
 import { defaultSkin } from '../../shared/br/skin';
 import type { BREvent, ZoneView } from '../../shared/br/types';
 import type { Sfx } from '../audio';
@@ -86,8 +101,19 @@ export class BRRenderer {
   private shake = 0;
   private lastHealFx = 0;
   private lastStepFx = 0;
+  private lastStepSfx = 0;
+  private wasTired = false;
+  private lastBeat = 0;
   private labels: Label[] = [];
   private ambientAcc = 0;
+  private readonly rockets: {
+    x: number;
+    y: number;
+    vy: number;
+    burstAt: number;
+    palette: string[];
+  }[] = [];
+  private nextRocketAt = 0;
   private celebrated = false;
   private confettiUntil = 0;
 
@@ -157,6 +183,8 @@ export class BRRenderer {
     this.mapOpen = false;
     this.celebrated = false;
     this.confettiUntil = 0;
+    this.rockets.length = 0;
+    this.nextRocketAt = 0;
     if (!game) {
       this.map = null;
       this.ground = null;
@@ -402,6 +430,15 @@ export class BRRenderer {
           grav: 100,
         });
         break;
+      case 'place':
+        if (this.distToMe(ev.x, ev.y) < 260) this.sfx.place();
+        fx.burst(ev.x, ev.y + 4, 6, {
+          colors: ['#b9835a', '#d9a574', '#e4e0d0'],
+          speed: 30,
+          life: 0.35,
+          grav: 60,
+        });
+        break;
       case 'wallbreak':
         fx.burst(ev.x, ev.y, 18, {
           colors: ['#b9835a', '#7a4e2c', '#d9a574', '#e4e0d0'],
@@ -410,7 +447,8 @@ export class BRRenderer {
           size: 2,
           grav: 120,
         });
-        if (this.distToMe(ev.x, ev.y) < 240) this.sfx.kill();
+        if (this.distToMe(ev.x, ev.y) < 300)
+          this.sfx.wallBreak(Math.max(0.3, 1 - this.distToMe(ev.x, ev.y) / 300));
         break;
       case 'death': {
         fx.burst(ev.x, ev.y - 2, 16, {
@@ -544,7 +582,7 @@ export class BRRenderer {
         this.fx.star(x, y, C.white, 0.7, 0);
       }
     }
-    if (g.result && g.result.winnerId === g.you && !this.celebrated) {
+    if (g.win && g.win.winnerId === g.you && !this.celebrated) {
       this.celebrated = true;
       this.confettiUntil = now + 3200;
     }
@@ -586,8 +624,17 @@ export class BRRenderer {
     this.fx.update(dt);
     this.shake = Math.max(0, this.shake - dt * 10);
     this.ambient(dt, now);
+    if (g.alive && g.me) {
+      if (g.me.tired && !this.wasTired) this.sfx.huff();
+      this.wasTired = g.me.tired;
+      if (g.me.hp <= 25 && now - this.lastBeat > 900) {
+        this.lastBeat = now;
+        this.sfx.heartbeat();
+      }
+    }
 
     const { cats, shots } = g.sampleWorld();
+    this.celebrate(g, cats, now, dt);
     const target = g.cameraTarget(cats);
     const mapW = map.w * T;
     const mapH = map.h * T;
@@ -624,6 +671,7 @@ export class BRRenderer {
     this.collectCats(list, g, cats, camX, camY, now, dt);
     list.sort((p, q) => p.y - q.y);
     for (const d of list) d.draw();
+    this.drawAim(b, g, cats, camX, camY, now);
 
     this.drawShots(b, shots, camX, camY);
     this.fx.draw(b, camX, camY);
@@ -832,6 +880,7 @@ export class BRRenderer {
       const held = sel ? ITEM_KINDS.indexOf(sel.kind) * 3 + sel.rarity : -1;
       let flags = 0;
       if (g.moving) flags |= FLAG.moving;
+      if (g.running && g.moving) flags |= FLAG.running;
       if (g.me && g.me.healLeft > 0) flags |= FLAG.healing;
       if (g.hurtFlash > 0.55) flags |= FLAG.hurt;
       this.pushCat(
@@ -894,7 +943,12 @@ export class BRRenderer {
     const info = g.cats.get(id);
     const sprites = catSprites(info?.skin ?? defaultSkin(0));
     const moving = (flags & FLAG.moving) !== 0;
-    const frame = moving ? 1 + (Math.floor(now / 115 + id) & 1) : 0;
+    const running = moving && (flags & FLAG.running) !== 0;
+    const frame = running
+      ? 3 + (Math.floor(now / 80 + id) & 1)
+      : moving
+        ? 1 + (Math.floor(now / 115 + id) & 1)
+        : 0;
     const flash = (flags & FLAG.hurt) !== 0 && Math.floor(now / 65) % 2 === 0;
     const set =
       facing === 1
@@ -909,12 +963,23 @@ export class BRRenderer {
     const sx = Math.round(x - camX);
     const sy = Math.round(y - camY);
 
-    if (moving && !wet && now - this.lastStepFx > 140 && isMe) {
+    if (moving && !wet && isMe && now - this.lastStepSfx > (running ? 170 : 290)) {
+      this.lastStepSfx = now;
+      this.sfx.step(running);
+    }
+    if (moving && !wet && now - this.lastStepFx > (running ? 55 : 140) && isMe) {
       this.lastStepFx = now;
+      this.fx.burst(x - facing * 6, y + 6, running ? 3 : 2, {
+        colors: ['#b68a5a', '#d5a27a', '#e8d8b4'],
+        speed: running ? 26 : 14,
+        life: running ? 0.4 : 0.3,
+        grav: -10,
+      });
+    } else if (running && !wet && !isMe && Math.random() < dt * 14) {
       this.fx.burst(x - facing * 6, y + 6, 2, {
         colors: ['#b68a5a', '#d5a27a', '#e8d8b4'],
-        speed: 14,
-        life: 0.3,
+        speed: 22,
+        life: 0.35,
         grav: -10,
       });
     }
@@ -929,6 +994,10 @@ export class BRRenderer {
     const icon =
       kind && (WEAPON_KINDS as readonly string[]).includes(kind) ? this.assets.icon[kind] : null;
     const dim = (flags & FLAG.disconnected) !== 0;
+    const winner = g.win !== null && g.win.winnerId === id;
+    const hop = winner ? -Math.round(Math.abs(Math.sin(now / 170)) * 5) : 0;
+    if (winner && Math.random() < dt * 8)
+      this.fx.star(x + (Math.random() - 0.5) * 18, y - 18, C.yellow, 0.6, -12);
 
     list.push({
       y: y + 6,
@@ -948,7 +1017,7 @@ export class BRRenderer {
         }
         if (dim) b.globalAlpha = 0.45;
         const dx = sx - 13;
-        const dy = sy - 11;
+        const dy = sy - 11 + hop;
         if (wet) {
           const h = sprite.height - 7;
           b.drawImage(sprite, 0, 0, sprite.width, h, dx, dy + 3, sprite.width, h);
@@ -966,6 +1035,10 @@ export class BRRenderer {
           const gy = Math.round(sy + Math.sin(aim) * 4.5 - gun.height / 2 + 2);
           b.drawImage(gun, gx, gy);
         }
+        if (winner) {
+          const crown = this.assets.crown;
+          b.drawImage(crown, Math.round(sx + facing * 5 - crown.width / 2), sy - 21 + hop);
+        }
         b.globalAlpha = 1;
       },
     });
@@ -980,6 +1053,171 @@ export class BRRenderer {
     }
     if (dim)
       this.labels.push({ x, y: y - 24, text: 'sin conexión', color: C.orange, kind: 'small' });
+  }
+
+  /** Fuegos artificiales sobre el ganador mientras dura la celebracion. */
+  private celebrate(g: ClientBR, cats: Map<number, CatView>, now: number, dt: number): void {
+    const win = g.win;
+    if (!win) return;
+    let wx = g.drawX;
+    let wy = g.drawY;
+    if (win.winnerId !== null && win.winnerId !== g.you) {
+      const c = cats.get(win.winnerId);
+      if (c) {
+        wx = c.x;
+        wy = c.y;
+      }
+    }
+    if (now >= this.nextRocketAt) {
+      this.nextRocketAt = now + 260 + Math.random() * 380;
+      const palettes = [
+        [C.yellow, C.orange, C.white],
+        [C.cyan, C.sky, C.white],
+        [C.pink, C.red, C.white],
+        [C.lime, C.green, C.yellow],
+        [C.white, C.lgray, C.cyan],
+      ];
+      this.rockets.push({
+        x: wx + (Math.random() - 0.5) * 220,
+        y: wy + 70 + Math.random() * 20,
+        vy: -(150 + Math.random() * 50),
+        burstAt: now + 520 + Math.random() * 260,
+        palette: palettes[Math.floor(Math.random() * palettes.length)] as string[],
+      });
+    }
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i] as (typeof this.rockets)[number];
+      r.y += r.vy * dt;
+      this.fx.burst(r.x, r.y + 2, 1, {
+        colors: [C.yellow, C.orange],
+        speed: 10,
+        life: 0.3,
+        grav: 20,
+      });
+      if (now < r.burstAt) continue;
+      this.rockets.splice(i, 1);
+      this.fx.ring(r.x, r.y, 26, r.palette[0] as string, 0.5);
+      this.fx.burst(r.x, r.y, 34, { colors: r.palette, speed: 95, life: 0.9, size: 2, grav: 40 });
+      this.fx.burst(r.x, r.y, 14, { colors: [C.white], speed: 50, life: 0.5, size: 1, grav: 20 });
+      this.sfx.pop(Math.max(0.2, 1 - Math.hypot(r.x - g.x, r.y - g.y) / 300));
+    }
+  }
+
+  /** Guia de la mira: linea de disparo (movil), zarpazo, o el lugar donde caera el muro. */
+  private drawAim(
+    b: Ctx,
+    g: ClientBR,
+    cats: Map<number, CatView>,
+    camX: number,
+    camY: number,
+    now: number,
+  ): void {
+    if (!g.alive || g.result) return;
+    const angle = g.input.currentAim();
+    if (angle === null) return;
+    const touch = g.input.mode === 'touch';
+    const item = g.selectedItem;
+    const kind = item?.kind ?? null;
+    const cs = Math.cos(angle);
+    const sn = Math.sin(angle);
+    const ox = g.x;
+    const oy = g.y - 1;
+
+    if (kind === 'wall') {
+      // Mismo calculo que el servidor: el muro cae 22 px adelante, en esa casilla.
+      const px0 = g.x + cs * WALL_ITEM.placeDistance;
+      const py0 = g.y + sn * WALL_ITEM.placeDistance;
+      const tx = Math.floor(px0 / T);
+      const ty = Math.floor(py0 / T);
+      let ok = !isSolidTile(g.map, tx, ty) && !isWaterAtPx(g.map, px0, py0);
+      if (ok) {
+        for (const c of cats.values()) {
+          if ((c.flags & FLAG.dead) !== 0) continue;
+          if (
+            Math.abs(c.x - (tx * T + T / 2)) < T / 2 + CAT.half &&
+            Math.abs(c.y - (ty * T + T / 2)) < T / 2 + CAT.half
+          ) {
+            ok = false;
+            break;
+          }
+        }
+      }
+      const dx = tx * T - camX;
+      const dy = ty * T - camY;
+      b.globalAlpha = 0.5 + 0.12 * Math.sin(now / 130);
+      b.drawImage(this.assets.wall[0] as HTMLCanvasElement, dx - 1, dy - 1);
+      b.globalAlpha = 1;
+      b.fillStyle = ok ? C.lime : C.red;
+      for (let i = 0; i < T; i += 2) {
+        b.fillRect(dx + i, dy, 1, 1);
+        b.fillRect(dx + i, dy + T - 1, 1, 1);
+        b.fillRect(dx, dy + i, 1, 1);
+        b.fillRect(dx + T - 1, dy + i, 1, 1);
+      }
+      if (!ok) {
+        b.fillRect(dx + 3, dy + 3, 2, 2);
+        b.fillRect(dx + T - 5, dy + 3, 2, 2);
+        b.fillRect(dx + 3, dy + T - 5, 2, 2);
+        b.fillRect(dx + T - 5, dy + T - 5, 2, 2);
+      }
+      return;
+    }
+    if (!touch) return;
+
+    // Puntos de 2 x 2 con sombra oscura: se leen igual sobre pasto, arena, agua o madera.
+    const dot = (x: number, y: number, color: string): void => {
+      const dx = Math.round(x - camX);
+      const dy = Math.round(y - camY);
+      b.fillStyle = 'rgba(26,28,44,0.55)';
+      b.fillRect(dx - 1, dy - 1, 4, 4);
+      b.fillStyle = color;
+      b.fillRect(dx, dy, 2, 2);
+    };
+    const dots = (len: number, color: string, step = 5, phase = 0): { x: number; y: number } => {
+      let last = { x: ox, y: oy };
+      for (let d = 12 + phase; d < len; d += step) {
+        last = { x: ox + cs * d, y: oy + sn * d };
+        dot(last.x, last.y, color);
+      }
+      return last;
+    };
+    if (kind === null) {
+      dots(CLAWS.range + 6, C.white, 4);
+      return;
+    }
+    if (!isWeapon(kind)) return;
+    const def = WEAPONS[kind];
+    const color = RARITY_COLORS[(item?.rarity ?? 0) as 0 | 1 | 2] as string;
+    const hit = segmentSolidHit(g.map, ox, oy, ox + cs * def.range, oy + sn * def.range);
+    const len = def.range * (hit.hit ? hit.t : 1);
+    const phase = (now / 40) % 4;
+    // Linea punteada: el brillo corre hacia adelante para que se note la direccion.
+    const end = dots(len, kind === 'sniper' ? C.cyan : C.white, 5, phase);
+    if (def.pellets > 1) {
+      // Escopeta: el abanico por donde saldran los perdigones.
+      for (const sign of [-1, 1]) {
+        const a2 = angle + sign * def.spread;
+        for (let d = 14; d < Math.min(len, 90); d += 6) {
+          dot(ox + Math.cos(a2) * d, oy + Math.sin(a2) * d, 'rgba(244,244,244,0.8)');
+        }
+      }
+    }
+    // Remate: una cruz del color del arma (y el radio de explosion de la bazuca).
+    const ex = Math.round(end.x - camX);
+    const ey = Math.round(end.y - camY);
+    b.fillStyle = 'rgba(26,28,44,0.7)';
+    b.fillRect(ex - 4, ey - 1, 9, 3);
+    b.fillRect(ex - 1, ey - 4, 3, 9);
+    b.fillStyle = color;
+    b.fillRect(ex - 3, ey, 7, 1);
+    b.fillRect(ex, ey - 3, 1, 7);
+    if (def.splash > 0) {
+      const r = def.splash;
+      for (let i = 0; i < 24; i++) {
+        const a3 = (i / 24) * Math.PI * 2;
+        dot(end.x + Math.cos(a3) * r, end.y + Math.sin(a3) * r, C.orange);
+      }
+    }
   }
 
   private drawShots(

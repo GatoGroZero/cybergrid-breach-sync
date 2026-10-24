@@ -1005,6 +1005,72 @@ input::placeholder {
   color: var(--dim);
 }
 
+.ammo {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ammo-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 18px;
+  color: var(--text);
+  text-align: left;
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: grab;
+  touch-action: none;
+}
+
+.ammo-chip canvas {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  pointer-events: none;
+}
+
+.ammo-chip .name {
+  flex: 1;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ammo-chip .count {
+  color: var(--yellow);
+  pointer-events: none;
+}
+
+.ammo-chip.empty {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ammo-chip.full .count {
+  color: var(--lime);
+}
+
+.slot .cap {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 1px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--dim);
+  text-align: center;
+  pointer-events: none;
+}
+
 .slot.drop-target {
   outline: 3px dashed var(--cyan);
 }

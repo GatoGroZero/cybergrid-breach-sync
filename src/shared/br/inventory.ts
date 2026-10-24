@@ -1,11 +1,69 @@
-import { INVENTORY_SLOTS } from './constants';
-import { STACK_MAX, canStack, type Item, type ItemKind } from './items';
+import { AMMO_MAX, INVENTORY_SLOTS } from './constants';
+import {
+  AMMO_KINDS,
+  STACK_MAX,
+  canStack,
+  isAmmo,
+  type AmmoKind,
+  type Item,
+  type ItemKind,
+} from './items';
 
 export type Inventory = (Item | null)[];
 
 export const emptyInventory = (): Inventory => Array.from({ length: INVENTORY_SLOTS }, () => null);
 
 export const cloneItem = (it: Item): Item => ({ kind: it.kind, qty: it.qty, rarity: it.rarity });
+
+// ---------------------------------------------------------------- compartimento de balas
+
+/** Balas de cada arma: viven aparte de los 5 espacios y se guardan hasta AMMO_MAX de cada una. */
+export type AmmoStore = Record<AmmoKind, number>;
+
+export const emptyAmmo = (): AmmoStore => ({
+  ammo_pistol: 0,
+  ammo_shotgun: 0,
+  ammo_sniper: 0,
+  ammo_bazooka: 0,
+  ammo_rifle: 0,
+});
+
+/** El compartimento como arreglo en el orden de AMMO_KINDS (asi viaja al cliente). */
+export const ammoToArray = (a: AmmoStore): number[] => AMMO_KINDS.map((k) => a[k]);
+
+export function ammoFromArray(list: readonly number[]): AmmoStore {
+  const out = emptyAmmo();
+  AMMO_KINDS.forEach((k, i) => {
+    out[k] = Math.max(0, Math.min(AMMO_MAX, Math.floor(list[i] ?? 0)));
+  });
+  return out;
+}
+
+/** Agrega balas hasta el tope. Devuelve las que no cupieron. */
+export function addAmmo(store: AmmoStore, kind: AmmoKind, qty: number): number {
+  const room = AMMO_MAX - store[kind];
+  const put = Math.max(0, Math.min(room, qty));
+  store[kind] += put;
+  return qty - put;
+}
+
+export function spendAmmo(store: AmmoStore, kind: AmmoKind, n: number): boolean {
+  if (store[kind] < n) return false;
+  store[kind] -= n;
+  return true;
+}
+
+/**
+ * Recibe cualquier objeto: las balas van al compartimento y lo demas a los 5 espacios.
+ * Devuelve lo que no cupo (o null si entro todo).
+ */
+export function giveItem(inv: Inventory, ammo: AmmoStore, item: Item): Item | null {
+  if (isAmmo(item.kind)) {
+    const left = addAmmo(ammo, item.kind, item.qty);
+    return left > 0 ? { kind: item.kind, qty: left, rarity: item.rarity } : null;
+  }
+  return addItem(inv, item);
+}
 
 export function countKind(inv: Inventory, kind: ItemKind): number {
   let n = 0;
@@ -18,6 +76,8 @@ export function countKind(inv: Inventory, kind: ItemKind): number {
  * Devuelve lo que no cupo (o null si entro todo).
  */
 export function addItem(inv: Inventory, item: Item): Item | null {
+  // Las balas nunca ocupan espacios: se guardan con addAmmo o giveItem.
+  if (isAmmo(item.kind)) return item;
   let left = item.qty;
   const max = STACK_MAX[item.kind];
   for (const slot of inv) {
@@ -41,6 +101,7 @@ export function addItem(inv: Inventory, item: Item): Item | null {
 
 /** Coloca un objeto en una casilla concreta: vacia, o una pila compatible. Devuelve lo que sobra. */
 export function placeInSlot(inv: Inventory, slotIndex: number, item: Item): Item | null {
+  if (isAmmo(item.kind)) return item;
   const slot = inv[slotIndex];
   const max = STACK_MAX[item.kind];
   if (slot === undefined) return item;

@@ -10,6 +10,7 @@ import type {
   GameEndPayload,
   GameStartPayload,
   PublicRoom,
+  WinPayload,
   RoomState,
 } from '../shared/br/protocol';
 import { credentialsSchema } from '../shared/br/protocol';
@@ -333,6 +334,13 @@ function wireNet(n: Net): void {
   s.on('game:start', (payload: GameStartPayload) => startGame(payload));
   s.on('game:snap', (snap: BRSnapshot) => game?.onSnapshot(snap));
   s.on('game:died', (payload: DiedPayload) => onDied(payload));
+  s.on('game:win', (payload: WinPayload) => {
+    deathEl.hidden = true;
+    specBar.hidden = true;
+    menuEl.hidden = true;
+    inventory.close();
+    game?.onWin(payload);
+  });
   s.on('game:end', (payload: GameEndPayload) => endGame(payload));
 }
 
@@ -799,6 +807,10 @@ window.addEventListener(
 );
 
 document.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
+// Clic de interfaz en cualquier boton de las pantallas (no en el canvas del juego).
+document.addEventListener('click', (e) => {
+  if (e.target instanceof Element && e.target.closest('button:not([disabled])')) sfx.click();
+});
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('popstate', () => {
   if (game && !game.result) navigate('/play');

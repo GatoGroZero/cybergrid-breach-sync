@@ -675,6 +675,79 @@ function sardineCan(): HTMLCanvasElement {
   return outline(cv, C.black);
 }
 
+/** Silueta de pez de 64 x 11: la barra de estamina. Se llena de izquierda (cola) a derecha (cabeza). */
+function fishMask(): HTMLCanvasElement {
+  const [cv, c] = make(64, 11);
+  ell(c, 38, 5.5, 23, 4.9, '#ffffff');
+  for (let x = 0; x < 16; x++) {
+    const half = 5 - x * 0.18;
+    for (let y = 0; y < 11; y++) {
+      const dy = Math.abs(y - 5);
+      // muesca de la cola: la deja en horquilla
+      if (dy <= half && !(x < 7 && dy < 2.6 - x * 0.37)) px(c, x, y, '#ffffff');
+    }
+  }
+  // aleta de arriba y de abajo
+  for (let x = 33; x <= 41; x++) {
+    px(c, x, 0, '#ffffff');
+    if (x > 35 && x < 40) px(c, x, 10, '#ffffff');
+  }
+  return cv;
+}
+
+function tint(mask: HTMLCanvasElement, top: string, mid: string, belly: string): HTMLCanvasElement {
+  const [cv, c] = make(mask.width, mask.height);
+  c.drawImage(mask, 0, 0);
+  c.globalCompositeOperation = 'source-in';
+  c.fillStyle = mid;
+  c.fillRect(0, 0, mask.width, mask.height);
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = top;
+  c.fillRect(0, 0, mask.width, 3);
+  c.fillStyle = belly;
+  c.fillRect(0, mask.height - 3, mask.width, 3);
+  c.globalCompositeOperation = 'source-over';
+  // escamas y ojo
+  c.fillStyle = 'rgba(26,28,44,0.28)';
+  for (let x = 22; x < 54; x += 4)
+    for (let y = 3; y < 9; y += 2) c.fillRect(x + (y % 4 === 3 ? 2 : 0), y, 1, 1);
+  px(c, 55, 3, '#1a1c2c');
+  px(c, 56, 3, '#f4f4f4');
+  return cv;
+}
+
+function fishAssets(): {
+  empty: HTMLCanvasElement;
+  full: HTMLCanvasElement;
+  tired: HTMLCanvasElement;
+} {
+  const mask = fishMask();
+  const empty = outline(tint(mask, '#4a5578', '#333c57', '#262b44'), C.black);
+  return {
+    empty,
+    full: tint(mask, C.cyan, C.sky, C.blue),
+    tired: tint(mask, C.orange, C.red, C.purple),
+  };
+}
+
+/** Corona dorada del ganador (17 x 11, con contorno). */
+function crownSprite(): HTMLCanvasElement {
+  const cv = art(
+    [
+      '.G.......G.......G.',
+      '.GG.....GGG.....GG.',
+      '.GGG...GGGGG...GGG.',
+      '.GGGG.GGGGGGG.GGGG.',
+      '.GGGGGGGGGGGGGGGGG.',
+      '.GGGRGGGGBGGGGRGGG.',
+      '.GGGGGGGGGGGGGGGGG.',
+      '.OOOOOOOOOOOOOOOOO.',
+    ],
+    { G: C.yellow, O: C.orange, R: C.red, B: C.sky },
+  );
+  return outline(cv, C.black);
+}
+
 function pawIcon(): HTMLCanvasElement {
   const [cv, c] = make(14, 14);
   ell(c, 7, 9, 4, 3.5, C.white);
@@ -707,6 +780,8 @@ export interface Assets {
   shieldBadge: HTMLCanvasElement;
   can: HTMLCanvasElement;
   paw: HTMLCanvasElement;
+  fish: { empty: HTMLCanvasElement; full: HTMLCanvasElement; tired: HTMLCanvasElement };
+  crown: HTMLCanvasElement;
   duck: HTMLCanvasElement;
   prop(kind: PropKind, w: number, h: number, variant: number): HTMLCanvasElement | null;
 }
@@ -811,6 +886,8 @@ export function buildAssets(): Assets {
     shieldBadge: shieldBadge(),
     can: sardineCan(),
     paw: pawIcon(),
+    fish: fishAssets(),
+    crown: crownSprite(),
     duck: duckSprite(),
     prop,
   };

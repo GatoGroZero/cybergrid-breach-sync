@@ -18,21 +18,28 @@ import {
 } from '../../shared/br/constants';
 import {
   addItem,
+  ammoToArray,
   cloneItem,
-  consume,
-  countKind,
+  emptyAmmo,
   emptyInventory,
+  giveItem,
   moveSlot,
   placeInSlot,
+  spendAmmo,
   takeOne,
+  type AmmoStore,
   type Inventory,
 } from '../../shared/br/inventory';
+import { STAMINA, fullStamina, stepStamina, type StaminaState } from '../../shared/br/stamina';
 import {
+  AMMO_KINDS,
   CLAWS,
   ITEM_KINDS,
   WEAPONS,
+  isAmmo,
   isWeapon,
   rollChest,
+  type AmmoKind,
   type Item,
   type WeaponDef,
   type WeaponKind,
@@ -112,6 +119,10 @@ export interface Cat {
   /** Angulo de apuntado en radianes. */
   aim: number;
   inv: Inventory;
+  /** Balas de cada arma: viven aparte de los 5 espacios. */
+  ammo: AmmoStore;
+  stamina: StaminaState;
+  running: boolean;
   sel: number;
   heal: { kind: HealKind; elapsed: number } | null;
   cooldownUntil: number;
@@ -243,6 +254,9 @@ export class BRGame {
         alive: true,
         aim: 0,
         inv: emptyInventory(),
+        ammo: emptyAmmo(),
+        stamina: fullStamina(),
+        running: false,
         sel: 0,
         heal: null,
         cooldownUntil: 0,
@@ -361,27 +375,31 @@ export class BRGame {
   private applyInput(cat: Cat, input: InputPayload): void {
     cat.lastSeq = input.seq;
     const before = { x: cat.x, y: cat.y };
-    stepCat(this.map, cat, { mx: input.mx, my: input.my }, TICK_DT);
+    const len = Math.min(1, Math.hypot(input.mx, input.my));
+    cat.running = stepStamina(cat.stamina, input.run === true, len, TICK_DT);
+    stepCat(
+      this.map,
+      cat,
+      { mx: input.mx, my: input.my },
+      TICK_DT,
+      cat.running ? STAMINA.runMultiplier : 1,
+    );
     cat.moving = Math.hypot(cat.x - before.x, cat.y - before.y) > 0.05;
-    this.fireControl(cat, input.aim, input.fire, input.assist);
+    this.fireControl(cat, input.aim, input.fire, input.hold === true);
   }
 
   /** Disparo, uso del objeto en mano o garras segun lo que lleve el gato. */
-  fireControl(cat: Cat, aimIn: number, fire: boolean, assist: boolean): void {
+  fireControl(cat: Cat, aim: number, fire: boolean, hold = false): void {
     const edge = fire && !cat.prevFire;
     cat.prevFire = fire;
-    let aim = aimIn;
-    const item = this.held(cat);
-    const def = item && isWeapon(item.kind) ? WEAPONS[item.kind] : null;
-    if (assist) {
-      const target = this.nearestEnemy(cat, def ? def.range : 60);
-      if (target) aim = Math.atan2(target.y - cat.y, target.x - cat.x);
-    }
     cat.aim = aim;
     if (!fire) return;
+    const item = this.held(cat);
+    const def = item && isWeapon(item.kind) ? WEAPONS[item.kind] : null;
 
     if (item && def) {
-      if (!def.auto && !edge) return;
+      // Un clic por bala; con el joystick de la mira (hold) las armas repiten solas al cargarse.
+      if (!def.auto && !edge && !hold) return;
       this.shoot(cat, item, def, aim);
     } else if (item && (item.kind === 'medkit' || item.kind === 'shield')) {
       if (edge) this.startHeal(cat, item.kind);
@@ -408,9 +426,9 @@ export class BRGame {
 
   private shoot(cat: Cat, item: Item, def: WeaponDef, aim: number): void {
     if (this.time < cat.cooldownUntil) return;
-    if (countKind(cat.inv, def.ammo) < def.ammoPerShot) return;
+    if (cat.ammo[def.ammo] < def.ammoPerShot) return;
     if (this.shots.length > MAX_SHOTS) return;
-    consume(cat.inv, def.ammo, def.ammoPerShot);
+    spendAmmo(cat.ammo, def.ammo, def.ammoPerShot);
     cat.invDirty = true;
     cat.cooldownUntil = this.time + def.cooldown;
     cat.heal = null;
@@ -517,6 +535,7 @@ export class BRGame {
     this.walls.set(wall.id, wall);
     this.wallByTile.set(ty * this.map.w + tx, wall);
     this.map.solid[ty * this.map.w + tx] = 2;
+    this.emit({ e: 'place', x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 });
   }
 
   private damageWall(wall: Wall, dmg: number): void {
@@ -566,7 +585,11 @@ export class BRGame {
     this.feed.push({ k: killer && killer.id !== target.id ? killer.name : null, v: target.name });
 
     const items = target.inv.filter((it): it is Item => it !== null).map(cloneItem);
+    for (const kind of AMMO_KINDS) {
+      if (target.ammo[kind] > 0) items.push({ kind, qty: target.ammo[kind], rarity: 0 });
+    }
     target.inv = emptyInventory();
+    target.ammo = emptyAmmo();
     target.invDirty = true;
     this.containers.set(this.nextId, {
       id: this.nextId++,
@@ -661,7 +684,9 @@ export class BRGame {
     const item = c.items[index];
     if (!item) return this.contentsOf(c);
     let left: Item | null;
-    if (slot !== undefined && slot >= 0 && slot < INVENTORY_SLOTS) {
+    if (isAmmo(item.kind)) {
+      left = giveItem(cat.inv, cat.ammo, cloneItem(item));
+    } else if (slot !== undefined && slot >= 0 && slot < INVENTORY_SLOTS) {
       left = placeInSlot(cat.inv, slot, cloneItem(item));
       // Casilla ocupada por algo distinto: se usa el primer lugar libre.
       if (left && left.qty === item.qty) left = addItem(cat.inv, cloneItem(item));
@@ -718,6 +743,24 @@ export class BRGame {
     cat.inv[slot] = null;
     cat.invDirty = true;
     if (slot === cat.sel) cat.heal = null;
+    this.dropAt(cat, item);
+    return true;
+  }
+
+  /** Tira balas de un tipo (todas o las que se pidan) al suelo. */
+  ammoDrop(catId: number, kind: AmmoKind, qty?: number): boolean {
+    const cat = this.cat(catId);
+    if (!cat || !cat.alive) return false;
+    const have = cat.ammo[kind];
+    const n = Math.min(have, qty ?? have);
+    if (n <= 0) return false;
+    spendAmmo(cat.ammo, kind, n);
+    cat.invDirty = true;
+    this.dropAt(cat, { kind, qty: n, rarity: 0 });
+    return true;
+  }
+
+  private dropAt(cat: Cat, item: Item): void {
     const near = [...this.containers.values()].find(
       (c) => c.kind === 'drop' && dist(c.x, c.y, cat.x, cat.y) < 10 && c.items.length < 8,
     );
@@ -734,7 +777,6 @@ export class BRGame {
         title: 'Objetos tirados',
       });
     }
-    return true;
   }
 
   // ---------------------------------------------------------------- avance de la simulacion
@@ -908,6 +950,8 @@ export class BRGame {
       }))
       .sort((a, b) => a.placement - b.placement);
     const top = alive[0] ?? null;
+    // Los que miran desde la lapida ven la celebracion del ganador.
+    if (top) for (const c of this.cats) if (!c.alive && !c.bot) c.spectate = top.id;
     this.result = {
       winnerId: top
         ? top.id
@@ -939,7 +983,7 @@ export class BRGame {
           { kind: 'shield', qty: 3, rarity: 0 },
           { kind: 'wall', qty: 5, rarity: 0 },
         ];
-    for (const item of kit) addItem(cat.inv, item);
+    for (const item of kit) giveItem(cat.inv, cat.ammo, item);
     cat.invDirty = true;
   }
 
@@ -963,6 +1007,7 @@ export class BRGame {
     if (this.time < cat.hurtUntil) f |= FLAG.hurt;
     if (!cat.connected) f |= FLAG.disconnected;
     if (cat.bot) f |= FLAG.bot;
+    if (cat.running) f |= FLAG.running;
     return f;
   }
 
@@ -1049,6 +1094,8 @@ export class BRGame {
         : 0,
       healKind: cat.heal ? cat.heal.kind : null,
       cooldown: Math.max(0, q1(cat.cooldownUntil - this.time)),
+      stamina: q1(cat.stamina.value),
+      tired: cat.stamina.tired,
     };
     const snap: BRSnapshot = {
       t: Math.round(this.time * 1000),
@@ -1065,6 +1112,7 @@ export class BRGame {
     };
     if (cat.invDirty) {
       snap.inv = cat.inv.map((it) => (it ? cloneItem(it) : null));
+      snap.ammo = ammoToArray(cat.ammo);
       cat.invDirty = false;
     }
     if (!cat.alive && cat.spectate !== null) snap.spectating = cat.spectate;

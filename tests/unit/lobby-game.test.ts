@@ -37,7 +37,7 @@ describe('eventos de la partida por socket', () => {
   let server: TestServer;
   const sockets: Socket[] = [];
   beforeAll(async () => {
-    server = await startServer({ countdownSeconds: 1, testKit: true });
+    server = await startServer({ countdownSeconds: 1, testKit: true, celebrationSeconds: 0.3 });
   });
   afterAll(async () => {
     sockets.forEach((s) => s.close());
@@ -107,7 +107,7 @@ describe('eventos de la partida por socket', () => {
   });
 
   it('sin la opcion de pruebas, dev:kit y dev:finish no hacen nada', async () => {
-    const locked = await startServer({ countdownSeconds: 1 });
+    const locked = await startServer({ countdownSeconds: 1, celebrationSeconds: 0.3 });
     const own: Socket[] = [];
     try {
       const { socket } = await soloGame(locked, 'sin_trampas', own);

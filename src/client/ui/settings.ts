@@ -201,7 +201,7 @@ export class Settings {
     const { w, h } = this.dims();
     const c = touchCircles(this.draft, w, h);
     const inside = (k: Circle, pad = 1): boolean => Math.hypot(x - k.x, y - k.y) <= k.r * pad;
-    const order: TouchId[] = ['fire', 'interact', 'bag', 'menu', 'map', 'stick'];
+    const order: TouchId[] = ['aim', 'interact', 'bag', 'menu', 'map', 'stick'];
     for (const id of order) if (inside(c[id], 1.1)) return id;
     const slots = c.slots;
     const first = slots[0] as Circle;

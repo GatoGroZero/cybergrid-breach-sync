@@ -1,3 +1,4 @@
+import { isWeapon } from '../../shared/br/items';
 import type { ClientBR } from './state';
 
 export type ControlMode = 'keyboard' | 'touch';
@@ -16,6 +17,7 @@ export const ACTIONS = [
   'slot4',
   'slot5',
   'fireKey',
+  'run',
   'mute',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -34,6 +36,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   slot4: 'Objeto 4',
   slot5: 'Objeto 5',
   fireKey: 'Disparar (además del clic)',
+  run: 'Correr (mantener)',
   mute: 'Silenciar',
 };
 
@@ -51,6 +54,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   slot4: 'Digit4',
   slot5: 'Digit5',
   fireKey: 'Space',
+  run: 'ShiftLeft',
   mute: 'KeyN',
 };
 
@@ -111,7 +115,7 @@ export function saveKeys(keys: Record<Action, string>): void {
 
 // ------------------------------------------------------------------ botones tactiles
 
-export const TOUCH_IDS = ['stick', 'fire', 'interact', 'bag', 'hotbar', 'menu', 'map'] as const;
+export const TOUCH_IDS = ['stick', 'aim', 'interact', 'bag', 'hotbar', 'menu', 'map'] as const;
 export type TouchId = (typeof TOUCH_IDS)[number];
 
 export interface TouchSpot {
@@ -125,7 +129,7 @@ export type TouchLayout = Record<TouchId, TouchSpot>;
 
 export const TOUCH_LABELS: Record<TouchId, string> = {
   stick: 'Joystick',
-  fire: 'Fuego',
+  aim: 'Mira y disparo',
   interact: 'Interactuar',
   bag: 'Inventario',
   hotbar: 'Objetos',
@@ -135,8 +139,8 @@ export const TOUCH_LABELS: Record<TouchId, string> = {
 
 export const DEFAULT_TOUCH: TouchLayout = {
   stick: { x: 0.13, y: 0.72, s: 1 },
-  fire: { x: 0.88, y: 0.74, s: 1.1 },
-  interact: { x: 0.74, y: 0.82, s: 1 },
+  aim: { x: 0.87, y: 0.7, s: 1.05 },
+  interact: { x: 0.745, y: 0.85, s: 1 },
   bag: { x: 0.94, y: 0.44, s: 0.9 },
   hotbar: { x: 0.5, y: 0.9, s: 1 },
   menu: { x: 0.04, y: 0.1, s: 0.9 },
@@ -147,7 +151,9 @@ export function loadTouchLayout(): TouchLayout {
   try {
     const raw = window.localStorage.getItem('cg_touch');
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<TouchLayout>;
+      const parsed = JSON.parse(raw) as Partial<TouchLayout> & { fire?: TouchSpot };
+      // Versiones anteriores tenian un boton FUEGO: su lugar pasa a la mira.
+      if (!parsed.aim && parsed.fire) parsed.aim = parsed.fire;
       const layout = structuredClone(DEFAULT_TOUCH);
       for (const id of TOUCH_IDS) {
         const p = parsed[id];
@@ -207,7 +213,7 @@ export function touchCircles(
   }));
   return {
     stick: c('stick', 56),
-    fire: c('fire', 46),
+    aim: c('aim', 52),
     interact: c('interact', 33),
     bag: c('bag', 28),
     hotbar: { x: hot.x * w, y: hot.y * h, r: slotR * 5.6 },
@@ -217,6 +223,9 @@ export function touchCircles(
   };
 }
 
+/** Fraccion del radio de la mira que se ignora al principio. */
+export const AIM_DEADZONE = 0.2;
+
 const inside = (c: Circle, x: number, y: number, pad = 1): boolean =>
   Math.hypot(x - c.x, y - c.y) <= c.r * pad;
 
@@ -225,9 +234,21 @@ export interface Sample {
   my: number;
   aim: number;
   fire: boolean;
-  assist: boolean;
-  /** True si el jugador esta apuntando a mano (raton o arrastre del boton de fuego). */
+  /** Mantener el disparo (joystick de la mira): las armas de un clic repiten solas. */
+  hold: boolean;
+  run: boolean;
+  /** True si el jugador esta apuntando a mano (raton o joystick de la mira). */
   hasAim: boolean;
+}
+
+/** Estado del joystick de la mira (movil), para dibujarlo. */
+export interface AimPad {
+  active: boolean;
+  /** Posicion de la perilla, de -1 a 1. */
+  x: number;
+  y: number;
+  /** Ya se arrastro mas alla de la zona muerta: hay linea de mira y se dispara. */
+  aiming: boolean;
 }
 
 export interface InputCallbacks {
@@ -258,7 +279,7 @@ export class InputController {
   hotbarRects: { x: number; y: number; w: number; h: number }[] = [];
   mouse: { x: number; y: number } | null = null;
   stick = { x: 0, y: 0, active: false };
-  fireHeld = false;
+  aimPad: AimPad = { active: false, x: 0, y: 0, aiming: false };
   /** Pulsaciones que se estan sosteniendo, para dibujar los botones presionados. */
   pressed = new Set<TouchId | 'slot'>();
   cb: InputCallbacks;
@@ -267,7 +288,13 @@ export class InputController {
   private mouseDown = false;
   private clickLatch = false;
   private pointers = new Map<number, { id: TouchId | 'slot'; startX: number; startY: number }>();
-  private touchAim: number | null = null;
+  private aimAngle: number | null = null;
+  private aimStartAt = 0;
+  private aimDragged = false;
+  /** Toque corto en la mira: usa curas, ataca con garras o pone un muro al frente. */
+  private tapLatch = false;
+  /** Al soltar la mira tras arrastrar: angulo en el que se coloca el muro. */
+  private releaseLatch: number | null = null;
   private lastFacingAim = 0;
 
   constructor(
@@ -299,8 +326,11 @@ export class InputController {
     this.pointers.clear();
     this.pressed.clear();
     this.stick = { x: 0, y: 0, active: false };
-    this.fireHeld = false;
-    this.touchAim = null;
+    this.aimPad = { active: false, x: 0, y: 0, aiming: false };
+    this.aimAngle = null;
+    this.aimDragged = false;
+    this.tapLatch = false;
+    this.releaseLatch = null;
   }
 
   private readonly releaseAll = (): void => {
@@ -397,12 +427,14 @@ export class InputController {
     if (tap('bag', this.cb.onBag)) return;
     if (tap('menu', this.cb.onMenu)) return;
     if (tap('map', this.cb.onMap)) return;
-    if (inside(circles.fire, x, y, 1.5) || (x > w * 0.62 && y > h * 0.35 && y < h * 0.8)) {
-      this.pointers.set(id, { id: 'fire', startX: circles.fire.x, startY: circles.fire.y });
-      this.pressed.add('fire');
-      this.fireHeld = true;
-      this.clickLatch = true;
-      this.touchAim = null;
+    if (inside(circles.aim, x, y, 1.6) || (x > w * 0.6 && y > h * 0.3 && y < h * 0.97)) {
+      this.pointers.set(id, { id: 'aim', startX: circles.aim.x, startY: circles.aim.y });
+      this.pressed.add('aim');
+      this.aimStartAt = performance.now();
+      this.aimDragged = false;
+      this.aimAngle = null;
+      this.aimPad = { active: true, x: 0, y: 0, aiming: false };
+      this.updateAim(x, y);
       this.buzz(8);
       return;
     }
@@ -411,6 +443,25 @@ export class InputController {
       this.pressed.add('stick');
       this.moveStick(x, y);
     }
+  }
+
+  /** Mueve la perilla de la mira. Pasada la zona muerta se ve la linea y el gato dispara. */
+  private updateAim(x: number, y: number): void {
+    const c = touchCircles(this.touchLayout, this.screen.w, this.screen.h).aim;
+    let dx = (x - c.x) / c.r;
+    let dy = (y - c.y) / c.r;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) {
+      dx /= len;
+      dy /= len;
+    }
+    if (len > AIM_DEADZONE) {
+      this.aimAngle = Math.atan2(dy, dx);
+      this.aimDragged = true;
+    } else {
+      this.aimAngle = null;
+    }
+    this.aimPad = { active: true, x: dx, y: dy, aiming: this.aimAngle !== null };
   }
 
   private moveStick(x: number, y: number): void {
@@ -434,12 +485,7 @@ export class InputController {
     const ptr = this.pointers.get(e.pointerId);
     if (!ptr) return;
     if (ptr.id === 'stick') this.moveStick(p.x, p.y);
-    else if (ptr.id === 'fire') {
-      const dx = p.x - ptr.startX;
-      const dy = p.y - ptr.startY;
-      // Arrastrar el boton de fuego apunta a mano; sin arrastrar, la ayuda de apuntado elige el blanco.
-      this.touchAim = Math.hypot(dx, dy) > 16 ? Math.atan2(dy, dx) : null;
-    }
+    else if (ptr.id === 'aim') this.updateAim(p.x, p.y);
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
@@ -452,36 +498,62 @@ export class InputController {
     this.pointers.delete(e.pointerId);
     this.pressed.delete(ptr.id);
     if (ptr.id === 'stick') this.stick = { x: 0, y: 0, active: false };
-    if (ptr.id === 'fire') {
-      this.fireHeld = false;
-      this.touchAim = null;
+    if (ptr.id === 'aim') {
+      if (this.aimAngle !== null) this.releaseLatch = this.aimAngle;
+      else if (!this.aimDragged && performance.now() - this.aimStartAt < 400) this.tapLatch = true;
+      this.aimAngle = null;
+      this.aimDragged = false;
+      this.aimPad = { active: false, x: 0, y: 0, aiming: false };
     }
   };
+
+  /** Angulo de la mira en este momento, o null si el jugador no esta apuntando (para dibujar guias). */
+  currentAim(): number | null {
+    if (this.mode === 'touch') return this.aimAngle;
+    if (!this.mouse) return null;
+    return Math.atan2(this.mouse.y - this.playerScreen.y, this.mouse.x - this.playerScreen.x);
+  }
 
   /** Lee el estado de los controles. Se llama una vez por paso de simulacion (30 Hz). */
   sample(game: ClientBR): Sample {
     let mx = 0;
     let my = 0;
     let fire: boolean;
-    let assist = false;
+    let hold = false;
+    let run: boolean;
     let hasAim = false;
     let aim = this.lastFacingAim;
 
     if (this.mode === 'touch') {
       mx = this.stick.x;
       my = this.stick.y;
-      if (Math.hypot(mx, my) < 0.12) {
+      const len = Math.hypot(mx, my);
+      if (len < 0.12) {
         mx = 0;
         my = 0;
       }
-      fire = this.fireHeld || this.clickLatch;
-      if (this.touchAim !== null) {
-        aim = this.touchAim;
-        hasAim = true;
+      // Empujar el joystick hasta el borde es correr.
+      run = len >= 0.9;
+      const kind = game.selectedItem?.kind ?? null;
+      const aimActive = this.aimAngle !== null;
+      const facing = len > 0.2 ? Math.atan2(my, mx) : game.facing === 1 ? 0 : Math.PI;
+      if (kind === null || isWeapon(kind)) {
+        // Armas y garras: se dispara solo mientras la linea de mira esta a la vista.
+        fire = aimActive || (kind === null && this.tapLatch);
+        hold = aimActive;
+      } else if (kind === 'wall') {
+        // El muro se coloca al soltar la mira, donde mostraba la guia.
+        fire = this.releaseLatch !== null || this.tapLatch;
       } else {
-        assist = true;
-        if (Math.hypot(mx, my) > 0.2) aim = Math.atan2(my, mx);
-        else aim = game.facing === 1 ? 0 : Math.PI;
+        fire = this.tapLatch;
+      }
+      if (aimActive) {
+        aim = this.aimAngle as number;
+        hasAim = true;
+      } else if (this.releaseLatch !== null) {
+        aim = this.releaseLatch;
+      } else {
+        aim = facing;
       }
     } else {
       const d = (a: Action): boolean => {
@@ -492,6 +564,7 @@ export class InputController {
       if (d('right')) mx += 1;
       if (d('up')) my -= 1;
       if (d('down')) my += 1;
+      run = d('run') || this.down.has('ShiftRight');
       fire = this.mouseDown || d('fireKey') || this.clickLatch;
       if (this.mouse) {
         aim = Math.atan2(this.mouse.y - this.playerScreen.y, this.mouse.x - this.playerScreen.x);
@@ -501,8 +574,10 @@ export class InputController {
       }
     }
     this.clickLatch = false;
+    this.tapLatch = false;
+    this.releaseLatch = null;
     this.lastFacingAim = aim;
-    return { mx, my, aim, fire, assist, hasAim };
+    return { mx, my, aim, fire, hold, run, hasAim };
   }
 
   dispose(): void {

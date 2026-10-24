@@ -119,4 +119,76 @@ test.describe('Móvil: controles táctiles', () => {
     await touch('touchEnd');
     await expect.poll(async () => (await inv())[3]).toBe('rifle');
   });
+
+  test('el joystick de la mira dispara solo mientras se apunta y el muro se pone al soltar', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_mira'), true);
+    await startSoloGame(page);
+    await page.evaluate(() =>
+      (window as unknown as { __net: { socket: { emit(e: string): void } } }).__net.socket.emit(
+        'dev:kit',
+      ),
+    );
+    type Debug = {
+      ammo: number[];
+      select(slot: number): void;
+      latest: { walls: unknown[] } | null;
+      input: { aimPad: { aiming: boolean } };
+    };
+    const dbg = <T>(fn: (g: Debug) => T): Promise<T> =>
+      page.evaluate(
+        (src) =>
+          new Function('g', `return (${src})(g)`)(
+            (window as unknown as { __game: Debug }).__game,
+          ) as T,
+        fn.toString(),
+      );
+    await expect.poll(() => dbg((g) => g.ammo[4])).toBe(90);
+
+    const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    const u = Math.min(1.7, Math.max(0.8, size.h / 390));
+    const pad = { x: size.w * 0.87, y: size.h * 0.7, r: 52 * u * 1.05 };
+    const cdp = await page.context().newCDPSession(page);
+    const touch = async (
+      type: 'touchStart' | 'touchEnd' | 'touchMove',
+      x?: number,
+      y?: number,
+    ): Promise<void> => {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: x === undefined ? [] : [{ x, y: y as number, id: 3 }],
+      });
+    };
+
+    // Un toque corto con un arma no dispara: hay que apuntar para que salgan las balas.
+    await touch('touchStart', pad.x, pad.y);
+    await touch('touchEnd');
+    await page.waitForTimeout(300);
+    expect(await dbg((g) => g.ammo[4])).toBe(90);
+
+    // Arrastrando se ve la linea y el fusil dispara solo.
+    await touch('touchStart', pad.x, pad.y);
+    await touch('touchMove', pad.x - pad.r * 0.8, pad.y - pad.r * 0.2);
+    await page.waitForTimeout(700);
+    expect(await dbg((g) => g.input.aimPad.aiming)).toBe(true);
+    const during = await dbg((g) => g.ammo[4]);
+    expect(during).toBeLessThan(90);
+    await touch('touchEnd');
+    await page.waitForTimeout(400);
+    const after = await dbg((g) => g.ammo[4]);
+    await page.waitForTimeout(500);
+    expect(await dbg((g) => g.ammo[4])).toBe(after);
+    expect(await dbg((g) => g.input.aimPad.aiming)).toBe(false);
+
+    // Muro: arrastrar muestra donde caera y se coloca al soltar.
+    await dbg((g) => g.select(3));
+    expect(await dbg((g) => g.latest?.walls.length ?? 0)).toBe(0);
+    await touch('touchStart', pad.x, pad.y);
+    await touch('touchMove', pad.x - pad.r * 0.7, pad.y);
+    await page.waitForTimeout(300);
+    expect(await dbg((g) => g.latest?.walls.length ?? 0)).toBe(0);
+    await touch('touchEnd');
+    await expect.poll(() => dbg((g) => g.latest?.walls.length ?? 0)).toBeGreaterThan(0);
+  });
 });

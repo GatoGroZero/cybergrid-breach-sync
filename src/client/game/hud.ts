@@ -1,5 +1,4 @@
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
-import { countKind } from '../../shared/br/inventory';
 import {
   CLAWS,
   ITEM_KINDS,
@@ -303,7 +302,7 @@ export class Hud {
       x += 46;
       y = safe.t + 12;
     } else {
-      y = h - safe.b - 66;
+      y = h - safe.b - 92;
     }
     const bar = (
       yy: number,
@@ -346,6 +345,7 @@ export class Hud {
       this.assets.shieldBadge,
       `${Math.ceil(me.shield)}`,
     );
+    this.drawFish(f, x, y + 52, me.stamina, me.tired, bw + 26);
     if (pulse)
       text(
         ctx,
@@ -356,6 +356,42 @@ export class Hud {
         me.healKind === 'shield' ? C.cyan : C.lime,
         'left',
       );
+  }
+
+  /** Barra de estamina en forma de pez: se vacia al correr y se llena quieto o caminando. */
+  private drawFish(
+    f: HudFrame,
+    x: number,
+    y: number,
+    value: number,
+    tired: boolean,
+    width: number,
+  ): void {
+    const { ctx, now } = f;
+    const fish = this.assets.fish;
+    const scale = 2;
+    const w = fish.full.width * scale;
+    const h = fish.full.height * scale;
+    const dx = Math.round(x);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(fish.empty, dx - 2, y - 2, fish.empty.width * scale, fish.empty.height * scale);
+    const frac = Math.max(0, Math.min(1, value / 100));
+    const fw = Math.round(fish.full.width * frac);
+    const low = tired || value < 20;
+    const blink = low && Math.floor(now / 160) % 2 === 0;
+    const src = tired || blink ? fish.tired : fish.full;
+    if (fw > 0) ctx.drawImage(src, 0, 0, fw, fish.full.height, dx, y, fw * scale, h);
+    void width;
+    void w;
+    text(
+      ctx,
+      tired ? '¡SIN AIRE!' : `${Math.ceil(value)}`,
+      dx + 118 + 10,
+      y + h / 2,
+      16,
+      tired ? C.orange : C.white,
+      'left',
+    );
   }
 
   // ------------------------------------------------------------------ zona y vivos
@@ -525,7 +561,7 @@ export class Hud {
       const def = WEAPONS[item.kind];
       title = `${def.name.toUpperCase()} ${RARITY_NAMES[item.rarity].toUpperCase()}`;
       color = RARITY_COLORS[item.rarity] as string;
-      const ammo = countKind(g.inv, def.ammo);
+      const ammo = g.ammoOf(def.ammo);
       detail = `${def.damage[item.rarity]} dmg${def.pellets > 1 ? ' x' + def.pellets : ''}   ${ITEM_NAMES[def.ammo]}: ${ammo}`;
     } else {
       title = ITEM_NAMES[item.kind].toUpperCase();
@@ -679,6 +715,8 @@ export class Hud {
     const box = g.nearestBox();
     drawTouchControls(ctx, input.touchLayout, w, h, {
       stick: input.stick,
+      aim: input.aimPad,
+      running: g.running && g.moving,
       pressed: input.pressed,
       interactReady: box !== null && g.alive,
       bagIcon: this.assets.can,
@@ -746,7 +784,7 @@ export class Hud {
     const color = b.tone === 'good' ? C.lime : b.tone === 'bad' ? C.orange : C.white;
     ctx.font = `15px ${PIX}`;
     const tw = ctx.measureText(b.text).width + 36;
-    const y = Math.round(h * 0.24);
+    const y = Math.round(h * (g.input.mode === 'touch' ? 0.34 : 0.24));
     panel(ctx, Math.round(w / 2 - tw / 2), y - 20, tw, 40, 'rgba(26,28,44,0.88)', C.black);
     text(ctx, b.text, w / 2, y + 1, 15, color, 'center', PIX, null);
     ctx.globalAlpha = 1;

@@ -41,6 +41,7 @@ export default defineConfig({
       COUNTDOWN_SECONDS: '1',
       DEMO_ACCOUNTS: 'true',
       TEST_KIT: 'true',
+      CELEBRATION_SECONDS: '1',
     },
   },
 });

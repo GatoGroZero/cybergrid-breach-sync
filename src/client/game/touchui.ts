@@ -21,6 +21,12 @@ function ring(
 
 export interface TouchDrawState {
   stick: { x: number; y: number; active: boolean };
+  /** Joystick de la mira: perilla, y si ya hay linea de mira. */
+  aim?: { x: number; y: number; active: boolean; aiming: boolean };
+  /** El gato esta corriendo: el aro del joystick se pone amarillo. */
+  running?: boolean;
+  /** Color del arma en mano (rareza) para la mira. */
+  aimColor?: string;
   pressed: Set<TouchId | 'slot'>;
   /** Boton que se esta editando (se resalta). */
   selected?: TouchId | null;
@@ -49,32 +55,68 @@ export function drawTouchControls(
   ring(
     ctx,
     stick,
-    st.selected === 'stick' ? C.yellow : 'rgba(115,239,247,0.75)',
-    'rgba(26,28,44,0.35)',
+    st.selected === 'stick' || st.running ? C.yellow : 'rgba(115,239,247,0.75)',
+    st.running ? 'rgba(255,205,117,0.18)' : 'rgba(26,28,44,0.35)',
+    st.running ? 5 : 3,
   );
   ring(ctx, { ...stick, r: stick.r * 0.45 }, 'rgba(115,239,247,0.25)', 'rgba(0,0,0,0)', 2);
+  // aro punteado: empujar el joystick hasta aqui es correr
+  ctx.beginPath();
+  ctx.arc(stick.x, stick.y, stick.r * 0.9 * 0.85, 0, Math.PI * 2);
+  ctx.setLineDash([4, 6]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,205,117,0.5)';
+  ctx.stroke();
+  ctx.setLineDash([]);
   const knob = {
-    x: stick.x + st.stick.x * stick.r * 0.7,
-    y: stick.y + st.stick.y * stick.r * 0.7,
+    x: stick.x + st.stick.x * stick.r * 0.85,
+    y: stick.y + st.stick.y * stick.r * 0.85,
     r: stick.r * 0.38,
   };
-  ring(ctx, knob, C.cyan, st.stick.active ? 'rgba(115,239,247,0.7)' : 'rgba(115,239,247,0.35)', 3);
-
-  // fuego
-  const fire = circles.fire;
-  const firing = st.pressed.has('fire');
   ring(
     ctx,
-    fire,
-    glow('fire') ? C.yellow : C.red,
-    firing ? 'rgba(177,62,83,0.8)' : 'rgba(177,62,83,0.35)',
+    knob,
+    st.running ? C.yellow : C.cyan,
+    st.running
+      ? 'rgba(255,205,117,0.75)'
+      : st.stick.active
+        ? 'rgba(115,239,247,0.7)'
+        : 'rgba(115,239,247,0.35)',
+    3,
+  );
+
+  // joystick de la mira
+  const aimC = circles.aim;
+  const aimSt = st.aim;
+  const aiming = aimSt?.aiming === true;
+  ring(
+    ctx,
+    aimC,
+    glow('aim') ? C.yellow : aiming ? C.orange : C.red,
+    aiming ? 'rgba(239,125,87,0.22)' : 'rgba(177,62,83,0.3)',
     4,
   );
+  ctx.beginPath();
+  ctx.arc(aimC.x, aimC.y, aimC.r * 0.2, 0, Math.PI * 2);
+  ctx.setLineDash([3, 4]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(244,244,244,0.4)';
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const kx = aimC.x + (aimSt?.x ?? 0) * aimC.r * 0.72;
+  const ky = aimC.y + (aimSt?.y ?? 0) * aimC.r * 0.72;
+  ring(
+    ctx,
+    { x: kx, y: ky, r: aimC.r * 0.34 },
+    aiming ? C.orange : C.red,
+    aiming ? 'rgba(255,205,117,0.75)' : 'rgba(177,62,83,0.5)',
+    3,
+  );
   ctx.fillStyle = C.white;
-  ctx.font = `${Math.max(9, fire.r * 0.26)}px ${FONT}`;
+  ctx.font = `${Math.max(8, aimC.r * 0.17)}px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('FUEGO', fire.x, fire.y);
+  if (!aimSt?.active) ctx.fillText('APUNTA', aimC.x, aimC.y + aimC.r * 0.62);
 
   // interactuar
   const it = circles.interact;
@@ -140,7 +182,7 @@ export function drawTouchControls(
       ctx.textAlign = align;
       ctx.fillText(label, cx, y);
     };
-    for (const id of ['stick', 'fire', 'interact', 'menu'] as const) {
+    for (const id of ['stick', 'aim', 'interact', 'menu'] as const) {
       const c = circles[id];
       put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }
