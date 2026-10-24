@@ -215,6 +215,11 @@ export class Repo {
     return run();
   }
 
+  /** Borra solo las partidas sembradas; las reales no se tocan. Devuelve cuantas quito. */
+  clearSeeded(): number {
+    return this.deleteSeeded.run().changes;
+  }
+
   /** Totales por origen. Dos agregaciones sobre tablas indexadas, rapidas aun con miles de filas. */
   totals(): Record<Source, Totals> {
     const out: Record<Source, Totals> = {

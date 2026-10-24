@@ -80,6 +80,15 @@ describe('endpoints de prueba /api/test/*', () => {
     expect(garbage.status).toBe(200);
   });
 
+  it('DELETE /seed limpia solo lo sembrado', async () => {
+    await request(server.app).post('/api/test/seed').send({ count: 120 });
+    const removed = await request(server.app).delete('/api/test/seed');
+    expect(removed.status).toBe(200);
+    expect(removed.body.removed).toBeGreaterThanOrEqual(120);
+    const after = await request(server.app).get('/api/test/telemetry');
+    expect(after.body.breakdown.seed.matches).toBe(0);
+  });
+
   it('rechaza cantidades fuera de rango con 400 y un mensaje claro', async () => {
     for (const count of [0, 1001, 50000]) {
       const res = await request(server.app).post('/api/test/seed').send({ count });

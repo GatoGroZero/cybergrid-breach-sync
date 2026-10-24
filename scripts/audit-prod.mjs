@@ -126,6 +126,12 @@ async function checkHttp() {
   }
   const bad = await request('/api/test/seed', { method: 'POST', body: { count: 99999 } });
   check('seed fuera de rango se rechaza con 400', bad.status === 400, `HTTP ${bad.status}`);
+  const clean = await request('/api/test/seed', { method: 'DELETE' });
+  check(
+    'DELETE /api/test/seed limpia los datos sembrados',
+    clean.status === 200,
+    `quito ${clean.json?.removed}`,
+  );
 }
 
 async function checkSocket() {

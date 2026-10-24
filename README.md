@@ -39,7 +39,7 @@ node scripts/audit-prod.mjs https://cybergrid-breach-sync.onrender.com --browser
 | **Red y sockets (25 %)**       | Servidor autoritativo con Socket.IO solo WebSocket. El cliente manda únicamente su intención (vector de movimiento, disparo); posiciones, colisiones, inventario y daño se calculan en el servidor. Eventos `ping` y `pong` propios.                                                                               | `src/server/game/Game.ts`, `src/server/lobby.ts`, `src/server/realtime.ts`                  |
 | **Canvas y controles (25 %)**  | Bucle con delta time: paso fijo de simulación a 30 Hz con acumulador, dibujo limitado a 60 FPS en cualquier monitor (60, 120, 144 Hz) y resolución dinámica si no se sostienen. Teclado y ratón en PC, joystick virtual y botón de acción dibujados en el canvas en pantallas táctiles, que cambian solos de modo. | `src/client/main.ts`, `src/client/render.ts`, `src/client/input.ts`, `src/shared/timing.ts` |
 | **Endpoints de prueba (20 %)** | `GET /api/test/telemetry` y `POST /api/test/seed` (más `GET /api/test/health`). La telemetría se calcula con agregaciones SQL sobre tablas indexadas.                                                                                                                                                              | `src/server/testApi.ts`, `src/server/db.ts`                                                 |
-| **Pruebas y CI/CD (15 %)**     | 59 pruebas unitarias y de integración (Vitest) y 10 E2E (Playwright, tres flujos más variantes). Pipeline en GitHub Actions en cada Pull Request y en cada push a `main`.                                                                                                                                          | `tests/`, `.github/workflows/ci.yml`                                                        |
+| **Pruebas y CI/CD (15 %)**     | 60 pruebas unitarias y de integración (Vitest) y 10 E2E (Playwright, tres flujos más variantes). Pipeline en GitHub Actions en cada Pull Request y en cada push a `main`.                                                                                                                                          | `tests/`, `.github/workflows/ci.yml`                                                        |
 | **Despliegue (15 %)**          | Render, región Ohio, TLS administrado por la plataforma, despliegue automático solo cuando pasa el CI (`autoDeployTrigger: checksPass`).                                                                                                                                                                           | `render.yaml`                                                                               |
 
 ### Arquitectura
@@ -89,6 +89,7 @@ curl -s -X POST https://cybergrid-breach-sync.onrender.com/api/test/seed \
 
 - `telemetry` devuelve `winRate` (ganadas entre partidas), `kdr` (bajas entre muertes) y `survivability` (`survivalRate`: participaciones que terminaron vivas, y `avgSurvivalSec`), además de la latencia reportada por los clientes y el estado del servidor. Con la base vacía devuelve ceros, nunca un error.
 - `seed` acepta de 1 a 1 000 partidas (el rango oficial es de 100 a 1 000), con `count`, `seed`, `winRate`, `avgKills`, `avgDeaths`, `players` y `replace`. Un cuerpo vacío inserta 100. También entiende un arreglo de partidas, alias como `partidas` o `matches`, texto plano y formularios. Fuera de rango responde 400 con el detalle. Por defecto reemplaza lo sembrado antes, así que repetirlo da siempre el mismo resultado.
+- `DELETE /api/test/seed` borra solo las partidas sembradas (las reales no se tocan) y deja la telemetría limpia.
 - Son públicos a propósito porque el enunciado lo exige. Llevan límite de peticiones, tope de tamaño y de cantidad, y se pueden apagar con `ENABLE_TEST_ENDPOINTS=false`.
 
 ## Seguridad
@@ -102,7 +103,7 @@ curl -s -X POST https://cybergrid-breach-sync.onrender.com/api/test/seed \
 ## Pruebas
 
 ```bash
-npm test            # 59 pruebas unitarias y de integración
+npm test            # 60 pruebas unitarias y de integración
 npm run test:cov    # con cobertura
 npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 ```

@@ -101,7 +101,7 @@ export function testRouter(deps: TestApiDeps): Router {
   router.use((req, res, next) => {
     res.set({
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Expose-Headers': 'Server-Timing',
       'Cache-Control': 'no-store',
@@ -193,6 +193,11 @@ export function testRouter(deps: TestApiDeps): Router {
       });
     },
   );
+
+  router.delete('/seed', limited(config.limits.seed), (_req, res) => {
+    const removed = repo.clearSeeded();
+    res.status(200).json({ status: 'ok', removed });
+  });
 
   return router;
 }
