@@ -70,9 +70,26 @@ function bool(value: string | undefined, fallback: boolean): boolean {
   return value !== 'false' && value !== '0';
 }
 
+/** Quita comillas y espacios que se cuelan al pegar un valor en el panel de la plataforma. */
+function unquote(value: string | undefined): string {
+  return (value ?? '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim();
+}
+
+/**
+ * El ID de cliente de Google es siempre `<numeros>-<texto>.apps.googleusercontent.com`. Al copiarlo
+ * a veces se pega como enlace (`http://...com/`): se deja solo el ID.
+ */
+export function cleanGoogleClientId(raw: string | undefined): string {
+  const value = unquote(raw);
+  return /[0-9A-Za-z_-]+\.apps\.googleusercontent\.com/.exec(value)?.[0] ?? value;
+}
+
 function loadGoogle(): GoogleConfig | null {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const clientId = cleanGoogleClientId(process.env.GOOGLE_CLIENT_ID);
+  const clientSecret = unquote(process.env.GOOGLE_CLIENT_SECRET);
   if (!clientId || !clientSecret) return null;
   return {
     clientId,

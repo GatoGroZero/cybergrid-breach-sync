@@ -122,6 +122,27 @@ describe('configuracion de acceso desde el entorno', () => {
     expect(cfg.publicUrl).toBe('https://juego.onrender.com');
   });
 
+  it('limpia el ID de cliente de Google si se pego como enlace o con comillas y espacios', () => {
+    const good = '507977690605-uobhf7cd38ojstauh1m025bair6b9mh5.apps.googleusercontent.com';
+    for (const pasted of [
+      good,
+      `http://${good}/`,
+      `https://${good}`,
+      ` "${good}" \n`,
+      `'${good}'`,
+    ]) {
+      process.env = {
+        ...saved,
+        ...base,
+        GOOGLE_CLIENT_ID: pasted,
+        GOOGLE_CLIENT_SECRET: ' "sec" \n',
+      };
+      const cfg = loadConfig();
+      expect(cfg.google?.clientId).toBe(good);
+      expect(cfg.google?.clientSecret).toBe('sec');
+    }
+  });
+
   it('el acceso con contrasena y el de invitado se apagan con una variable', () => {
     process.env = { ...saved, ...base, PASSWORD_AUTH: 'false', GUEST_LOGIN: 'false' };
     const cfg = loadConfig();
