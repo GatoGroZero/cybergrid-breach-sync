@@ -152,7 +152,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     testKit: process.env.TEST_KIT === 'true' && env !== 'production',
     celebrationSeconds: Math.min(20, Math.max(0, int(process.env.CELEBRATION_SECONDS, 7))),
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
-    version: '2.1.0',
+    version: '2.2.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
