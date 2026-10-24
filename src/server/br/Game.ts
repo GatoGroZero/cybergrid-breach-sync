@@ -214,6 +214,8 @@ export class BRGame {
   zone: ZoneState;
 
   private readonly shots: Shot[] = [];
+  /** Disparos recientes: los bots "oyen" de donde vienen y van a mirar. */
+  readonly shotLog: { x: number; y: number; t: number; owner: number }[] = [];
   private readonly walls = new Map<number, Wall>();
   private readonly wallByTile = new Map<number, Wall>();
   private readonly containers = new Map<number, Container>();
@@ -361,6 +363,15 @@ export class BRGame {
     }
   }
 
+  /** Movimiento de un bot: usa la misma estamina y fisica que un jugador. */
+  botMove(cat: Cat, mx: number, my: number, wantsRun: boolean): void {
+    const len = Math.min(1, Math.hypot(mx, my));
+    cat.running = stepStamina(cat.stamina, wantsRun, len, TICK_DT);
+    const before = { x: cat.x, y: cat.y };
+    stepCat(this.map, cat, { mx, my }, TICK_DT, cat.running ? STAMINA.runMultiplier : 1);
+    cat.moving = Math.hypot(cat.x - before.x, cat.y - before.y) > 0.05;
+  }
+
   /** Cambia el objeto en mano. Cambiar de objeto cancela cualquier curacion en curso. */
   select(catId: number, slot: number): boolean {
     const cat = this.cat(catId);
@@ -432,6 +443,8 @@ export class BRGame {
     cat.invDirty = true;
     cat.cooldownUntil = this.time + def.cooldown;
     cat.heal = null;
+    this.shotLog.push({ x: cat.x, y: cat.y, t: this.time, owner: cat.id });
+    if (this.shotLog.length > 24) this.shotLog.shift();
     const dmg = def.damage[item.rarity] as number;
     for (let p = 0; p < def.pellets; p++) {
       const jitter =

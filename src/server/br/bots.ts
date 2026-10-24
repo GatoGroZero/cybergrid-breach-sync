@@ -1,14 +1,14 @@
+import { AMMO_MAX, CAT, SPAWN_GRACE_S, TILE } from '../../shared/br/constants';
 import {
-  AMMO_MAX,
-  CAT,
-  INVENTORY_SLOTS,
-  SPAWN_GRACE_S,
-  TICK_DT,
-  TILE,
-} from '../../shared/br/constants';
-import { ITEM_KINDS, STACK_MAX, WEAPONS, isAmmo, isWeapon, type Item } from '../../shared/br/items';
-import { G, isSolidTile, type BRMap } from '../../shared/br/map';
-import { hasLineOfSight, stepCat, dist } from '../../shared/br/physics';
+  WEAPONS,
+  isAmmo,
+  isWeapon,
+  type Item,
+  type WeaponDef,
+  type WeaponKind,
+} from '../../shared/br/items';
+import { G, isSolidTile, isWaterAtPx, type BRMap } from '../../shared/br/map';
+import { hasLineOfSight, dist } from '../../shared/br/physics';
 import { insideCircle } from '../../shared/br/zone';
 import type { Rng } from '../../shared/rng';
 import type { BRGame, Cat } from './Game';
@@ -69,218 +69,732 @@ interface Contents {
   items: Item[];
 }
 
+interface Sighting {
+  x: number;
+  y: number;
+  t: number;
+}
+
+type Mode = 'start' | 'zone' | 'heal' | 'fight' | 'flee' | 'loot' | 'roam' | 'camp';
+
+const NO_PATH_RETRY = 0.35;
+
+/**
+ * Cerebro de un bot. Juega con las mismas reglas que una persona (mismo movimiento, estamina,
+ * municion y vision con lineas de tiro): busca cofres, se equipa, se cura, huye de la ola, pelea con
+ * armas que le convienen segun la distancia, huye si va perdiendo y se mete a investigar disparos.
+ * Cada decision tiene un tiempo minimo de compromiso para que no cambie de opinion cada tick.
+ */
 export class BotBrain {
-  private path: number[] = [];
-  private pathIdx = 0;
-  private pathKey = '';
-  private lootTarget: number | null = null;
-  private readonly done = new Set<number>();
-  private enemy: Cat | null = null;
-  private seenAt = 0;
-  private nextScan = 0;
-  private nextEquip = 0;
-  private strafe = 1;
-  private strafeUntil = 0;
-  private aimJitter = 0;
-  private jitterUntil = 0;
-  private stuckAt = 0;
-  private lastX = 0;
-  private lastY = 0;
-  private roamGoal: { x: number; y: number } | null = null;
+  // personalidad
+  private readonly aggression: number;
   private readonly aimError: number;
   private readonly reaction: number;
-  private readonly boldness: number;
   private readonly sight: number;
-  private idleUntil = 0;
+  private readonly sprinty: number;
   private readonly startDelay: number;
-  private rummageUntil = 0;
+  /** Al principio todos buscan cofres: nadie empieza un pleito antes de este momento. */
+  private readonly peaceUntil: number;
+
+  // estado de decision
+  mode: Mode = 'start';
+  private didMove = false;
+  private target: Cat | null = null;
+  private seenSince = 0;
+  private lastSeen = 0;
+  private lastSeenAt: Sighting | null = null;
+  private enemyVel = { x: 0, y: 0 };
+  private fightUntil = 0;
+  private fleeUntil = 0;
   private provokedUntil = 0;
+  private nextSense = 0;
+  private nextWeaponSwap = 0;
+  private strafe = 1;
+  private strafeUntil = 0;
+  private moveKind: 'in' | 'out' | 'strafe' = 'strafe';
+  private moveUntil = 0;
+  private jitter = 0;
+  private jitterUntil = 0;
+  private wallReadyAt = 0;
+  private wallStage = 0;
+  private wallSlot = -1;
+  private nextHuntAt = 0;
+  private investigateAt = 0;
+  private lastHeard = 0;
+  private runLatch = false;
+  private zoneLatch = false;
+
+  // botin
+  private lootTarget: number | null = null;
+  private readonly done = new Set<number>();
+  private rummageUntil = 0;
+  private lastTakeCheck = 0;
+
+  // merodeo
+  private roamGoal: { x: number; y: number } | null = null;
+  private roamRun = false;
+  private campUntil = 0;
+
+  // navegacion
+  private path: number[] = [];
+  private pathIdx = 0;
+  private navKey = '';
+  private lastPlan = -10;
+  private progressPos = { x: 0, y: 0 };
+  private progressAt = 0;
+  private stuck = 0;
+  private sidestepUntil = 0;
+  private sidestepDir = { x: 0, y: 0 };
 
   constructor(
     private readonly game: BRGame,
     private readonly cat: Cat,
     private readonly rng: Rng,
   ) {
-    this.aimError = rng.range(0.07, 0.16);
-    this.reaction = rng.range(0.35, 0.75);
-    this.boldness = rng.range(0.15, 1);
-    this.sight = rng.range(110, 170);
-    this.startDelay = rng.range(1.5, 7);
-    this.lastX = cat.x;
-    this.lastY = cat.y;
+    this.aggression = rng.range(0.15, 0.95);
+    this.aimError = rng.range(0.05, 0.14);
+    this.reaction = rng.range(0.3, 0.7);
+    this.sight = rng.range(130, 190);
+    this.sprinty = rng.range(0.3, 1);
+    this.startDelay = rng.range(0.4, 2.5);
+    this.peaceUntil = rng.range(40, 90) - this.aggression * 15;
+    this.progressPos = { x: cat.x, y: cat.y };
   }
 
-  think(dt: number): void {
+  // ---------------------------------------------------------------- bucle principal
+
+  think(_dt: number): void {
     const g = this.game;
     const c = this.cat;
     const now = g.time;
-    if (now >= this.nextScan) {
-      this.nextScan = now + 0.2;
-      this.scan();
-    }
-    if (now >= this.nextEquip && !c.heal) {
-      this.nextEquip = now + 0.6;
-      this.equipBest();
-    }
-    c.moving = false;
-    if (c.hurtUntil > now) this.provokedUntil = now + 4;
-    // Los bots tardan un poco en reaccionar al empezar: el jugador tambien llega a los primeros cofres.
-    if (now < this.startDelay) return;
+    this.didMove = false;
+    if (c.hurtUntil > now) this.provokedUntil = now + 5;
 
-    const z = g.zone;
-    const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
-    const soon =
-      z.next !== null &&
-      z.next.r > 0 &&
-      z.nextIn < 25 &&
-      !insideCircle(z.next, c.x, c.y) &&
-      z.phase >= 0;
-    const enemy = this.enemy;
-    const enemyClose = enemy !== null && dist(c.x, c.y, enemy.x, enemy.y) < 110;
+    this.step(now);
+    // Si ningun movimiento se pidio este tick, se descansa (y la estamina se recupera).
+    if (!this.didMove) g.botMove(c, 0, 0, false);
+  }
 
-    // 1) curarse cuando no hay peligro cerca
-    if (!enemyClose || (c.hp < 30 && !c.heal)) {
-      if (this.tryHeal()) return;
+  private step(now: number): void {
+    const c = this.cat;
+    if (now < this.startDelay) {
+      this.mode = 'start';
+      return;
     }
+    this.sense(now);
+    this.refreshSightings(now);
+
+    // el muro: secuencia de tres ticks que no se puede interrumpir
+    if (this.wallStage > 0) {
+      this.runWallSequence();
+      return;
+    }
+
+    // Curarse no obliga a quedarse quieto (como una persona, camina mientras se cura). Si el enemigo
+    // se acerca se suelta la cura para tomar el arma, y al llegar a lo suficiente se corta sola.
     if (c.heal) {
-      // sigue curandose, quieto
-      g.fireControl(c, c.aim, false, false);
+      const near = this.target && dist(c.x, c.y, this.target.x, this.target.y) < 90;
+      const enough = c.heal.kind === 'shield' ? c.shield >= 60 : c.hp >= 92;
+      if (near || enough)
+        this.equipBest(this.target ? dist(c.x, c.y, this.target.x, this.target.y) : 100, true);
+    } else if (!this.heldIsWeapon() && this.armed()) {
+      this.equipBest(this.target ? dist(c.x, c.y, this.target.x, this.target.y) : 100, true);
+    }
+
+    // la ola manda
+    if (this.zoneUrgent()) {
+      this.mode = 'zone';
+      this.goToZone();
       return;
     }
 
-    // 2) huir de la ola
-    if ((outside || soon) && !(enemyClose && enemy && dist(c.x, c.y, enemy.x, enemy.y) < 60)) {
-      const target = outside || !z.next ? z.circle : z.next;
-      this.goTo(target.cx, target.cy, dt);
-      this.aimAt(enemy && enemyClose ? enemy : null, now);
-      return;
+    if (this.target) {
+      const decision = this.combatDecision(now);
+      if (decision === 'fight') {
+        this.mode = 'fight';
+        this.fight(now);
+        return;
+      }
+      if (decision === 'flee') {
+        this.mode = 'flee';
+        this.flee(now);
+        return;
+      }
     }
 
-    // 3) con poca vida y sin curas, huir en vez de pelear a muerte
-    if (enemy && enemy.alive && c.hp + c.shield < 38 && enemyClose && !this.canHeal()) {
-      this.flee(enemy, dt);
-      return;
-    }
-
-    // 3b) pelear, solo si conviene: no todos los gatos buscan pleito
-    if (enemy && enemy.alive && this.wantsFight(enemy)) {
-      this.fight(enemy, dt);
-      return;
-    }
-
-    // 4) buscar botin y 5) merodear cerca del centro de la zona
-    if (this.loot(dt)) return;
-    this.roam(dt);
-  }
-
-  private canHeal(): boolean {
-    return this.cat.inv.some((it) => it && (it.kind === 'medkit' || it.kind === 'shield'));
-  }
-
-  /** Corre en sentido contrario al enemigo, hacia el centro de la zona si se puede. */
-  private flee(enemy: Cat, dt: number): void {
-    const g = this.game;
-    const c = this.cat;
-    const away = Math.atan2(c.y - enemy.y, c.x - enemy.x);
-    const z = g.zone.circle;
-    const toZone = Math.atan2(z.cy - c.y, z.cx - c.x);
-    const a =
-      Math.abs(Math.atan2(Math.sin(toZone - away), Math.cos(toZone - away))) < 1.2 ? toZone : away;
-    const before = { x: c.x, y: c.y };
-    stepCat(g.map, c, { mx: Math.cos(a), my: Math.sin(a) }, dt);
-    c.moving = Math.hypot(c.x - before.x, c.y - before.y) > 0.05;
-    this.aimAt(enemy, g.time);
-    g.fireControl(c, c.aim, false, false);
-  }
-
-  /** Decide si vale la pena pelear: con arma y valor sí; sin arma solo en defensa propia o a quemarropa. */
-  private wantsFight(enemy: Cat): boolean {
-    const g = this.game;
-    const c = this.cat;
-    const now = g.time;
-    if (now < SPAWN_GRACE_S) return false;
-    const d = dist(c.x, c.y, enemy.x, enemy.y);
-    const item = g.held(c);
-    const armed = item !== null && isWeapon(item.kind);
-    if (now < this.provokedUntil || (armed && d < 50)) return true;
-    const pressure = g.zone.phase >= 2 ? 0.35 : g.zone.phase === 1 ? 0.15 : 0;
-    return this.boldness * (armed ? 1 : 0.25) + pressure > 0.88;
+    if (this.tryHeal(now)) return;
+    if (this.investigate(now)) return;
+    if (this.loot(now)) return;
+    this.roam(now);
   }
 
   // ---------------------------------------------------------------- percepcion
 
-  private scan(): void {
+  /** Mira alrededor cada 0.15 s: el enemigo mas cercano con linea de tiro, con algo de memoria. */
+  private sense(now: number): void {
+    if (now < this.nextSense) return;
+    this.nextSense = now + 0.15 + this.rng.next() * 0.08;
     const c = this.cat;
+    const g = this.game;
     let best: Cat | null = null;
     let bestD = this.sight;
-    for (const o of this.game.cats) {
+    for (const o of g.cats) {
       if (!o.alive || o.id === c.id) continue;
       const d = dist(c.x, c.y, o.x, o.y);
-      if (d < bestD && hasLineOfSight(this.game.map, c.x, c.y, o.x, o.y)) {
+      const keep = this.target && this.target.id === o.id ? this.sight * 1.3 : this.sight;
+      if (d > keep) continue;
+      if (
+        d < bestD * (this.target && this.target.id === o.id ? 1.25 : 1) &&
+        hasLineOfSight(g.map, c.x, c.y, o.x, o.y)
+      ) {
         bestD = d;
         best = o;
       }
     }
-    if (best && (!this.enemy || this.enemy.id !== best.id)) this.seenAt = this.game.time;
-    this.enemy = best;
+    if (best) {
+      if (!this.target || this.target.id !== best.id) {
+        this.target = best;
+        this.seenSince = now;
+        this.enemyVel = { x: 0, y: 0 };
+        this.lastSeenAt = null;
+      }
+      const prev = this.lastSeenAt;
+      if (prev && now - prev.t > 0.05) {
+        const dt = now - prev.t;
+        const vx = (best.x - prev.x) / dt;
+        const vy = (best.y - prev.y) / dt;
+        this.enemyVel = {
+          x: this.enemyVel.x * 0.6 + vx * 0.4,
+          y: this.enemyVel.y * 0.6 + vy * 0.4,
+        };
+      }
+      this.lastSeen = now;
+      this.lastSeenAt = { x: best.x, y: best.y, t: now };
+    }
+  }
+
+  private refreshSightings(now: number): void {
+    const t = this.target;
+    if (t && (!t.alive || now - this.lastSeen > 3)) {
+      this.target = null;
+      this.lastSeenAt = null;
+    }
+  }
+
+  private visibleNow(now: number): boolean {
+    return this.target !== null && now - this.lastSeen < 0.4;
+  }
+
+  // ---------------------------------------------------------------- navegacion
+
+  private clearCorridor(x0: number, y0: number, x1: number, y1: number, noWater: boolean): boolean {
+    const g = this.game;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / len) * (CAT.half - 0.5);
+    const ny = (dx / len) * (CAT.half - 0.5);
+    if (!hasLineOfSight(g.map, x0, y0, x1, y1)) return false;
+    if (!hasLineOfSight(g.map, x0 + nx, y0 + ny, x1 + nx, y1 + ny)) return false;
+    if (!hasLineOfSight(g.map, x0 - nx, y0 - ny, x1 - nx, y1 - ny)) return false;
+    if (noWater) {
+      for (let d = 6; d < len; d += 6) {
+        if (isWaterAtPx(g.map, x0 + (dx * d) / len, y0 + (dy * d) / len)) return false;
+      }
+    }
+    return true;
+  }
+
+  /** Correr con histeresis: empieza con la barra bien llena y sigue hasta que casi se acaba. */
+  private sprint(want: boolean): boolean {
+    const v = this.cat.stamina.value;
+    if (!want || this.cat.stamina.tired) this.runLatch = false;
+    else if (this.runLatch) this.runLatch = v > 12;
+    else this.runLatch = v > 70;
+    return this.runLatch;
+  }
+
+  private bmove(dx: number, dy: number, run: boolean): void {
+    const len = Math.hypot(dx, dy) || 1;
+    this.didMove = true;
+    this.game.botMove(this.cat, dx / len, dy / len, run);
+  }
+
+  /**
+   * Camina hacia (x, y) por un camino de casillas, acortando las esquinas cuando el pasillo esta
+   * libre. Si no avanza detecta que esta atorado: cambia de ruta, se hace a un lado y, si sigue
+   * igual, avisa que ese destino no sirve.
+   */
+  private navTo(x: number, y: number, run: boolean, arrive = 8): 'moving' | 'arrived' | 'blocked' {
+    const g = this.game;
+    const c = this.cat;
+    const now = g.time;
+    if (dist(c.x, c.y, x, y) <= arrive) return 'arrived';
+
+    const gx = Math.floor(x / TILE);
+    const gy = Math.floor(y / TILE);
+    const key = `${gx},${gy}`;
+    const sx = Math.floor(c.x / TILE);
+    const sy = Math.floor(c.y / TILE);
+    let waterFree = true;
+    if (this.path.length === 0 || key !== this.navKey || this.pathIdx >= this.path.length) {
+      if (now - this.lastPlan < NO_PATH_RETRY && key === this.navKey) return 'moving';
+      this.lastPlan = now;
+      this.navKey = key;
+      let path = findPath(g.map, sx, sy, gx, gy);
+      if (!path) {
+        path = findPath(g.map, sx, sy, gx, gy, false);
+        waterFree = false;
+      }
+      this.stuck = 0;
+      this.progressPos = { x: c.x, y: c.y };
+      this.progressAt = now;
+      if (!path) {
+        this.path = [];
+        return 'blocked';
+      }
+      this.path = path;
+      this.pathIdx = 0;
+    }
+    const center = (node: number): { x: number; y: number } => ({
+      x: (node % g.map.w) * TILE + TILE / 2,
+      y: Math.floor(node / g.map.w) * TILE + TILE / 2,
+    });
+    // El camino debe seguir cerca del gato: si se desvio (pelea, plan viejo) se traza de nuevo.
+    const here = center(this.path[Math.min(this.pathIdx, this.path.length - 1)] as number);
+    if (Math.hypot(here.x - c.x, here.y - c.y) > TILE * 2.6) {
+      this.path = [];
+      this.lastPlan = -10;
+      return this.navTo(x, y, run, arrive);
+    }
+    while (this.pathIdx < this.path.length - 1) {
+      const n = center(this.path[this.pathIdx] as number);
+      if (Math.hypot(n.x - c.x, n.y - c.y) < 5) this.pathIdx++;
+      else break;
+    }
+    let aim = center(this.path[this.pathIdx] as number);
+    if (this.pathIdx >= this.path.length - 1 && Math.hypot(aim.x - c.x, aim.y - c.y) < 5) {
+      // llego a la ultima casilla: el destino real queda un poco mas alla (cofre, etc.)
+      aim = { x, y };
+    }
+    for (let k = Math.min(this.pathIdx + 8, this.path.length - 1); k > this.pathIdx; k--) {
+      const n = center(this.path[k] as number);
+      if (this.clearCorridor(c.x, c.y, n.x, n.y, waterFree)) {
+        aim = n;
+        break;
+      }
+    }
+
+    let dx = aim.x - c.x;
+    let dy = aim.y - c.y;
+    if (now < this.sidestepUntil) {
+      dx = this.sidestepDir.x;
+      dy = this.sidestepDir.y;
+    }
+    this.bmove(dx, dy, run);
+
+    if (now - this.progressAt >= 0.5) {
+      const moved = dist(c.x, c.y, this.progressPos.x, this.progressPos.y);
+      this.progressPos = { x: c.x, y: c.y };
+      this.progressAt = now;
+      if (moved < 3) {
+        this.stuck++;
+        this.path = [];
+        this.lastPlan = -10;
+        const a = this.rng.range(0, Math.PI * 2);
+        this.sidestepDir = { x: Math.cos(a), y: Math.sin(a) };
+        this.sidestepUntil = now + 0.3;
+        if (this.stuck >= 4) {
+          this.stuck = 0;
+          return 'blocked';
+        }
+      } else {
+        this.stuck = 0;
+      }
+    }
+    return 'moving';
+  }
+
+  // ---------------------------------------------------------------- la ola
+
+  /**
+   * La ola manda. Con histeresis: una vez que hay que correr al circulo, no se suelta hasta estar
+   * bien adentro (sin esto el bot se queda temblando justo en el borde, cambiando de opinion).
+   */
+  private zoneUrgent(): boolean {
+    const z = this.game.zone;
+    const c = this.cat;
+    const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
+    const soonOutside =
+      z.next !== null && z.next.r > 0 && z.nextIn < 25 && !insideCircle(z.next, c.x, c.y);
+    if (outside || soonOutside) {
+      this.zoneLatch = true;
+      return true;
+    }
+    if (!this.zoneLatch) return false;
+    const target = !z.next || z.next.r <= 0 || z.nextIn >= 25 ? z.circle : z.next;
+    const safe = insideCircle(
+      { cx: target.cx, cy: target.cy, r: Math.max(10, target.r - 45) },
+      c.x,
+      c.y,
+    );
+    if (safe) this.zoneLatch = false;
+    return this.zoneLatch;
+  }
+
+  private goToZone(): void {
+    const z = this.game.zone;
+    const c = this.cat;
+    const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
+    const target = outside || !z.next || z.next.r <= 0 ? z.circle : z.next;
+    // Un punto dentro del circulo, no justo en el centro: evita que todos se amontonen.
+    const a = (c.id * 2.399) % (Math.PI * 2);
+    const gx = target.cx + Math.cos(a) * target.r * 0.35;
+    const gy = target.cy + Math.sin(a) * target.r * 0.35;
+    const run = this.sprint(outside && this.sprinty > 0.35);
+    if (this.navTo(gx, gy, run, 14) === 'blocked') this.navTo(target.cx, target.cy, run, 14);
+  }
+
+  // ---------------------------------------------------------------- combate
+
+  private armed(): boolean {
+    return this.usableWeapons().length > 0;
+  }
+
+  private usableWeapons(): { slot: number; item: Item; def: WeaponDef }[] {
+    const out: { slot: number; item: Item; def: WeaponDef }[] = [];
+    this.cat.inv.forEach((item, slot) => {
+      if (!item || !isWeapon(item.kind)) return;
+      const def = WEAPONS[item.kind];
+      if (this.cat.ammo[def.ammo] >= def.ammoPerShot) out.push({ slot, item, def });
+    });
+    return out;
+  }
+
+  private heldIsWeapon(): boolean {
+    const it = this.cat.inv[this.cat.sel];
+    return it !== null && it !== undefined && isWeapon(it.kind);
+  }
+
+  private hasHeal(): boolean {
+    return this.cat.inv.some((it) => it && (it.kind === 'medkit' || it.kind === 'shield'));
+  }
+
+  private combatDecision(now: number): 'fight' | 'flee' | 'ignore' {
+    const g = this.game;
+    const c = this.cat;
+    const e = this.target as Cat;
+    const d = dist(c.x, c.y, e.x, e.y);
+    const armed = this.armed();
+    const provoked = now < this.provokedUntil;
+    const weak = c.hp + c.shield < 38 && !this.hasHeal();
+
+    if (now < this.fleeUntil) return 'flee';
+    if (weak && d < 190) {
+      this.fleeUntil = now + this.rng.range(2, 3.5);
+      return 'flee';
+    }
+    if (!armed) {
+      // Sin arma solo se pelea a quemarropa o si ya te estan golpeando.
+      if (d < 42 || (provoked && d < 70)) {
+        this.fightUntil = now + 1.5;
+        return 'fight';
+      }
+      if (provoked && d < 160) {
+        this.fleeUntil = now + this.rng.range(1.5, 2.5);
+        return 'flee';
+      }
+      return 'ignore';
+    }
+    if (now < SPAWN_GRACE_S) return 'ignore';
+    if (now < this.fightUntil) return 'fight';
+    if (now < this.peaceUntil && !provoked && d > 18) return 'ignore';
+    const phase = g.zone.phase;
+    const pressure = phase >= 3 ? 0.35 : phase === 2 ? 0.2 : phase === 1 ? 0.08 : 0;
+    const want = this.aggression + pressure + (provoked ? 0.6 : 0);
+    if (want > 0.72 || d < 55) {
+      this.fightUntil = now + this.rng.range(3, 6);
+      return 'fight';
+    }
+    return 'ignore';
+  }
+
+  /** Cual arma conviene a esta distancia (y si hay que cambiar). */
+  private equipBest(distance: number, force = false): void {
+    const g = this.game;
+    const c = this.cat;
+    const now = g.time;
+    if (c.heal && !force) return;
+    if (!force && now < this.nextWeaponSwap) return;
+    const options = this.usableWeapons();
+    const fit = (def: WeaponDef): number => {
+      const dps =
+        (def.damage[1] * def.pellets * (def.kind === 'shotgun' ? 0.55 : 1)) / def.cooldown;
+      let f = 1;
+      if (def.kind === 'shotgun') f = distance < 75 ? 1.6 : distance < 110 ? 0.6 : 0.2;
+      else if (def.kind === 'sniper') f = distance > 120 ? 1.5 : distance > 70 ? 0.9 : 0.3;
+      else if (def.kind === 'bazooka') f = distance > 55 && distance < 220 ? 1.3 : 0.1;
+      else if (def.kind === 'rifle') f = distance < 190 ? 1.2 : 0.7;
+      if (distance > def.range) f *= 0.2;
+      return dps * f;
+    };
+    let best = -1;
+    let bestScore = -1;
+    for (const o of options) {
+      const sc = fit(o.def) * (1 + o.item.rarity * 0.35);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = o.slot;
+      }
+    }
+    if (best >= 0) {
+      if (c.sel !== best) {
+        const cur = options.find((o) => o.slot === c.sel);
+        const curScore = cur ? fit(cur.def) * (1 + cur.item.rarity * 0.35) : 0;
+        if (!cur || bestScore > curScore * 1.25 || force) {
+          g.select(c.id, best);
+          this.nextWeaponSwap = now + 1.2;
+        }
+      }
+      return;
+    }
+    // Sin arma con balas: las manos libres (garras).
+    const empty = c.inv.findIndex((it) => it === null);
+    if (empty >= 0 && c.sel !== empty) g.select(c.id, empty);
+  }
+
+  private fight(now: number): void {
+    const g = this.game;
+    const c = this.cat;
+    const e = this.target as Cat;
+    const visible = this.visibleNow(now);
+    const d = dist(c.x, c.y, e.x, e.y);
+    this.equipBest(d);
+    const item = g.held(c);
+    const def = item && isWeapon(item.kind) ? WEAPONS[item.kind as WeaponKind] : null;
+    const range = def ? def.range : 16;
+    const preferred = def
+      ? def.kind === 'shotgun'
+        ? 34
+        : def.kind === 'sniper'
+          ? 150
+          : def.kind === 'bazooka'
+            ? 120
+            : def.kind === 'rifle'
+              ? 95
+              : 80
+      : 10;
+
+    // sin verlo: ir a donde se le vio por ultima vez
+    if (!visible) {
+      const at = this.lastSeenAt;
+      if (at) {
+        const r = this.navTo(at.x, at.y, false, 16);
+        if (r !== 'moving') this.target = null;
+      }
+      g.fireControl(c, c.aim, false);
+      return;
+    }
+
+    // movimiento: acercarse, alejarse o rodear
+    const toward = Math.atan2(e.y - c.y, e.x - c.x);
+    if (d < 12) {
+      // Encima del enemigo el angulo no sirve de nada: se separa en una direccion fija un rato.
+      if (now >= this.sidestepUntil) {
+        const a = this.rng.range(0, Math.PI * 2);
+        this.sidestepDir = { x: Math.cos(a), y: Math.sin(a) };
+        this.sidestepUntil = now + 0.6;
+      }
+      this.bmove(this.sidestepDir.x, this.sidestepDir.y, false);
+      g.fireControl(c, c.aim, false);
+      return;
+    }
+    const run = this.sprint(d > 150 && this.sprinty > 0.5);
+    // Cada maniobra dura un momento (histeresis): asi no cambia de adelante a atras cada tick.
+    if (now >= this.moveUntil) {
+      this.moveKind =
+        d > preferred + 22
+          ? 'in'
+          : d < preferred - 22 && def && def.kind !== 'shotgun'
+            ? 'out'
+            : 'strafe';
+      this.moveUntil = now + this.rng.range(0.4, 0.8);
+    }
+    if (this.moveKind === 'in') {
+      if (d > 60) this.navTo(e.x, e.y, run, 20);
+      else this.bmove(Math.cos(toward), Math.sin(toward), false);
+    } else if (this.moveKind === 'out') {
+      this.bmove(-Math.cos(toward), -Math.sin(toward), false);
+    } else {
+      if (now >= this.strafeUntil) {
+        this.strafeUntil = now + this.rng.range(0.8, 1.8);
+        this.strafe = this.rng.chance(0.5) ? 1 : -1;
+      }
+      const sa = toward + (Math.PI / 2) * this.strafe;
+      this.bmove(Math.cos(sa), Math.sin(sa), false);
+      if (now - this.progressAt > 0.6) {
+        if (dist(c.x, c.y, this.progressPos.x, this.progressPos.y) < 2) this.strafe *= -1;
+        this.progressPos = { x: c.x, y: c.y };
+        this.progressAt = now;
+      }
+    }
+
+    // muro para cubrirse cuando va perdiendo vida a media distancia
+    if (now >= this.wallReadyAt && c.hp < 70 && d > 45 && d < 150 && this.beginWall()) {
+      return;
+    }
+
+    // puntería: se adelanta al movimiento del enemigo, con error que baja con el tiempo de vista
+    const speed = def ? def.speed : 200;
+    const lead = Math.min(0.6, d / speed);
+    const px = e.x + this.enemyVel.x * lead;
+    const py = e.y + this.enemyVel.y * lead;
+    if (now >= this.jitterUntil) {
+      this.jitterUntil = now + 0.25;
+      const calm = Math.min(1, (now - this.seenSince) / 2);
+      this.jitter = this.rng.range(-1, 1) * this.aimError * (1.6 - calm * 0.6);
+    }
+    c.aim = Math.atan2(py - c.y, px - c.x) + this.jitter;
+
+    const ready = now - this.seenSince >= this.reaction;
+    const clear = hasLineOfSight(g.map, c.x, c.y, e.x, e.y);
+    const safeBlast = !(def && def.splash > 0 && d < 52);
+    const wantFire = ready && clear && safeBlast && d <= range * 0.95;
+    const press = wantFire && (def ? def.auto || !c.prevFire : !c.prevFire);
+    g.fireControl(c, c.aim, press, false);
+  }
+
+  private beginWall(): boolean {
+    const c = this.cat;
+    const slot = c.inv.findIndex((it) => it && it.kind === 'wall');
+    if (slot < 0) return false;
+    this.wallSlot = slot;
+    this.wallStage = 1;
+    this.wallReadyAt = this.game.time + this.rng.range(7, 12);
+    return true;
+  }
+
+  private runWallSequence(): void {
+    const g = this.game;
+    const c = this.cat;
+    const e = this.target;
+    if (e) c.aim = Math.atan2(e.y - c.y, e.x - c.x);
+    if (this.wallStage === 1) {
+      g.select(c.id, this.wallSlot);
+      g.fireControl(c, c.aim, false);
+      this.wallStage = 2;
+    } else if (this.wallStage === 2) {
+      g.fireControl(c, c.aim, true);
+      this.wallStage = 3;
+    } else {
+      g.fireControl(c, c.aim, false);
+      this.wallStage = 0;
+      this.nextWeaponSwap = 0;
+      this.equipBest(e ? dist(c.x, c.y, e.x, e.y) : 100, true);
+    }
+  }
+
+  private flee(now: number): void {
+    const g = this.game;
+    const c = this.cat;
+    const e = this.target as Cat;
+    const away = Math.atan2(c.y - e.y, c.x - e.x);
+    const z = g.zone.circle;
+    const toZone = Math.atan2(z.cy - c.y, z.cx - c.x);
+    const diff = Math.abs(Math.atan2(Math.sin(toZone - away), Math.cos(toZone - away)));
+    const a = diff < 1.3 ? toZone : away;
+    // una meta lejana en esa direccion y camino real para no chocar con paredes
+    const gx = Math.max(40, Math.min(g.map.w * TILE - 40, c.x + Math.cos(a) * 130));
+    const gy = Math.max(40, Math.min(g.map.h * TILE - 40, c.y + Math.sin(a) * 130));
+    const run = this.sprint(true);
+    if (this.navTo(gx, gy, run, 14) === 'blocked') this.bmove(Math.cos(a), Math.sin(a), run);
+    // mientras huye apunta hacia atras por si lo alcanzan
+    c.aim = Math.atan2(e.y - c.y, e.x - c.x);
+    g.fireControl(c, c.aim, false);
+    if (now >= this.fleeUntil && dist(c.x, c.y, e.x, e.y) > 200) this.fleeUntil = 0;
+  }
+
+  // ---------------------------------------------------------------- curacion
+
+  private tryHeal(now: number): boolean {
+    const c = this.cat;
+    const g = this.game;
+    // Ya curandose: sigue con lo suyo (caminar, buscar botin) mientras la cura corre.
+    if (c.heal) return false;
+    const e = this.target;
+    if (e && dist(c.x, c.y, e.x, e.y) < 170 && this.visibleNow(now)) return false;
+    const needHp = c.hp < 62;
+    const needShield = c.shield < 20 && c.hp >= 62;
+    if (!needHp && !needShield) return false;
+    const kind = needHp ? 'medkit' : 'shield';
+    const slot = c.inv.findIndex((it) => it && it.kind === kind);
+    if (slot < 0) return false;
+    g.select(c.id, slot);
+    g.fireControl(c, c.aim, false);
+    g.fireControl(c, c.aim, true);
+    this.mode = 'heal';
+    return true;
+  }
+
+  // ---------------------------------------------------------------- curiosidad
+
+  /** Va a ver de donde vienen los disparos cercanos, o sale a cazar de vez en cuando. */
+  private investigate(now: number): boolean {
+    const g = this.game;
+    const c = this.cat;
+    if (!this.armed() || now < SPAWN_GRACE_S) return false;
+    // un disparo reciente de otro gato, cerca
+    if (now - this.lastHeard > 1) {
+      this.lastHeard = now;
+      for (let i = g.shotLog.length - 1; i >= 0; i--) {
+        const s = g.shotLog[i] as { x: number; y: number; t: number; owner: number };
+        if (now - s.t > 2.5) break;
+        if (s.owner === c.id) continue;
+        const d = dist(c.x, c.y, s.x, s.y);
+        if (d > 70 && d < 300 && this.aggression > 0.45 && this.rng.chance(0.55)) {
+          this.roamGoal = { x: s.x, y: s.y };
+          this.investigateAt = now + 6;
+          this.campUntil = 0;
+          break;
+        }
+      }
+    }
+    // Caceria: cada tanto va hacia una zona donde anda alguien (con error). Al final de la partida
+    // (pocos gatos vivos o muchos minutos) los bots armados salen directo a buscar pelea.
+    if (now >= this.nextHuntAt) {
+      const alive = g.aliveCats();
+      const late = alive.length <= 3 || now > 480;
+      this.nextHuntAt = now + (late ? this.rng.range(5, 9) : this.rng.range(25, 45));
+      if ((late || this.aggression > 0.7) && this.armed() && alive.length > 1) {
+        const others = alive.filter((o) => o.id !== c.id);
+        const prey = late
+          ? others.reduce((a, b) => (dist(c.x, c.y, a.x, a.y) < dist(c.x, c.y, b.x, b.y) ? a : b))
+          : this.rng.pick(others);
+        const err = late ? 40 : 170;
+        this.roamGoal = {
+          x: prey.x + this.rng.range(-err, err),
+          y: prey.y + this.rng.range(-err, err),
+        };
+        this.investigateAt = now + 12;
+        this.campUntil = 0;
+      }
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------- inventario
 
   private weaponScore(item: Item): number {
-    const def = WEAPONS[item.kind as keyof typeof WEAPONS];
+    const def = WEAPONS[item.kind as WeaponKind];
     const dmg = def.damage[item.rarity] as number;
     return (dmg * def.pellets * 0.6) / def.cooldown + def.range * 0.15;
-  }
-
-  private equipBest(): void {
-    const c = this.cat;
-    let bestSlot = -1;
-    let bestScore = -1;
-    c.inv.forEach((item, i) => {
-      if (!item || !isWeapon(item.kind)) return;
-      const def = WEAPONS[item.kind];
-      if (c.ammo[def.ammo] < def.ammoPerShot) return;
-      const score = this.weaponScore(item);
-      if (score > bestScore) {
-        bestScore = score;
-        bestSlot = i;
-      }
-    });
-    if (bestSlot >= 0) {
-      if (c.sel !== bestSlot) this.game.select(c.id, bestSlot);
-      return;
-    }
-    const empty = c.inv.findIndex((it) => it === null);
-    if (empty >= 0) {
-      if (c.sel !== empty) this.game.select(c.id, empty);
-    } else if (c.sel !== INVENTORY_SLOTS - 1 || c.inv[c.sel]) {
-      this.game.invDrop(c.id, INVENTORY_SLOTS - 1);
-      this.game.select(c.id, INVENTORY_SLOTS - 1);
-    }
-  }
-
-  private tryHeal(): boolean {
-    const c = this.cat;
-    if (c.heal) return true;
-    const needHp = c.hp < 55;
-    const needShield = c.shield < 40 && c.hp >= 55;
-    if (!needHp && !needShield) return false;
-    const kind = needHp ? 'medkit' : 'shield';
-    const slot = c.inv.findIndex((it) => it && it.kind === kind);
-    if (slot < 0) return false;
-    this.game.select(c.id, slot);
-    this.game.fireControl(c, c.aim, false, false);
-    this.game.fireControl(c, c.aim, true, false);
-    return true;
   }
 
   private wanted(item: Item): boolean {
     const c = this.cat;
     const free = c.inv.some((it) => it === null);
     const stackRoom = c.inv.some(
-      (it) =>
-        it && it.kind === item.kind && it.rarity === item.rarity && it.qty < STACK_MAX[item.kind],
+      (it) => it && it.kind === item.kind && it.rarity === item.rarity && it.qty < 3,
     );
     if (isWeapon(item.kind)) {
       if (!free) return false;
@@ -288,70 +802,27 @@ export class BotBrain {
       if (owned.length >= 3) return false;
       return !owned.some((o) => o.kind === item.kind && o.rarity >= item.rarity);
     }
-    if (isAmmo(item.kind)) {
-      // Las balas van en su propio compartimento: solo importa si todavia caben.
-      return c.ammo[item.kind] < AMMO_MAX;
-    }
-    if (item.kind === 'wall') return free && c.inv.filter((it) => it === null).length >= 2;
+    if (isAmmo(item.kind)) return c.ammo[item.kind] < AMMO_MAX;
+    if (item.kind === 'wall')
+      return (free && c.inv.filter((it) => it === null).length >= 2) || stackRoom;
     return free || stackRoom;
   }
 
   private priority(item: Item): number {
     if (isWeapon(item.kind)) return 3 + this.weaponScore(item) / 100;
-    if (isAmmo(item.kind)) return 2;
-    return item.kind === 'medkit' ? 1.6 : item.kind === 'shield' ? 1.5 : 0.1;
-  }
-
-  // ---------------------------------------------------------------- botin
-
-  private loot(dt: number): boolean {
-    const g = this.game;
-    const c = this.cat;
-    if (this.lootTarget === null) {
-      let best: { id: number; d: number } | null = null;
-      for (const box of g.allContainers()) {
-        if (this.done.has(box.id)) continue;
-        const isChest = box.kind === 'chest' || box.kind === 'golden';
-        if (!isChest && box.items.length === 0) continue;
-        if (isChest && box.opened && box.items.length === 0) continue;
-        const d = dist(c.x, c.y, box.x, box.y) - (box.kind === 'golden' ? 40 : 0);
-        if (!best || d < best.d) best = { id: box.id, d };
-      }
-      if (!best || best.d > 520) return false;
-      this.lootTarget = best.id;
+    if (isAmmo(item.kind)) {
+      const owns = this.cat.inv.some(
+        (it) => it && isWeapon(it.kind) && WEAPONS[it.kind].ammo === item.kind,
+      );
+      return owns ? 2.4 : 1.2;
     }
-    const box = g.allContainers().find((b) => b.id === this.lootTarget);
-    if (!box) {
-      this.lootTarget = null;
-      return false;
-    }
-    if (dist(c.x, c.y, box.x, box.y) <= CAT.interactRange - 6) {
-      // Revolver el cofre toma un momento.
-      if (this.rummageUntil === 0) this.rummageUntil = g.time + this.rng.range(0.5, 1.4);
-      if (g.time < this.rummageUntil) {
-        c.moving = false;
-        return true;
-      }
-      this.rummageUntil = 0;
-      const contents = g.interact(c.id) as Contents | null;
-      if (contents) this.takeUseful(contents);
-      this.done.add(box.id);
-      this.lootTarget = null;
-      this.equipBest();
-      return true;
-    }
-    const reached = this.goTo(box.x, box.y, dt);
-    if (reached === 'blocked') {
-      this.done.add(box.id);
-      this.lootTarget = null;
-    }
-    return true;
+    return item.kind === 'medkit' ? 1.8 : item.kind === 'shield' ? 1.6 : 0.2;
   }
 
   private takeUseful(contents: Contents): void {
     const g = this.game;
     const c = this.cat;
-    for (let guard = 0; guard < 6; guard++) {
+    for (let guard = 0; guard < 8; guard++) {
       const view = g.contents(c.id, contents.id);
       if (!view) return;
       let pick = -1;
@@ -367,160 +838,137 @@ export class BotBrain {
       if (pick < 0) return;
       g.lootTake(c.id, contents.id, pick);
     }
-    void ITEM_KINDS;
   }
 
-  // ---------------------------------------------------------------- combate
+  // ---------------------------------------------------------------- botin
 
-  private aimAt(enemy: Cat | null, now: number): void {
-    if (!enemy) return;
-    if (now >= this.jitterUntil) {
-      this.jitterUntil = now + 0.25;
-      this.aimJitter = this.rng.range(-this.aimError, this.aimError);
-    }
-    this.cat.aim = Math.atan2(enemy.y - this.cat.y, enemy.x - this.cat.x) + this.aimJitter;
-  }
-
-  private fight(enemy: Cat, dt: number): void {
+  private loot(now: number): boolean {
     const g = this.game;
     const c = this.cat;
-    const now = g.time;
-    const item = g.held(c);
-    const def = item && isWeapon(item.kind) ? WEAPONS[item.kind] : null;
-    const d = dist(c.x, c.y, enemy.x, enemy.y);
-    this.aimAt(enemy, now);
-
-    const range = def ? def.range : 16;
-    const preferred = def
-      ? def.kind === 'shotgun'
-        ? 34
-        : def.kind === 'sniper'
-          ? 150
-          : def.kind === 'bazooka'
-            ? 110
-            : 88
-      : 10;
-    let mx: number;
-    let my: number;
-    const toward = Math.atan2(enemy.y - c.y, enemy.x - c.x);
-    if (d > preferred + 14) {
-      mx = Math.cos(toward);
-      my = Math.sin(toward);
-    } else if (d < preferred - 14 && def && def.kind !== 'shotgun') {
-      mx = -Math.cos(toward);
-      my = -Math.sin(toward);
-    } else {
-      if (now >= this.strafeUntil) {
-        this.strafeUntil = now + this.rng.range(0.7, 1.8);
-        this.strafe = this.rng.chance(0.5) ? 1 : -1;
+    if (this.lootTarget === null) {
+      // Con los bolsillos llenos de lo importante ya no vale la pena revolver mas cofres.
+      const geared =
+        this.armed() &&
+        c.ammo.ammo_pistol +
+          c.ammo.ammo_rifle +
+          c.ammo.ammo_shotgun +
+          c.ammo.ammo_sniper +
+          c.ammo.ammo_bazooka >=
+          45;
+      let best: { id: number; score: number } | null = null;
+      for (const box of g.allContainers()) {
+        if (this.done.has(box.id)) continue;
+        const isChest = box.kind === 'chest' || box.kind === 'golden';
+        if (!isChest && box.items.length === 0) continue;
+        if (isChest && box.opened && box.items.length === 0) continue;
+        const d = dist(c.x, c.y, box.x, box.y);
+        if (d > (geared ? 260 : 800)) continue;
+        const bonus = (box.kind === 'golden' ? 70 : 0) + (box.kind === 'tomb' ? 40 : 0);
+        // Un cofre con otro gato a la vista cerca se evita: nadie quiere empezar a balazos en el cofre.
+        const crowded = g.cats.some(
+          (o) =>
+            o.alive &&
+            o.id !== c.id &&
+            dist(o.x, o.y, box.x, box.y) < 100 &&
+            dist(c.x, c.y, o.x, o.y) < this.sight * 1.4 &&
+            hasLineOfSight(g.map, c.x, c.y, o.x, o.y),
+        );
+        const score = d - bonus + this.rng.range(0, 25) + (crowded ? 160 : 0);
+        if (!best || score < best.score) best = { id: box.id, score };
       }
-      mx = Math.cos(toward + (Math.PI / 2) * this.strafe);
-      my = Math.sin(toward + (Math.PI / 2) * this.strafe);
+      if (!best) return false;
+      this.lootTarget = best.id;
+      this.rummageUntil = 0;
     }
-    const before = { x: c.x, y: c.y };
-    stepCat(
-      g.map,
-      c,
-      { mx: mx * (0.55 + this.boldness * 0.45), my: my * (0.55 + this.boldness * 0.45) },
-      dt,
+    const box = g.allContainers().find((b) => b.id === this.lootTarget);
+    if (!box || (box.items.length === 0 && (box.kind === 'tomb' || box.kind === 'drop'))) {
+      this.lootTarget = null;
+      return false;
+    }
+    this.mode = 'loot';
+    if (dist(c.x, c.y, box.x, box.y) <= CAT.interactRange - 6) {
+      // Revolver el cofre toma un momento.
+      if (this.rummageUntil === 0) this.rummageUntil = now + this.rng.range(0.4, 0.9);
+      if (now < this.rummageUntil) return true;
+      this.rummageUntil = 0;
+      const contents = g.interact(c.id) as Contents | null;
+      if (contents) this.takeUseful(contents);
+      this.done.add(box.id);
+      this.lootTarget = null;
+      if (!c.heal) this.equipBest(100, true);
+      return true;
+    }
+    const run = this.sprint(
+      !this.armed() && this.sprinty > 0.6 && dist(c.x, c.y, box.x, box.y) > 120,
     );
-    c.moving = Math.hypot(c.x - before.x, c.y - before.y) > 0.05;
-
-    const ready = now - this.seenAt >= this.reaction;
-    const wantFire =
-      ready && d <= range * 0.95 && hasLineOfSight(g.map, c.x, c.y, enemy.x, enemy.y);
-    const press = wantFire && (def ? def.auto || !c.prevFire : !c.prevFire);
-    g.fireControl(c, c.aim, press, false);
-    void TICK_DT;
+    const r = this.navTo(box.x, box.y, run, CAT.interactRange - 8);
+    if (r === 'blocked') {
+      this.done.add(box.id);
+      this.lootTarget = null;
+    }
+    return true;
   }
 
-  // ---------------------------------------------------------------- movimiento
+  // ---------------------------------------------------------------- merodeo
 
-  /** Avanza por un camino hacia (x, y). Devuelve 'blocked' si no hay ruta. */
-  private goTo(x: number, y: number, dt: number): 'moving' | 'blocked' {
+  private pickRoamGoal(): { x: number; y: number } {
     const g = this.game;
-    const c = this.cat;
-    const map = g.map;
-    const gx = Math.floor(x / TILE);
-    const gy = Math.floor(y / TILE);
-    const key = `${gx},${gy}`;
-    const sx = Math.floor(c.x / TILE);
-    const sy = Math.floor(c.y / TILE);
-    const now = g.time;
-
-    if (key !== this.pathKey || now >= this.stuckAt + 3 || this.pathIdx >= this.path.length) {
-      // Primero se busca una ruta seca; el agua dana, asi que solo se cruza si no hay otra.
-      const path = findPath(map, sx, sy, gx, gy) ?? findPath(map, sx, sy, gx, gy, false);
-      this.pathKey = key;
-      this.stuckAt = now;
-      if (!path) {
-        this.path = [];
-        return 'blocked';
+    const mapW = g.map.w * TILE;
+    const mapH = g.map.h * TILE;
+    const z = g.zone;
+    const early = z.phase === 0 && z.nextIn > 30;
+    const circle = z.next && z.next.r > 0 && z.nextIn < 60 ? z.next : z.circle;
+    for (let tries = 0; tries < 8; tries++) {
+      let x: number;
+      let y: number;
+      const roll = this.rng.next();
+      if (roll < 0.35 && g.map.houses.length > 0) {
+        const h = this.rng.pick(g.map.houses);
+        x = (h.x + h.w / 2) * TILE + this.rng.range(-20, 20);
+        y = (h.y + h.h / 2) * TILE + this.rng.range(-14, 14);
+        // una casa fuera de la zona no sirve: la ola lo haria volver enseguida
+        if (!insideCircle({ cx: circle.cx, cy: circle.cy, r: circle.r * 0.8 }, x, y)) continue;
+      } else if (early) {
+        x = this.rng.range(60, mapW - 60);
+        y = this.rng.range(60, mapH - 60);
+      } else {
+        const r = Math.max(30, Math.min(circle.r, 420) * 0.85);
+        const a = this.rng.range(0, Math.PI * 2);
+        const rr = Math.sqrt(this.rng.next()) * r;
+        x = circle.cx + Math.cos(a) * rr;
+        y = circle.cy + Math.sin(a) * rr;
       }
-      this.path = path;
-      this.pathIdx = 0;
+      x = Math.min(mapW - 40, Math.max(40, x));
+      y = Math.min(mapH - 40, Math.max(40, y));
+      if (
+        !isSolidTile(g.map, Math.floor(x / TILE), Math.floor(y / TILE)) &&
+        !isWaterAtPx(g.map, x, y)
+      ) {
+        return { x, y };
+      }
     }
-    while (this.pathIdx < this.path.length) {
-      const node = this.path[this.pathIdx] as number;
-      const nx = (node % map.w) * TILE + TILE / 2;
-      const ny = ((node / map.w) | 0) * TILE + TILE / 2;
-      if (Math.hypot(nx - c.x, ny - c.y) < 4) this.pathIdx++;
-      else break;
-    }
-    const node = this.path[this.pathIdx];
-    if (node === undefined) return 'moving';
-    const tx = (node % map.w) * TILE + TILE / 2;
-    const ty = ((node / map.w) | 0) * TILE + TILE / 2;
-    const len = Math.hypot(tx - c.x, ty - c.y) || 1;
-    const before = { x: c.x, y: c.y };
-    stepCat(map, c, { mx: (tx - c.x) / len, my: (ty - c.y) / len }, dt);
-    c.moving = Math.hypot(c.x - before.x, c.y - before.y) > 0.05;
-    c.aim = Math.atan2(ty - c.y, tx - c.x);
-    if (c.moving) {
-      this.lastX = c.x;
-      this.lastY = c.y;
-      this.stuckAt = Math.max(this.stuckAt, now - 2);
-    }
-    return 'moving';
+    return { x: circle.cx, y: circle.cy };
   }
 
-  private roam(dt: number): void {
-    const g = this.game;
+  private roam(now: number): void {
     const c = this.cat;
-    const now = g.time;
-    if (now < this.idleUntil) {
-      this.game.fireControl(c, c.aim, false, false);
+    if (now < this.campUntil) {
+      this.mode = 'camp';
+      this.game.fireControl(c, c.aim, false);
       return;
     }
-    const early = g.zone.phase === 0 && g.zone.nextIn > 30;
-    const z = g.zone.next && g.zone.next.r > 0 && g.zone.nextIn < 60 ? g.zone.next : g.zone.circle;
-    if (
-      !this.roamGoal ||
-      dist(c.x, c.y, this.roamGoal.x, this.roamGoal.y) < 20 ||
-      this.rng.chance(0.002)
-    ) {
-      if (this.roamGoal && this.rng.chance(0.5)) this.idleUntil = now + this.rng.range(2, 8);
-      const mapW = g.map.w * TILE;
-      const mapH = g.map.h * TILE;
-      let gx: number;
-      let gy: number;
-      if (early) {
-        gx = this.rng.range(60, mapW - 60);
-        gy = this.rng.range(60, mapH - 60);
-      } else {
-        const r = Math.max(30, Math.min(z.r, 400) * 0.7);
-        const a = this.rng.range(0, Math.PI * 2);
-        gx = z.cx + Math.cos(a) * this.rng.next() * r;
-        gy = z.cy + Math.sin(a) * this.rng.next() * r;
-      }
-      this.roamGoal = {
-        x: Math.min(mapW - 40, Math.max(40, gx)),
-        y: Math.min(mapH - 40, Math.max(40, gy)),
-      };
-      if (now < this.idleUntil) return;
+    this.mode = 'roam';
+    if (!this.roamGoal) {
+      this.roamGoal = this.pickRoamGoal();
+      this.roamRun = this.rng.chance(0.3);
     }
-    const res = this.goTo(this.roamGoal.x, this.roamGoal.y, dt);
-    if (res === 'blocked') this.roamGoal = null;
-    this.game.fireControl(c, c.aim, false, false);
+    const run = this.sprint(this.roamRun && this.sprinty > 0.5);
+    const r = this.navTo(this.roamGoal.x, this.roamGoal.y, run, 14);
+    if (r === 'arrived' || r === 'blocked') {
+      this.roamGoal = null;
+      // De vez en cuando se queda un momento vigilando: nunca mucho tiempo.
+      if (r === 'arrived' && this.rng.chance(0.2)) this.campUntil = now + this.rng.range(1, 3);
+    }
+    this.game.fireControl(c, c.aim, false);
   }
 }

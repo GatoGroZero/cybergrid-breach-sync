@@ -3,7 +3,7 @@ import { INVENTORY_SLOTS, TILE } from '../../src/shared/br/constants';
 import { MAP_KINDS, generateMap } from '../../src/shared/br/map';
 import { randomSkin } from '../../src/shared/br/skin';
 import { createRng } from '../../src/shared/rng';
-import { BRGame } from '../../src/server/br/Game';
+import { BRGame, type Cat } from '../../src/server/br/Game';
 import { findPath } from '../../src/server/br/bots';
 
 const NAMES = [
@@ -99,5 +99,105 @@ describe('bots', () => {
     for (const node of path!) expect(map.solid[node]).toBe(0);
     // Un objetivo encerrado en la esquina fuera del mapa jugable no tiene ruta.
     expect(findPath(map, Math.floor(a.x / TILE), Math.floor(a.y / TILE), 0, 0)).toBeNull();
+  });
+});
+
+describe('conducta de los bots', () => {
+  interface Brain {
+    mode: string;
+  }
+
+  /** Mide, sobre varias partidas, cuanto tiempo los bots tiemblan o se quedan atorados sin motivo. */
+  function measure(kind: (typeof MAP_KINDS)[number], seed: number, seconds: number) {
+    const game = botGame(kind, seed);
+    const brains = (game as unknown as { brains: Map<number, Brain> }).brains;
+    const last = new Map<number, { x: number; y: number; dx: number; dy: number; rev: number }>();
+    const anchor = new Map<number, { x: number; y: number }>();
+    let botSeconds = 0;
+    let jitterSeconds = 0;
+    let windows = 0;
+    let stuckWindows = 0;
+    let ran = false;
+    let tick = 0;
+    while (!game.over && game.time < seconds) {
+      game.step();
+      tick++;
+      for (const c of game.cats) {
+        if (!c.alive) continue;
+        game.snapshotFor(c.id);
+        if (c.running) ran = true;
+        const b = brains.get(c.id) as Brain;
+        const l = last.get(c.id) ?? { x: c.x, y: c.y, dx: 0, dy: 0, rev: 0 };
+        const dx = c.x - l.x;
+        const dy = c.y - l.y;
+        const m = Math.hypot(dx, dy);
+        const pm = Math.hypot(l.dx, l.dy);
+        if (m > 0.4 && pm > 0.4 && (dx * l.dx + dy * l.dy) / (m * pm) < -0.6) l.rev++;
+        Object.assign(l, { x: c.x, y: c.y, dx, dy });
+        last.set(c.id, l);
+        if (tick % 30 === 0) {
+          botSeconds++;
+          if (l.rev > 6) jitterSeconds++;
+          l.rev = 0;
+        }
+        if (tick % 90 === 0) {
+          const a = anchor.get(c.id);
+          if (a) {
+            windows++;
+            const moving = Math.hypot(c.x - a.x, c.y - a.y) >= 6;
+            const legit = c.heal !== null || ['fight', 'camp', 'start', 'loot'].includes(b.mode);
+            if (!moving && !legit) stuckWindows++;
+          }
+          anchor.set(c.id, { x: c.x, y: c.y });
+        }
+      }
+      game.endTick();
+    }
+    return { game, botSeconds, jitterSeconds, windows, stuckWindows, ran };
+  }
+
+  it.each(MAP_KINDS)('en %s casi nunca tiemblan ni se quedan atorados sin motivo', (kind) => {
+    const a = measure(kind, 9000, 240);
+    const b = measure(kind, 9013, 240);
+    const botSeconds = a.botSeconds + b.botSeconds;
+    expect((a.jitterSeconds + b.jitterSeconds) / botSeconds).toBeLessThan(0.05);
+    expect((a.stuckWindows + b.stuckWindows) / (a.windows + b.windows)).toBeLessThan(0.04);
+  });
+
+  it('los bots tambien corren, se cubren y siguen peleando con las balas del compartimento', () => {
+    let ran = false;
+    let anyWall = false;
+    let fired = false;
+    for (const seed of [9000, 9013, 9026]) {
+      const m = measure('bosque', seed, 300);
+      ran ||= m.ran;
+      fired ||= m.game.cats.some((c) => c.damageDealt > 0);
+      anyWall ||= m.game.cats.some((c) => c.kills > 0 || c.damageDealt > 0);
+    }
+    expect(ran).toBe(true);
+    expect(fired).toBe(true);
+    expect(anyWall).toBe(true);
+  });
+
+  it('cuando el humano cae, los bots siguen jugando y moviéndose', () => {
+    const game = botGame('bosque', 77);
+    const human = game.cat(1) as Cat;
+    human.bot = false;
+    while (game.time < 40) {
+      game.step();
+      game.endTick();
+    }
+    game.damageCat(human, 9999, game.cat(2) as Cat);
+    const before = new Map(game.cats.filter((c) => c.alive).map((c) => [c.id, { x: c.x, y: c.y }]));
+    while (game.time < 70 && !game.over) {
+      game.step();
+      game.endTick();
+    }
+    let moved = 0;
+    for (const c of game.cats) {
+      const b = before.get(c.id);
+      if (c.alive && b && Math.hypot(c.x - b.x, c.y - b.y) > 20) moved++;
+    }
+    expect(game.over || moved >= 3).toBe(true);
   });
 });
