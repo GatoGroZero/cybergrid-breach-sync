@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { jwtVerify, SignJWT } from 'jose';
-import { credentialsSchema } from '../shared/protocol';
+import { credentialsSchema } from '../shared/br/protocol';
 import type { Config } from './config';
 import type { Repo } from './db';
 
