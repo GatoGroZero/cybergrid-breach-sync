@@ -104,7 +104,10 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Balas:** no ocupan los 5 espacios; viven en su propio compartimento (hasta 100 de cada arma) y se ven como "Balas de pistola", "Balas de fusil", etc. Arrástralas fuera del inventario para tirarlas.
 - **Móvil:** se juega en horizontal (en vertical pide girar el teléfono). Joystick izquierdo para moverte (empújalo hasta el aro punteado para correr). **Joystick derecho para la mira:** al arrastrarlo aparece la línea de disparo y el arma dispara sola mientras la ves; al soltarlo deja de disparar. No hay auto apuntado. Con un muro en la mano la mira muestra en qué casilla caerá y se coloca al soltar (si lo regresas al centro se cancela); un toque corto usa botiquines y escudos. En **Ajustes** se puede mover y cambiar el tamaño de cada botón. Para jugar a pantalla completa en iPhone: Compartir, _Añadir a pantalla de inicio_; en Android se activa sola.
 - **Ganar:** el último gato en pie se lleva una corona y la partida celebra con fuegos artificiales antes de mostrar los puestos.
-- **Solo:** tú más 9 bots. Con otras personas, la sala se llena a 10 con bots.
+- **Solo:** tú más 9 bots.
+- **Salas:** cualquiera crea una sala con nombre, mapa y bots. Las públicas aparecen en la lista con su anfitrión, personas y bots, y la lista se actualiza sola. Las privadas se comparten con el código de 5 caracteres o con el enlace de invitación (`/?sala=ABCDE`).
+- **Bots en la sala:** el anfitrión elige "Llenar con bots" (completa hasta 10 gatos) o una cantidad exacta de 0 a 9 (por ejemplo, 4 amigos y 6 bots). Con bots exactos se reserva su lugar: 6 bots dejan espacio para 4 personas. Sin bots hacen falta al menos 2 personas.
+- **Ajustes e inicio:** solo el anfitrión cambia mapa, privacidad y bots (cada cambio quita el Listo a todos) y puede pulsar "Iniciar ya" sin esperar a que todos marquen Listo.
 
 ## API de prueba
 
@@ -128,7 +131,7 @@ curl -s -X POST https://cybergrid-breach-sync.onrender.com/api/test/seed \
 - Sesión en cookie `httpOnly`, `SameSite=Lax` y `Secure` en producción. El socket se autentica en el handshake: sin sesión no hay conexión ni salas.
 - Límite de intentos de login, validación de todo lo que entra con Zod, cabeceras de Helmet y una política de contenido estricta (sin scripts ni estilos en línea).
 - El servidor no confía en el cliente: recorta los vectores de movimiento, limita cuántos pasos puede avanzar un jugador por tick (contra aceleración), valida que el objeto exista en su inventario y su distancia al cofre, y descarta cualquier campo de más. Cada cliente solo recibe lo que está cerca de su gato.
-- Las salas privadas no aparecen en la lista y exigen el código de 5 caracteres.
+- Las salas privadas no aparecen en la lista y exigen el código de 5 caracteres. Los ajustes (`room:settings`) y el inicio (`room:start`) solo los acepta el servidor si vienen del anfitrión, validados con Zod, y el cupo de personas lo calcula siempre el servidor.
 
 ## Pruebas
 

@@ -13,6 +13,7 @@ import {
   lootTakeSchema,
   moveItemSchema,
   readySchema,
+  roomSettingsSchema,
   selectSchema,
   skinSchema,
   spectateSchema,
@@ -26,6 +27,7 @@ import {
   type RoomState,
 } from '../shared/br/protocol';
 import type { AmmoKind } from '../shared/br/items';
+import { botsFor, canStart, maxHumans, type BotsSetting } from '../shared/br/rooms';
 import { defaultSkin, isValidSkin, randomSkin, type Skin } from '../shared/br/skin';
 import { createRng } from '../shared/rng';
 import type { SessionUser } from './auth';
@@ -47,6 +49,7 @@ interface Room {
   name: string;
   isPrivate: boolean;
   map: MapKind | 'azar';
+  bots: BotsSetting;
   phase: RoomPhase;
   hostId: number;
   members: Map<number, Member>;
@@ -61,6 +64,9 @@ interface Room {
 }
 
 const MAX_ROOMS = 40;
+/** Canal de los sockets que estan mirando la lista de salas publicas. */
+const BROWSE = 'salas';
+const ROOMS_PUSH_MS = 250;
 const RESULTS_SECONDS = 6;
 const BOT_NAMES = [
   'Michi',
@@ -112,6 +118,9 @@ export class Lobby {
   private readonly sockets = new Map<number, Socket>();
   /** El pelaje elegido se recuerda mientras el servidor siga vivo. */
   private readonly skins = new Map<number, Skin>();
+  /** Ultima lista publica enviada, para avisar solo cuando cambia. */
+  private publicSignature = '[]';
+  private publicTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly io: Server,
@@ -126,6 +135,8 @@ export class Lobby {
   }
 
   shutdown(): void {
+    if (this.publicTimer) clearTimeout(this.publicTimer);
+    this.publicTimer = null;
     for (const room of this.rooms.values()) this.disposeRoom(room);
     this.rooms.clear();
     this.userRoom.clear();
@@ -141,6 +152,7 @@ export class Lobby {
       previous.disconnect(true);
     }
     this.sockets.set(user.id, socket);
+    if (!this.roomOf(user.id)) void socket.join(BROWSE);
 
     const inputBucket = new Bucket(45, 90);
     const actionBucket = new Bucket(14, 30);
@@ -187,6 +199,12 @@ export class Lobby {
     });
     socket.on('room:ready', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setReady(user.id, raw));
+    });
+    socket.on('room:settings', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.setSettings(user.id, raw));
+    });
+    socket.on('room:start', (ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.startNow(user.id));
     });
 
     // ---- partida
@@ -298,6 +316,7 @@ export class Lobby {
     const member = room?.members.get(userId);
     if (!room || !member) return;
     member.socketId = socket.id;
+    void socket.leave(BROWSE);
     void socket.join(room.code);
     room.game?.setConnected(member.catId, true);
     socket.emit('room:state', this.stateOf(room));
@@ -333,6 +352,7 @@ export class Lobby {
       name: parsed.data.name ?? `Sala de ${user.username}`,
       isPrivate: parsed.data.isPrivate,
       map: parsed.data.map as MapKind | 'azar',
+      bots: parsed.data.bots,
       phase: 'lobby',
       hostId: user.id,
       members: new Map(),
@@ -359,7 +379,8 @@ export class Lobby {
     if (this.userRoom.has(user.id)) return fail('ya_estas_en_una_sala') as Ack<{ code: string }>;
     if (room.phase === 'playing' || room.phase === 'ended')
       return fail('partida_en_curso') as Ack<{ code: string }>;
-    if (room.members.size >= MAX_PLAYERS) return fail('sala_llena') as Ack<{ code: string }>;
+    if (room.members.size >= maxHumans(room.bots))
+      return fail('sala_llena') as Ack<{ code: string }>;
     this.cancelCountdown(room);
     this.addMember(room, user, socket);
     this.broadcast(room);
@@ -376,6 +397,7 @@ export class Lobby {
       skin: this.skins.get(user.id) ?? defaultSkin(),
     });
     this.userRoom.set(user.id, room.code);
+    void socket.leave(BROWSE);
     void socket.join(room.code);
   }
 
@@ -389,6 +411,7 @@ export class Lobby {
     room.members.delete(userId);
     this.userRoom.delete(userId);
     void socket?.leave(room.code);
+    void socket?.join(BROWSE);
     this.cancelCountdown(room);
 
     if (room.members.size === 0) {
@@ -399,6 +422,7 @@ export class Lobby {
       }
       this.disposeRoom(room);
       this.rooms.delete(room.code);
+      this.notifyRooms();
       return;
     }
     if (room.hostId === userId) room.hostId = (room.members.keys().next().value as number) ?? 0;
@@ -416,8 +440,45 @@ export class Lobby {
     member.skin = this.skins.get(userId) ?? member.skin;
     if (!member.ready) this.cancelCountdown(room);
     this.broadcast(room);
-    if ([...room.members.values()].every((m) => m.ready) && room.phase === 'lobby')
+    if (
+      [...room.members.values()].every((m) => m.ready) &&
+      room.phase === 'lobby' &&
+      canStart(room.bots, room.members.size)
+    )
       this.startCountdown(room);
+    return { ok: true };
+  }
+
+  /** El anfitrion cambia mapa, privacidad, nombre o bots; todos tienen que volver a confirmar. */
+  private setSettings(userId: number, raw: unknown): Ack {
+    const parsed = roomSettingsSchema.safeParse(raw);
+    if (!parsed.success) return fail('datos_invalidos');
+    const room = this.roomOf(userId);
+    if (!room) return fail('no_estas_en_una_sala');
+    if (room.hostId !== userId) return fail('solo_el_anfitrion');
+    if (room.phase !== 'lobby' && room.phase !== 'countdown') return fail('partida_en_curso');
+    const next = parsed.data;
+    if (next.bots !== undefined && room.members.size > maxHumans(next.bots))
+      return fail('demasiados_jugadores');
+
+    if (next.name !== undefined) room.name = next.name;
+    if (next.isPrivate !== undefined) room.isPrivate = next.isPrivate;
+    if (next.map !== undefined) room.map = next.map as MapKind | 'azar';
+    if (next.bots !== undefined) room.bots = next.bots;
+    this.cancelCountdown(room);
+    for (const m of room.members.values()) m.ready = false;
+    this.broadcast(room);
+    return { ok: true };
+  }
+
+  /** Empezar sin esperar a que todos marquen Listo (como en Among Us, manda el anfitrion). */
+  private startNow(userId: number): Ack {
+    const room = this.roomOf(userId);
+    if (!room) return fail('no_estas_en_una_sala');
+    if (room.hostId !== userId) return fail('solo_el_anfitrion');
+    if (room.phase !== 'lobby') return fail('partida_en_curso');
+    if (!canStart(room.bots, room.members.size)) return fail('faltan_jugadores');
+    this.startCountdown(room);
     return { ok: true };
   }
 
@@ -427,11 +488,26 @@ export class Lobby {
       .map((r) => ({
         code: r.code,
         name: r.name,
+        host: r.members.get(r.hostId)?.name ?? '',
         players: r.members.size,
-        maxPlayers: MAX_PLAYERS,
+        maxPlayers: maxHumans(r.bots),
+        bots: botsFor(r.bots, r.members.size),
         phase: r.phase,
         map: r.map,
       }));
+  }
+
+  /** Avisa a quien mira la lista que algo cambio; junta rafagas y no manda lo que ya se envio. */
+  private notifyRooms(): void {
+    if (this.publicTimer) return;
+    this.publicTimer = setTimeout(() => {
+      this.publicTimer = null;
+      const list = this.publicRooms();
+      const signature = JSON.stringify(list);
+      if (signature === this.publicSignature) return;
+      this.publicSignature = signature;
+      this.io.to(BROWSE).emit('rooms:update', list);
+    }, ROOMS_PUSH_MS);
   }
 
   private stateOf(room: Room): RoomState {
@@ -442,6 +518,10 @@ export class Lobby {
       phase: room.phase,
       map: room.map,
       maxPlayers: MAX_PLAYERS,
+      maxHumans: maxHumans(room.bots),
+      bots: room.bots,
+      botCount: botsFor(room.bots, room.members.size),
+      canStart: canStart(room.bots, room.members.size),
       countdown: room.countdown,
       members: [...room.members.values()].map((m) => ({
         userId: m.userId,
@@ -456,6 +536,7 @@ export class Lobby {
 
   private broadcast(room: Room): void {
     this.io.to(room.code).emit('room:state', this.stateOf(room));
+    this.notifyRooms();
   }
 
   // ------------------------------------------------------------------ cuenta regresiva y partida
@@ -519,10 +600,11 @@ export class Lobby {
         skin: isValidSkin(m.skin) ? m.skin : defaultSkin(),
       };
     });
-    // La sala se llena con bots hasta 10 gatos.
+    // Los bots que pidio el anfitrion (o los que falten hasta 10 gatos).
     const taken = new Set(members.map((m) => m.name.toLowerCase()));
     const names = rng.shuffle(BOT_NAMES.filter((n) => !taken.has(n.toLowerCase())));
-    for (let i = cats.length; i < MAX_PLAYERS; i++) {
+    const total = members.length + botsFor(room.bots, members.length);
+    for (let i = cats.length; i < total; i++) {
       cats.push({
         id: i + 1,
         name: names[i - members.length] ?? `Gato${i + 1}`,

@@ -535,6 +535,34 @@ input::placeholder {
   background: var(--red);
 }
 
+.room-list li .info {
+  min-width: 0;
+}
+
+.room-list li .info strong {
+  overflow-wrap: anywhere;
+}
+
+.room-list li[data-busy='true'] {
+  opacity: 0.6;
+}
+
+.bots-line {
+  margin: 0 0 10px;
+  color: var(--dim);
+}
+
+.room-settings {
+  margin: 0 0 12px;
+  padding: 10px 12px 2px;
+  border: 3px solid var(--line);
+}
+
+.room-settings legend {
+  padding: 0 8px;
+  color: var(--yellow);
+}
+
 .room-head {
   display: flex;
   justify-content: space-between;
@@ -550,6 +578,7 @@ input::placeholder {
 .room-code {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
