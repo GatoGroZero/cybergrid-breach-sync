@@ -39,7 +39,7 @@ node scripts/audit-prod.mjs https://cybergrid-breach-sync.onrender.com --browser
 | **Red y sockets (25 %)**       | Servidor autoritativo con Socket.IO solo WebSocket. El cliente manda únicamente su intención (vector de movimiento, disparo); posiciones, colisiones, inventario y daño se calculan en el servidor. Eventos `ping` y `pong` propios.                                                                               | `src/server/game/Game.ts`, `src/server/lobby.ts`, `src/server/realtime.ts`                  |
 | **Canvas y controles (25 %)**  | Bucle con delta time: paso fijo de simulación a 30 Hz con acumulador, dibujo limitado a 60 FPS en cualquier monitor (60, 120, 144 Hz) y resolución dinámica si no se sostienen. Teclado y ratón en PC, joystick virtual y botón de acción dibujados en el canvas en pantallas táctiles, que cambian solos de modo. | `src/client/main.ts`, `src/client/render.ts`, `src/client/input.ts`, `src/shared/timing.ts` |
 | **Endpoints de prueba (20 %)** | `GET /api/test/telemetry` y `POST /api/test/seed` (más `GET /api/test/health`). La telemetría se calcula con agregaciones SQL sobre tablas indexadas.                                                                                                                                                              | `src/server/testApi.ts`, `src/server/db.ts`                                                 |
-| **Pruebas y CI/CD (15 %)**     | 60 pruebas unitarias y de integración (Vitest) y 10 E2E (Playwright, tres flujos más variantes). Pipeline en GitHub Actions en cada Pull Request y en cada push a `main`.                                                                                                                                          | `tests/`, `.github/workflows/ci.yml`                                                        |
+| **Pruebas y CI/CD (15 %)**     | 75 pruebas unitarias y de integración (Vitest) y 12 E2E (Playwright, tres flujos más variantes). Pipeline en GitHub Actions en cada Pull Request y en cada push a `main`.                                                                                                                                          | `tests/`, `.github/workflows/ci.yml`                                                        |
 | **Despliegue (15 %)**          | Render, región Ohio, TLS administrado por la plataforma, despliegue automático solo cuando pasa el CI (`autoDeployTrigger: checksPass`).                                                                                                                                                                           | `render.yaml`                                                                               |
 
 ### Arquitectura
@@ -103,7 +103,7 @@ curl -s -X POST https://cybergrid-breach-sync.onrender.com/api/test/seed \
 ## Pruebas
 
 ```bash
-npm test            # 60 pruebas unitarias y de integración
+npm test            # 75 pruebas unitarias y de integración
 npm run test:cov    # con cobertura
 npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 ```
@@ -122,7 +122,8 @@ npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 | E2E 1: autenticación                       | `tests/e2e/1-autenticacion.spec.ts` |
 | E2E 2: lobbies, estado Listo y sockets     | `tests/e2e/2-lobby.spec.ts`         |
 | E2E 3: canvas, controles y coordenadas     | `tests/e2e/3-canvas.spec.ts`        |
-| E2E móvil: joystick táctil                 | `tests/e2e/movil.spec.ts`           |
+| E2E móvil: joystick táctil y giro          | `tests/e2e/movil.spec.ts`           |
+| Geometría de los controles táctiles        | `tests/unit/controls.test.ts`       |
 
 ## Correrlo en local
 
@@ -141,7 +142,7 @@ Variables de entorno: `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB
 ## Cómo se juega
 
 - **PC:** WASD o flechas para moverte, ratón para apuntar, clic o espacio para disparar, teclas 1 a 3 para usar objetos, M para silenciar.
-- **Móvil:** joystick a la izquierda, botón FUEGO a la derecha, toque sobre un objeto para usarlo. El disparo apunta solo al dron más cercano.
+- **Móvil:** se juega en horizontal (en vertical pide girar el teléfono). El joystick es flotante: apoya el pulgar en la mitad izquierda; abajo a la derecha están FUEGO y, en arco a su alrededor, los tres objetos. El disparo apunta solo al dron más cercano y el teléfono vibra al recibir daño. Para jugar a pantalla completa en iPhone: Compartir, _Añadir a pantalla de inicio_; en Android la pantalla completa se activa sola.
 - **Objetivo:** pónganse sobre cada nodo hasta abrirlo. Si hay drones encima, el nodo queda **disputado** y la captura se detiene hasta despejarlos. Con los tres abiertos aparece la salida: todos los jugadores vivos deben estar dentro a la vez para sincronizar. Si caes, reapareces dos veces más (con un pulso que aturde a los drones cercanos).
 - **Objetos:** parche (cura), overclock (velocidad) y EMP (aturde y daña en área).
 

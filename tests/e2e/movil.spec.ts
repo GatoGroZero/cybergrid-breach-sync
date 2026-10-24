@@ -9,10 +9,10 @@ test.describe('Móvil: controles táctiles', () => {
     expect((await page.evaluate(() => window.__cybergrid))?.mode).toBe('touch');
     await expect(page.getByTestId('hud-mode')).toHaveText('táctil');
 
-    // Geometria del joystick (misma formula que src/client/input.ts).
+    // El joystick es flotante: se apoya el pulgar abajo a la izquierda y se arrastra desde ahi.
     const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
-    const r = Math.max(46, Math.min(74, size.h * 0.13));
-    const stick = { x: r + 34, y: size.h - r - 34 };
+    const r = Math.max(52, Math.min(80, size.h * 0.15));
+    const stick = { x: r + 40, y: size.h - r - 32 };
 
     const cdp = await page.context().newCDPSession(page);
     const before = await coords(page);
@@ -41,5 +41,29 @@ test.describe('Móvil: controles táctiles', () => {
       }
     }
     expect(moved).toBe(true);
+  });
+
+  test('en vertical pide girar el teléfono y en horizontal deja jugar', async ({ page }) => {
+    await registerViaUi(page, uniqueName('e2e_rot'));
+    await startSoloGame(page);
+    await expect(page.getByTestId('rotate')).toBeHidden();
+
+    // Android entra en pantalla completa al jugar; hay que salir para poder girar el viewport.
+    await page.evaluate(async () => {
+      if (document.fullscreenElement) await document.exitFullscreen();
+    });
+    await page.setViewportSize({ width: 412, height: 915 });
+    await expect(page.getByTestId('rotate')).toBeVisible();
+    await expect(page.getByTestId('rotate')).toContainText('Gira tu teléfono');
+
+    await page.setViewportSize({ width: 915, height: 412 });
+    await expect(page.getByTestId('rotate')).toBeHidden();
+  });
+
+  test('el lobby en vertical no estorba: solo la partida exige horizontal', async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+    await registerViaUi(page, uniqueName('e2e_lob'));
+    await expect(page.getByTestId('rotate')).toBeHidden();
+    await expect(page.getByTestId('btn-solo')).toBeVisible();
   });
 });
