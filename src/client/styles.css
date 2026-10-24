@@ -362,6 +362,28 @@ select {
   border-radius: 0;
 }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--cyan) 50%),
+    linear-gradient(135deg, var(--cyan) 50%, transparent 50%);
+  background-position:
+    calc(100% - 22px) 50%,
+    calc(100% - 16px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+}
+
+select option {
+  background: var(--black);
+  color: var(--text);
+}
+
 input:not([type='checkbox']):focus,
 select:focus {
   border-color: var(--cyan);
