@@ -441,7 +441,8 @@ $('btn-ready').addEventListener('click', async () => {
   enterImmersive();
   if (!net || !room || !user) return;
   const me = room.members.find((m) => m.userId === user?.id);
-  await net.ack('room:ready', { ready: !me?.ready });
+  const res = await net.ack('room:ready', { ready: !me?.ready });
+  if (!res.ok) toast(ERRORS[res.error] ?? 'No se pudo marcar Listo, intenta de nuevo');
 });
 
 $('btn-copy').addEventListener('click', async () => {
@@ -492,10 +493,11 @@ function renderRoom(): void {
 
   const me = room.members.find((m) => m.userId === user?.id);
   $('btn-ready').textContent = me?.ready ? 'Cancelar listo' : 'Estoy listo';
+  $<HTMLButtonElement>('btn-ready').disabled = room.phase === 'ended' || room.phase === 'playing';
   const status = $('room-status');
   if (room.phase === 'countdown') status.textContent = 'Todos listos, iniciando…';
   else if (room.phase === 'playing') status.textContent = 'Partida en curso';
-  else if (room.phase === 'ended') status.textContent = 'Partida terminada';
+  else if (room.phase === 'ended') status.textContent = 'Partida terminada, preparando la sala...';
   else
     status.textContent = `Listos: ${ready} de ${room.members.length}. La partida empieza cuando todos estén listos.`;
 }
