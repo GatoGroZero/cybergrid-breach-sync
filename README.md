@@ -70,9 +70,9 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 | Medición                                                                | Resultado                                        |
 | ----------------------------------------------------------------------- | ------------------------------------------------ |
 | Tiempo de proceso de la telemetría en el servidor                       | ~1 ms (consulta SQL ~0.7 ms, con 1 000 partidas) |
-| `ping`/`pong` por WebSocket (40 muestras)                               | mediana ~96 ms, mínimo ~83 ms                    |
+| `ping`/`pong` por WebSocket (40 muestras)                               | mediana entre 96 y 100 ms, mínimo ~85 ms         |
 | `GET /api/test/telemetry` con conexión reutilizada                      | ~92 ms                                           |
-| `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos) | ~200 ms                                          |
+| `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos) | ~180 a 200 ms                                    |
 | FPS del juego (Chromium, monitor de 60 Hz)                              | 60                                               |
 | Instantáneas del servidor                                               | 30 por segundo                                   |
 
