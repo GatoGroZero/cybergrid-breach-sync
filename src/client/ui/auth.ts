@@ -45,6 +45,7 @@ export class AuthScreen {
 
   /** Deja la pantalla lista para mostrarse: campos limpios y solo las formas de entrar activas. */
   async prepare(message = ''): Promise<void> {
+    $<HTMLDetailsElement>('auth-legacy').open = false;
     this.setMode('login');
     this.showEmailStep();
     this.error.textContent = message;
@@ -62,8 +63,9 @@ export class AuthScreen {
     $('or-guest').hidden = !google && !email;
     const legacy = $<HTMLDetailsElement>('auth-legacy');
     legacy.hidden = !password;
-    // Si es lo unico que hay, se muestra abierto.
-    legacy.open = password && !google && !email && !guest;
+    // Si es lo unico que hay, se muestra abierto. Nunca se cierra aqui: el jugador pudo abrirlo
+    // mientras llegaba la respuesta del servidor.
+    if (password && !google && !email && !guest) legacy.open = true;
   }
 
   private setMode(mode: 'login' | 'register'): void {
