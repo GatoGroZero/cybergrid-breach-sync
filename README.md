@@ -125,9 +125,29 @@ curl -s -X POST https://cybergrid-breach-sync.onrender.com/api/test/seed \
 - `DELETE /api/test/seed` borra solo las partidas sembradas (las reales no se tocan) y deja la telemetría limpia.
 - Son públicos a propósito porque el enunciado lo exige. Llevan límite de peticiones, tope de tamaño y de cantidad, y se pueden apagar con `ENABLE_TEST_ENDPOINTS=false`.
 
+## Acceso
+
+La pantalla de acceso ofrece solo lo que el servidor tiene activo (`GET /api/auth/config`):
+
+| Forma de entrar       | Cómo funciona                                                                                                                                                                                                                 | Se activa con                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Google**            | Flujo de código en el servidor con PKCE, `state` y `nonce`. El navegador nunca ve el secreto ni el token; solo se pide `openid profile` (no se guarda el correo). La CSP no se abre a scripts de terceros.                    | `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`         |
+| **Código por correo** | Llega un código de 6 números y se escribe en el juego. No guarda nada en el servidor: el desafío viaja en una cookie firmada con un HMAC del código, caduca en 10 minutos, sirve una vez y solo en el navegador que lo pidió. | `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM`     |
+| **Invitado**          | Un clic, sin cuenta. La sesión se queda en el dispositivo.                                                                                                                                                                    | Activo por defecto (`GUEST_LOGIN=false` lo apaga)   |
+| Usuario y contraseña  | Cuentas locales para pruebas y para la revisión. Va recogido en un desplegable.                                                                                                                                               | Activo por defecto (`PASSWORD_AUTH=false` lo apaga) |
+
+**La cuenta no depende del disco.** El servidor gratuito de Render borra su disco al reiniciarse, así que una cuenta guardada solo en SQLite desaparecía al abrirla desde otro dispositivo. Ahora la identidad la pone el proveedor (el `sub` de Google, la huella del correo o un id de invitado), el id del jugador se calcula a partir de ella y la sesión es una cookie firmada: entrar con Google en otro dispositivo da el mismo jugador, y reiniciar el servidor no cierra sesiones. La primera vez en cada navegador se confirma el apodo (3 a 16 letras, números, guion bajo y espacios) y se puede cambiar tocando el nombre en el lobby.
+
+**Correo sin SMTP.** Render bloquea los puertos SMTP (25, 465 y 587) en el plan gratuito, así que los códigos salen por la API HTTPS de [Resend](https://resend.com) o [Brevo](https://www.brevo.com). Para que lleguen a cualquier persona el remitente debe estar verificado (lo recomendable es un dominio propio). Sin esas variables la opción de correo simplemente no aparece.
+
+**Configurar Google.** En [Google Cloud Console](https://console.cloud.google.com/apis/credentials) crea un "ID de cliente de OAuth" de tipo "Aplicación web" y agrega como URI de redireccionamiento autorizado `https://TU-DOMINIO/api/auth/google/callback`. Copia el ID y el secreto a `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. La dirección pública sale de `PUBLIC_URL` o, en Render, de `RENDER_EXTERNAL_URL`.
+
 ## Seguridad
 
 - Contraseñas con `scrypt` y sal propia; el tiempo de respuesta no distingue entre usuario inexistente y contraseña incorrecta.
+- Google: `state` ligado a una cookie del navegador, `nonce` y PKCE (S256), el `id_token` se valida contra las llaves públicas de Google (emisor, audiencia, firma, vigencia y nonce) y el regreso usa la dirección configurada, nunca la cabecera `Host`.
+- Código por correo: 6 números aleatorios, HMAC con el secreto del servidor, 5 intentos por código, un solo uso, 3 códigos por correo cada 10 minutos, 300 al día y tope por IP. La respuesta nunca dice si un correo existe ni lo devuelve.
+- Todas las respuestas de acceso llevan `Cache-Control: no-store`, las peticiones exigen JSON y se rechazan los orígenes ajenos.
 - Sesión en cookie `httpOnly`, `SameSite=Lax` y `Secure` en producción. El socket se autentica en el handshake: sin sesión no hay conexión ni salas.
 - Límite de intentos de login, validación de todo lo que entra con Zod, cabeceras de Helmet y una política de contenido estricta (sin scripts ni estilos en línea).
 - El servidor no confía en el cliente: recorta los vectores de movimiento, limita cuántos pasos puede avanzar un jugador por tick (contra aceleración), valida que el objeto exista en su inventario y su distancia al cofre, y descarta cualquier campo de más. Cada cliente solo recibe lo que está cerca de su gato.
@@ -141,24 +161,26 @@ npm run test:cov    # con cobertura
 npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 ```
 
-| Área que pide el PDF                     | Archivo                                                       |
-| ---------------------------------------- | ------------------------------------------------------------- |
-| Generador procedural de mapas            | `tests/unit/br-map.test.ts`                                   |
-| Fórmulas de daño, escudo y escalado      | `tests/unit/br-combat.test.ts`, `tests/unit/br-items.test.ts` |
-| Esquemas Zod del payload                 | `tests/unit/schemas.test.ts`                                  |
-| Interpolación de posiciones de jugadores | `tests/unit/interp.test.ts`                                   |
-| Bucle a 60 FPS por delta time            | `tests/unit/timing.test.ts`                                   |
-| Física y colisiones                      | `tests/unit/br-physics.test.ts`                               |
-| Reglas de la partida, bots y autoridad   | `tests/unit/br-game.test.ts`                                  |
-| Endpoints `/api/test/*` y rendimiento    | `tests/unit/api.test.ts`                                      |
-| Autenticación y latencia ping/pong       | `tests/unit/auth-sockets.test.ts`                             |
-| Lobbies y protección de salas            | `tests/unit/lobby.test.ts`                                    |
-| Geometría de los controles táctiles      | `tests/unit/controls.test.ts`                                 |
-| E2E 1: autenticación y salas protegidas  | `tests/e2e/1-autenticacion.spec.ts`                           |
-| E2E 2: lobbies, estado Listo y sockets   | `tests/e2e/2-lobby.spec.ts`                                   |
-| E2E 3: canvas, controles y coordenadas   | `tests/e2e/3-canvas.spec.ts`                                  |
-| E2E extra: cofres, inventario y pintor   | `tests/e2e/4-botin.spec.ts`                                   |
-| E2E móvil: joystick táctil y giro        | `tests/e2e/movil.spec.ts`                                     |
+| Área que pide el PDF                        | Archivo                                                          |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| Generador procedural de mapas               | `tests/unit/br-map.test.ts`                                      |
+| Fórmulas de daño, escudo y escalado         | `tests/unit/br-combat.test.ts`, `tests/unit/br-items.test.ts`    |
+| Esquemas Zod del payload                    | `tests/unit/schemas.test.ts`                                     |
+| Interpolación de posiciones de jugadores    | `tests/unit/interp.test.ts`                                      |
+| Bucle a 60 FPS por delta time               | `tests/unit/timing.test.ts`                                      |
+| Física y colisiones                         | `tests/unit/br-physics.test.ts`                                  |
+| Reglas de la partida, bots y autoridad      | `tests/unit/br-game.test.ts`                                     |
+| Endpoints `/api/test/*` y rendimiento       | `tests/unit/api.test.ts`                                         |
+| Autenticación y latencia ping/pong          | `tests/unit/auth-sockets.test.ts`                                |
+| Lobbies y protección de salas               | `tests/unit/lobby.test.ts`, `tests/unit/rooms.test.ts`           |
+| Acceso: Google, correo, invitado, apodo     | `tests/unit/auth-providers.test.ts`, `tests/unit/mailer.test.ts` |
+| Geometría de los controles táctiles         | `tests/unit/controls.test.ts`                                    |
+| E2E 1: autenticación y salas protegidas     | `tests/e2e/1-autenticacion.spec.ts`                              |
+| E2E 2: lobbies, estado Listo y sockets      | `tests/e2e/2-lobby.spec.ts`                                      |
+| E2E 6: acceso con Google, correo e invitado | `tests/e2e/6-acceso.spec.ts`                                     |
+| E2E 3: canvas, controles y coordenadas      | `tests/e2e/3-canvas.spec.ts`                                     |
+| E2E extra: cofres, inventario y pintor      | `tests/e2e/4-botin.spec.ts`                                      |
+| E2E móvil: joystick táctil y giro           | `tests/e2e/movil.spec.ts`                                        |
 
 ## Correrlo en local
 
@@ -167,12 +189,12 @@ Requiere Node 22 o superior.
 ```bash
 npm ci
 npm run build
-npm start            # http://localhost:3000, con las cuentas demo
+npm start            # http://localhost:3000 (entra como invitado, o con demo1 / CyberGrid26 en el desplegable)
 ```
 
 Para desarrollar con recarga: `npm run dev:server` y, en otra terminal, `npm run dev:client` (http://localhost:5173). `npm run verify` corre revisión de texto, tipos, lint, pruebas y compilación. `npx tsx scripts/sim-br.ts 8 todos` simula partidas completas de bots para revisar el balance.
 
-Variables de entorno: `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit` y `dev:finish`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
+Variables de entorno: `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `PASSWORD_AUTH`, `GUEST_LOGIN`, `SESSION_DAYS`, `PUBLIC_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_PROVIDER` (`resend`, `brevo` o `console` solo fuera de producción), `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit` y `dev:finish`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
 
 ## Estructura
 

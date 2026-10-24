@@ -62,14 +62,16 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     await registerViaUi(page, uniqueName('e2e_pin'));
     const canvas = page.locator('#paint-canvas');
     await expect(canvas).toBeVisible();
+    await page.locator('#palette button').nth(8).click();
+    await page.locator('#brushes button').nth(2).click();
+    // Los clics pueden desplazar la página: la caja del lienzo se mide después.
+    await canvas.scrollIntoViewIfNeeded();
     const box = (await canvas.boundingBox()) as {
       x: number;
       y: number;
       width: number;
       height: number;
     };
-    await page.locator('#palette button').nth(8).click();
-    await page.locator('#brushes button').nth(2).click();
     // Un trazo por el lomo del gato (la cuadricula ocupa 26 x 18 celdas).
     await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
     await page.mouse.down();

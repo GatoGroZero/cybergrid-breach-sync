@@ -36,55 +36,145 @@
         <canvas id="auth-cat" class="auth-cat" width="104" height="72" aria-hidden="true"></canvas>
         <h1 class="logo">GATO<span>ROYALE</span></h1>
         <p class="tagline">CyberGrid · Battle Royale de gatos</p>
-        <div class="tabs" role="tablist" aria-label="Acceso">
-          <button
-            id="tab-login"
-            class="tab is-active"
-            role="tab"
-            aria-selected="true"
-            type="button"
+
+        <div class="auth-methods">
+          <a
+            id="btn-google"
+            class="btn google wide"
+            href="/api/auth/google/start"
+            hidden
+            data-testid="btn-google"
           >
-            Entrar
-          </button>
-          <button id="tab-register" class="tab" role="tab" aria-selected="false" type="button">
-            Crear cuenta
-          </button>
+            <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true" focusable="false">
+              <path
+                fill="#EA4335"
+                d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+              />
+              <path
+                fill="#4285F4"
+                d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+              />
+              <path
+                fill="#34A853"
+                d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+              />
+            </svg>
+            <span>Continuar con Google</span>
+          </a>
+
+          <div id="auth-email" class="auth-block" hidden>
+            <p id="or-email" class="or"><span>o con tu correo</span></p>
+            <form id="email-form" novalidate>
+              <label class="field">
+                <span>Correo</span>
+                <input
+                  id="email-address"
+                  data-testid="email-address"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="email"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  maxlength="254"
+                  placeholder="tu@correo.com"
+                />
+              </label>
+              <button id="email-send" class="btn wide" type="submit" data-testid="email-send">
+                Enviarme un código
+              </button>
+            </form>
+            <form id="code-form" hidden novalidate>
+              <p id="code-help" class="muted"></p>
+              <label class="field">
+                <span>Código de 6 números</span>
+                <input
+                  id="email-code"
+                  data-testid="email-code"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  maxlength="6"
+                  placeholder="000000"
+                />
+              </label>
+              <button
+                id="code-submit"
+                class="btn primary wide"
+                type="submit"
+                data-testid="code-submit"
+              >
+                Entrar
+              </button>
+              <button id="code-back" class="link" type="button">Usar otro correo</button>
+            </form>
+          </div>
+
+          <div id="auth-guest" class="auth-block" hidden>
+            <p id="or-guest" class="or"><span>o</span></p>
+            <button id="btn-guest" class="btn wide" type="button" data-testid="btn-guest">
+              Jugar como invitado
+            </button>
+            <p class="muted fine">Sin cuenta ni correo. Tu sesión se queda en este dispositivo.</p>
+          </div>
         </div>
-        <form id="auth-form" novalidate>
-          <label class="field">
-            <span>Usuario</span>
-            <input
-              id="auth-user"
-              name="username"
-              data-testid="auth-user"
-              autocomplete="username"
-              autocapitalize="none"
-              spellcheck="false"
-              maxlength="20"
-              required
-            />
-          </label>
-          <label class="field">
-            <span>Contraseña</span>
-            <input
-              id="auth-pass"
-              name="password"
-              data-testid="auth-pass"
-              type="password"
-              autocomplete="current-password"
-              maxlength="128"
-              required
-            />
-          </label>
-          <p id="auth-error" class="error" role="alert" data-testid="auth-error"></p>
-          <button id="auth-submit" class="btn primary wide" type="submit" data-testid="auth-submit">
-            Entrar
-          </button>
-        </form>
-        <p class="hint">
-          Cuenta de prueba: <code>demo1</code> / <code>CyberGrid26</code>
-          <button id="fill-demo" class="link" type="button">usar</button>
-        </p>
+
+        <p id="auth-error" class="error" role="alert" data-testid="auth-error"></p>
+
+        <details id="auth-legacy" class="legacy" hidden data-testid="auth-legacy">
+          <summary>Usuario y contraseña</summary>
+          <div class="tabs" role="tablist" aria-label="Acceso con contraseña">
+            <button
+              id="tab-login"
+              class="tab is-active"
+              role="tab"
+              aria-selected="true"
+              type="button"
+            >
+              Entrar
+            </button>
+            <button id="tab-register" class="tab" role="tab" aria-selected="false" type="button">
+              Crear cuenta
+            </button>
+          </div>
+          <form id="auth-form" novalidate>
+            <label class="field">
+              <span>Usuario</span>
+              <input
+                id="auth-user"
+                name="username"
+                data-testid="auth-user"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                maxlength="20"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Contraseña</span>
+              <input
+                id="auth-pass"
+                name="password"
+                data-testid="auth-pass"
+                type="password"
+                autocomplete="current-password"
+                maxlength="128"
+                required
+              />
+            </label>
+            <button
+              id="auth-submit"
+              class="btn primary wide"
+              type="submit"
+              data-testid="auth-submit"
+            >
+              Entrar
+            </button>
+          </form>
+        </details>
       </section>
     </main>
 
@@ -96,7 +186,13 @@
           <span id="lobby-net" class="chip" data-testid="lobby-net" data-state="offline"
             >sin conexión</span
           >
-          <span id="lobby-user" class="chip user" data-testid="lobby-user"></span>
+          <button
+            id="lobby-user"
+            class="chip user"
+            type="button"
+            title="Cambiar apodo"
+            data-testid="lobby-user"
+          ></button>
           <button
             id="btn-settings"
             class="btn ghost small"
@@ -423,6 +519,41 @@
     </div>
 
     <!-- ============================================================ ajustes -->
+    <div
+      id="nick-panel"
+      class="overlay"
+      hidden
+      data-testid="nick-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="nick-title"
+    >
+      <form id="nick-form" class="card modal" novalidate>
+        <h2 id="nick-title">Tu apodo</h2>
+        <p class="muted">Así te verán los demás gatos en las salas y en la partida.</p>
+        <label class="field">
+          <span>Apodo</span>
+          <input
+            id="nick-input"
+            data-testid="nick-input"
+            maxlength="16"
+            autocomplete="nickname"
+            autocapitalize="words"
+            spellcheck="false"
+          />
+        </label>
+        <p id="nick-error" class="error" role="alert" data-testid="nick-error"></p>
+        <div class="row">
+          <button id="nick-save" class="btn primary" type="submit" data-testid="nick-save">
+            Listo
+          </button>
+          <button id="nick-cancel" class="btn ghost" type="button" data-testid="nick-cancel">
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </div>
+
     <div
       id="settings"
       class="overlay"

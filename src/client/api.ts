@@ -1,6 +1,15 @@
 export interface User {
   id: number;
   username: string;
+  provider: 'google' | 'email' | 'guest' | 'local';
+}
+
+/** Que formas de entrar tiene activas el servidor. */
+export interface AuthConfig {
+  google: boolean;
+  email: boolean;
+  guest: boolean;
+  password: boolean;
 }
 
 export class ApiError extends Error {
@@ -48,6 +57,21 @@ export const api = {
   },
   async register(username: string, password: string): Promise<User> {
     return (await call<{ user: User }>('/api/auth/register', { username, password })).user;
+  },
+  async config(): Promise<AuthConfig> {
+    return call<AuthConfig>('/api/auth/config');
+  },
+  async guest(nickname?: string): Promise<User> {
+    return (await call<{ user: User }>('/api/auth/guest', { nickname })).user;
+  },
+  async emailStart(email: string): Promise<void> {
+    await call('/api/auth/email/start', { email });
+  },
+  async emailVerify(email: string, code: string): Promise<User> {
+    return (await call<{ user: User }>('/api/auth/email/verify', { email, code })).user;
+  },
+  async setNickname(nickname: string): Promise<User> {
+    return (await call<{ user: User }>('/api/auth/nickname', { nickname })).user;
   },
   async logout(): Promise<void> {
     await call('/api/auth/logout', {});
