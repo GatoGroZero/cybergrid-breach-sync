@@ -341,7 +341,8 @@ export class BRRenderer {
           life: 0.4,
           grav: 90,
         });
-        if (ev.v >= 4 || ev.kill) fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
+        if (ev.v >= 4 || ev.kill)
+          fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
         const d = this.distToMe(ev.x, ev.y);
         if (d < 12 && g?.alive) this.sfx.hurt();
         else if (d < 240) this.sfx.hit();

@@ -1132,7 +1132,6 @@ input::placeholder {
   }
 }
 
-
 @media (max-height: 520px) {
   .overlay {
     align-items: start;

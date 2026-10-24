@@ -1,13 +1,13 @@
 {
-  "name": "CyberGrid: Breach & Sync",
-  "short_name": "CyberGrid",
-  "description": "Juego cooperativo en tiempo real con servidor autoritativo",
+  "name": "CyberGrid Gato Royale",
+  "short_name": "Gato Royale",
+  "description": "Battle royale multijugador de gatos en pixeles, con servidor autoritativo",
   "start_url": "/lobby",
   "scope": "/",
   "display": "fullscreen",
   "orientation": "landscape",
-  "background_color": "#04060c",
-  "theme_color": "#04060c",
+  "background_color": "#1a1c2c",
+  "theme_color": "#1a1c2c",
   "lang": "es",
   "icons": [
     {
