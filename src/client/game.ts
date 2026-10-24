@@ -116,6 +116,10 @@ export class ClientGame {
     return this.stepper.alpha;
   }
 
+  get connected(): boolean {
+    return this.net.connected;
+  }
+
   get serverNow(): number {
     return performance.now() + this.serverOffset;
   }

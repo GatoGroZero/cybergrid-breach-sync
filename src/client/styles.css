@@ -476,6 +476,10 @@ code {
   cursor: pointer;
 }
 
+.mute.quit {
+  top: 170px;
+}
+
 .mute[data-muted='true'] {
   color: var(--red);
   border-color: rgba(255, 59, 92, 0.5);

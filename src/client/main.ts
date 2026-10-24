@@ -81,6 +81,7 @@ function showView(view: View): void {
   canvas.hidden = view !== 'game';
   hud.hidden = view !== 'game';
   btnMute.hidden = view !== 'game';
+  $('btn-quit').hidden = view !== 'game';
   document.body.classList.toggle('playing', view === 'game');
   if (input) input.active = view === 'game';
   if (view === 'game') renderer?.resize();
@@ -410,6 +411,11 @@ function startGame(payload: GameStartPayload): void {
   game = new ClientGame(payload, net, input, sfx);
   $('hud-mode').textContent = input.mode === 'touch' ? 'táctil' : 'teclado';
   sfx.go();
+  game.banner = {
+    text: 'Abran los 3 nodos y luego sincronicen en la salida',
+    until: performance.now() + 5000,
+    tone: 'info',
+  };
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
     raf = requestAnimationFrame(frame);
@@ -506,6 +512,19 @@ function endGame(payload: GameEndPayload): void {
     if (game?.result) resultsEl.hidden = false;
   }, 900);
 }
+
+$('btn-quit').addEventListener('click', async () => {
+  if (!net || !game) return;
+  if (!game.result && !window.confirm('¿Salir de la partida? Tu equipo seguirá sin ti.')) return;
+  await net.ack('room:leave');
+  room = null;
+  resultsEl.hidden = true;
+  cancelAnimationFrame(raf);
+  raf = 0;
+  game = null;
+  navigate('/lobby');
+  void enterLobby();
+});
 
 $('btn-back').addEventListener('click', () => {
   resultsEl.hidden = true;
