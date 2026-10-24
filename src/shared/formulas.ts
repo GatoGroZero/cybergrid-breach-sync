@@ -11,9 +11,9 @@ export interface DroneStats {
 }
 
 const BASE: Record<DroneKind, DroneStats> = {
-  crawler: { hp: 30, speed: 125, damage: 10, radius: 9, armor: 0, fireInterval: 0 },
-  spitter: { hp: 24, speed: 85, damage: 9, radius: 9, armor: 0, fireInterval: 1.9 },
-  brute: { hp: 120, speed: 70, damage: 22, radius: 15, armor: 20, fireInterval: 0 },
+  crawler: { hp: 36, speed: 125, damage: 7, radius: 9, armor: 0, fireInterval: 0 },
+  spitter: { hp: 28, speed: 85, damage: 7, radius: 9, armor: 0, fireInterval: 2.1 },
+  brute: { hp: 150, speed: 70, damage: 16, radius: 15, armor: 20, fireInterval: 0 },
 };
 
 /** Cada jugador extra sube 35 % la vida de los drones. */
@@ -29,8 +29,8 @@ export function scaleByWave(base: number, wave: number, perWave: number): number
 export function droneStats(kind: DroneKind, wave: number, players: number): DroneStats {
   const base = BASE[kind];
   return {
-    hp: Math.round(scaleByWave(base.hp, wave, 0.14) * playerCountFactor(players)),
-    damage: Math.round(scaleByWave(base.damage, wave, 0.07) * 10) / 10,
+    hp: Math.round(scaleByWave(base.hp, wave, 0.18) * playerCountFactor(players)),
+    damage: Math.round(scaleByWave(base.damage, wave, 0.1) * 10) / 10,
     speed: Math.min(base.speed * 1.35, scaleByWave(base.speed, wave, 0.015)),
     radius: base.radius,
     armor: base.armor,
@@ -55,12 +55,12 @@ export function waveAt(elapsedSeconds: number, nodesBreached: number): number {
 }
 
 export function spawnInterval(wave: number, players: number): number {
-  return Math.max(0.7, (3.4 - 0.18 * Math.max(0, wave)) / Math.sqrt(playerCountFactor(players)));
+  return Math.max(0.8, (4.4 - 0.2 * Math.max(0, wave)) / Math.sqrt(playerCountFactor(players)));
 }
 
 export function maxDrones(wave: number, players: number): number {
   const p = clamp(Math.floor(players), 1, 4);
-  return Math.min(40, 8 + 2 * Math.max(0, wave) + 4 * (p - 1));
+  return Math.min(40, 6 + 2 * Math.max(0, wave) + 4 * (p - 1));
 }
 
 /** Elige el tipo de dron segun la oleada. `roll` va de 0 a 1. */

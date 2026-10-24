@@ -139,7 +139,10 @@ describe('reglas de la partida', () => {
       a.y = node.y;
       b.x = node.x + 5;
       b.y = node.y;
-      for (let i = 0; i < Math.ceil((NODE.captureSeconds + 1) / SIM_DT); i++) game.step();
+      for (let i = 0; i < Math.ceil((NODE.captureSeconds + 1) / SIM_DT); i++) {
+        internals(game).drones.length = 0;
+        game.step();
+      }
     });
     expect(game.nodeOpen.every(Boolean)).toBe(true);
     expect(game.exitOpen).toBe(true);
@@ -149,7 +152,10 @@ describe('reglas de la partida', () => {
     a.y = game.map.exit.y;
     b.x = game.map.exit.x + 10;
     b.y = game.map.exit.y;
-    for (let i = 0; i < 4 / SIM_DT && !game.over; i++) game.step();
+    for (let i = 0; i < 8 / SIM_DT && !game.over; i++) {
+      internals(game).drones.length = 0;
+      game.step();
+    }
     expect(game.over).toBe(true);
     expect(game.result?.result).toBe('win');
     expect(game.result?.reason).toBe('sync');

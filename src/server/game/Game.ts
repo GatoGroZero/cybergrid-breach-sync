@@ -117,7 +117,7 @@ const MAX_PICKUPS = 12;
 const MAX_EVENTS = 160;
 const OFFLINE_FORFEIT_S = 30;
 const AUTO_AIM_RANGE = 380;
-const GRACE_SECONDS = 6;
+const GRACE_SECONDS = 10;
 
 const q1 = (v: number): number => Math.round(v * 10) / 10;
 const q2 = (v: number): number => Math.round(v * 100) / 100;
@@ -153,6 +153,8 @@ export class Game {
   syncProgress = 0;
   result: GameEndPayload | null = null;
   private respawnAt: Vec;
+  /** Punto que los jugadores estan defendiendo (nodo en apertura o salida): atrae a los drones. */
+  private pressureAt: Vec | null = null;
 
   constructor(options: GameOptions) {
     this.seed = options.seed;
@@ -268,6 +270,7 @@ export class Game {
     this.tick++;
     this.time += dt;
 
+    this.pressureAt = null;
     this.stepPlayers(dt);
     this.updateNodes(dt);
     this.updateSync(dt);
@@ -418,6 +421,11 @@ export class Game {
     p.y = this.respawnAt.y + this.rng.range(-14, 14);
     p.invuln = PLAYER.invulnSeconds;
     p.budget = 3 * SIM_DT;
+    // Pulso de reinicio: aturde a los drones cercanos para que no te esperen en el punto de aparicion.
+    for (const d of this.drones) {
+      if (dist(p.x, p.y, d.x, d.y) <= 220) d.stun = Math.max(d.stun, 3);
+    }
+    this.emit({ e: 'use', x: q1(p.x), y: q1(p.y), it: ITEM_KINDS.indexOf('emp'), by: p.id });
     this.emit({ e: 'respawn', id: p.id, x: q1(p.x), y: q1(p.y) });
   }
 
@@ -460,9 +468,16 @@ export class Game {
       if (this.nodeOpen[i]) return;
       const inside = living.filter((p) => dist(p.x, p.y, node.x, node.y) <= NODE.radius).length;
       const progress = this.nodeProgress[i] as number;
+      const contested = this.drones.some(
+        (d) => d.stun <= 0 && dist(d.x, d.y, node.x, node.y) <= NODE.radius + 55,
+      );
       if (inside > 0) {
-        const rate = 1 + 0.5 * (inside - 1);
-        this.nodeProgress[i] = Math.min(1, progress + (dt / NODE.captureSeconds) * rate);
+        this.pressureAt = node;
+        // Con drones encima el nodo esta disputado: la captura se frena hasta despejarlos.
+        if (!contested) {
+          const rate = 1 + 0.5 * (inside - 1);
+          this.nodeProgress[i] = Math.min(1, progress + (dt / NODE.captureSeconds) * rate);
+        }
       } else {
         this.nodeProgress[i] = Math.max(0, progress - dt / NODE.decaySeconds);
       }
@@ -484,6 +499,10 @@ export class Game {
     if (opened >= NODE.count && !this.exitOpen) {
       this.exitOpen = true;
       this.emit({ e: 'exit' });
+      for (let i = 0; i < 6; i++) {
+        const at = this.pickSpawnPoint(this.map.exit);
+        if (at) this.spawnDrone(pickDroneKind(this.wave, this.rng.next()), at);
+      }
     }
   }
 
@@ -493,8 +512,16 @@ export class Game {
     const allIn =
       living.length > 0 &&
       living.every((p) => dist(p.x, p.y, this.map.exit.x, this.map.exit.y) <= EXIT.radius);
-    if (allIn) this.syncProgress = Math.min(1, this.syncProgress + dt / EXIT.syncSeconds);
-    else this.syncProgress = Math.max(0, this.syncProgress - dt / 1.5);
+    if (living.some((p) => dist(p.x, p.y, this.map.exit.x, this.map.exit.y) <= EXIT.radius + 40)) {
+      this.pressureAt = this.map.exit;
+    }
+    const exitContested = this.drones.some(
+      (d) => d.stun <= 0 && dist(d.x, d.y, this.map.exit.x, this.map.exit.y) <= EXIT.radius + 50,
+    );
+    if (!allIn) this.syncProgress = Math.max(0, this.syncProgress - dt / 1.5);
+    else if (!exitContested) {
+      this.syncProgress = Math.min(1, this.syncProgress + dt / EXIT.syncSeconds);
+    }
   }
 
   // ---------------------------------------------------------------- drones
@@ -514,21 +541,24 @@ export class Game {
     });
   }
 
-  private pickSpawnPoint(): Vec | null {
+  private pickSpawnPoint(near: Vec | null = null): Vec | null {
     const living = this.livingPlayers;
     if (living.length === 0) return null;
     let best: Vec | null = null;
-    let bestScore = -1;
-    for (let i = 0; i < 10; i++) {
+    let bestScore = -Infinity;
+    for (let i = 0; i < 14; i++) {
       const room = this.rng.int(0, this.map.rooms.length - 1);
       const point = randomPointInRoom(this.map, room, this.rng.next);
       const nearest = Math.min(...living.map((p) => dist(p.x, p.y, point.x, point.y)));
-      if (nearest > bestScore) {
-        bestScore = nearest;
+      if (nearest < (near ? 230 : 280)) continue;
+      // Con un punto bajo defensa, los drones nacen a unos 400 px de el para converger rapido.
+      const score = near ? -Math.abs(dist(near.x, near.y, point.x, point.y) - 420) : nearest;
+      if (score > bestScore) {
+        bestScore = score;
         best = point;
       }
     }
-    return bestScore >= 280 ? best : null;
+    return best;
   }
 
   private spawnDirector(dt: number): void {
@@ -536,10 +566,11 @@ export class Game {
     if (this.spawnTimer > 0) return;
     const wave = this.wave;
     const count = this.players.length;
+    const pressured = this.pressureAt !== null;
     const pace = spawnInterval(wave, count) * this.rng.range(0.8, 1.25);
-    this.spawnTimer = this.exitOpen ? pace * 0.7 : pace;
-    if (this.drones.length >= maxDrones(wave, count)) return;
-    const at = this.pickSpawnPoint();
+    this.spawnTimer = pressured ? pace * 0.4 : this.exitOpen ? pace * 0.7 : pace;
+    if (this.drones.length >= maxDrones(wave, count) + (pressured ? 6 : 0)) return;
+    const at = this.pickSpawnPoint(this.pressureAt);
     if (at) this.spawnDrone(pickDroneKind(wave, this.rng.next()), at);
   }
 
@@ -606,7 +637,7 @@ export class Game {
           });
         }
       } else if (dd < d.stats.radius + PLAYER.radius + 3 && d.cooldown <= 0) {
-        d.cooldown = d.kind === 'brute' ? 1.0 : 0.7;
+        d.cooldown = d.kind === 'brute' ? 1.3 : 0.9;
         this.damagePlayer(target, d.stats.damage);
       }
     }
