@@ -387,6 +387,9 @@ let lastRender = 0;
 let frames = 0;
 let fpsStart = 0;
 let fps = 0;
+let rawFrames = 0;
+let rafHz = 60;
+let slowWindows = 0;
 let lastHud = 0;
 
 function startGame(payload: GameStartPayload): void {
@@ -416,6 +419,7 @@ function startGame(payload: GameStartPayload): void {
 function frame(now: number): void {
   raf = requestAnimationFrame(frame);
   if (!game || !renderer || !net) return;
+  rawFrames++;
 
   const dt = Math.min(0.1, (now - lastTick) / 1000);
   lastTick = now;
@@ -429,8 +433,17 @@ function frame(now: number): void {
   frames++;
   if (now - fpsStart >= 500) {
     fps = Math.round((frames * 1000) / (now - fpsStart));
+    rafHz = (rawFrames * 1000) / (now - fpsStart);
     frames = 0;
+    rawFrames = 0;
     fpsStart = now;
+    // Resolucion dinamica: si el monitor da 60 Hz o mas pero no llegamos a 60 FPS, baja la
+    // resolucion del canvas. Si el monitor es de 30 Hz no se castiga la calidad.
+    slowWindows = rafHz > 56 && fps < 52 ? slowWindows + 1 : 0;
+    if (slowWindows >= 4) {
+      renderer.setQuality(renderer.quality - 0.125);
+      slowWindows = 0;
+    }
   }
   if (now - lastHud >= 100) {
     lastHud = now;
@@ -457,6 +470,7 @@ function updateHud(g: ClientGame, n: Net): void {
     mode: input?.mode ?? 'keyboard',
     snapshots: g.snapshotsPerSecond,
     connected: n.connected,
+    quality: renderer?.quality ?? 1,
   };
 }
 
@@ -556,6 +570,7 @@ declare global {
       mode: string;
       snapshots: number;
       connected: boolean;
+      quality: number;
     };
   }
 }

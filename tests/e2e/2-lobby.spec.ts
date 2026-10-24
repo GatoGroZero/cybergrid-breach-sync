@@ -55,6 +55,8 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await a.getByTestId('room-name').fill('Privada E2E');
     await a.getByTestId('room-private').check();
     await a.getByTestId('btn-create').click();
+    await expect(a.getByTestId('room-view')).toBeVisible();
+    await expect(a.getByTestId('room-code')).toHaveText(/^[A-HJ-NP-Z2-9]{5}$/);
     const code = (await a.getByTestId('room-code').textContent()) ?? '';
 
     await b.waitForTimeout(3500);

@@ -44,6 +44,7 @@ declare global {
       mode: string;
       snapshots: number;
       connected: boolean;
+      quality: number;
     };
   }
 }

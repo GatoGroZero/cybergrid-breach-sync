@@ -55,6 +55,8 @@ function rrect(
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  /** Escala de resolucion (0.5 a 1). Baja sola si no se sostienen los 60 FPS. */
+  quality = 1;
   cssW = 960;
   cssH = 540;
   private readonly glows = new Map<string, HTMLCanvasElement>();
@@ -81,9 +83,9 @@ export class Renderer {
   resize(): void {
     const w = Math.max(320, Math.round(this.canvas.clientWidth || window.innerWidth));
     const h = Math.max(240, Math.round(this.canvas.clientHeight || window.innerHeight));
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dpr = Math.min(window.devicePixelRatio || 1, 2) * this.quality;
     // Tope de pixeles: en celulares de alta densidad un lienzo enorme baja los cuadros por segundo.
-    while (w * h * dpr * dpr > 2_600_000 && dpr > 1) dpr = Math.max(1, dpr - 0.25);
+    while (w * h * dpr * dpr > 2_600_000 && dpr > 0.75) dpr = Math.max(0.75, dpr - 0.125);
     this.cssW = w;
     this.cssH = h;
     this.dpr = dpr;
@@ -95,6 +97,13 @@ export class Renderer {
     this.minimapW = w < 700 ? 120 : 168;
     this.minimapH = Math.round((this.minimapW * MAP_H) / MAP_W);
     this.minimapSeed = -1;
+  }
+
+  setQuality(q: number): void {
+    const next = Math.min(1, Math.max(0.5, q));
+    if (next === this.quality) return;
+    this.quality = next;
+    this.resize();
   }
 
   /** Pantalla de espera mientras no hay partida. */
