@@ -132,13 +132,25 @@ export function drawTouchControls(
 
   if (st.editing) {
     ctx.font = `10px ${FONT}`;
-    ctx.fillStyle = 'rgba(244,244,244,0.85)';
-    for (const id of ['stick', 'fire', 'interact', 'bag', 'menu', 'map'] as const) {
+    ctx.fillStyle = 'rgba(244,244,244,0.9)';
+    ctx.textBaseline = 'middle';
+    const put = (label: string, x: number, y: number, align: CanvasTextAlign): void => {
+      const tw = ctx.measureText(label).width;
+      const cx = align === 'center' ? Math.min(w - tw / 2 - 4, Math.max(tw / 2 + 4, x)) : x;
+      ctx.textAlign = align;
+      ctx.fillText(label, cx, y);
+    };
+    for (const id of ['stick', 'fire', 'interact', 'menu'] as const) {
       const c = circles[id];
-      ctx.fillText(TOUCH_LABELS[id], c.x, c.y + c.r + 12);
+      put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }
-    const first = circles.slots[2] as Circle;
-    ctx.fillText(TOUCH_LABELS.hotbar, first.x, first.y + first.r + 12);
+    for (const id of ['bag', 'map'] as const) {
+      const c = circles[id];
+      put(TOUCH_LABELS[id], c.x - c.r - 8, c.y, 'right');
+    }
+    const first = circles.slots[0] as Circle;
+    const mid = circles.slots[2] as Circle;
+    put(TOUCH_LABELS.hotbar, mid.x, first.y - first.r - 12, 'center');
   }
   ctx.restore();
 }

@@ -130,13 +130,17 @@ export async function walkTo(page: Page, tx: number, ty: number, near = 20): Pro
   );
 }
 
-/** El cofre mas cercano al gato, segun el mapa que genera el mismo codigo que el servidor. */
-export async function nearestChest(page: Page): Promise<{ x: number; y: number }> {
-  return page.evaluate(() => {
+/** El cofre mas cercano al gato que no este en la lista de descartados (se identifica por su lugar). */
+export async function nearestChest(
+  page: Page,
+  skip: { x: number; y: number }[] = [],
+): Promise<{ x: number; y: number }> {
+  return page.evaluate((skipList) => {
     const g = (window as unknown as { __game: DebugGame }).__game;
     let best: { x: number; y: number } | null = null;
     let bestD = Infinity;
     for (const c of g.map.chests) {
+      if (skipList.some((s) => s.x === c.x && s.y === c.y)) continue;
       const d = Math.hypot(c.x - g.x, c.y - g.y);
       if (d < bestD) {
         bestD = d;
@@ -144,7 +148,7 @@ export async function nearestChest(page: Page): Promise<{ x: number; y: number }
       }
     }
     return best as { x: number; y: number };
-  });
+  }, skip);
 }
 
 declare global {

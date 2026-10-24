@@ -193,12 +193,16 @@ export class Hud {
     if (g.input.mode === 'keyboard') g.input.hotbarRects = [];
     const touch = g.input.mode === 'touch';
     this.drawZoneInfo(f);
-    this.drawStatus(f, touch);
     this.drawMinimap(f, touch);
     this.drawFeed(f, touch);
-    this.drawWeaponInfo(f, touch);
-    if (touch) this.drawTouch(f);
-    else this.drawHotbar(f);
+    if (g.alive) {
+      this.drawStatus(f, touch);
+      this.drawWeaponInfo(f, touch);
+      if (touch) this.drawTouch(f);
+      else this.drawHotbar(f);
+    } else {
+      g.input.hotbarRects = [];
+    }
     this.drawWarnings(f);
     this.drawBanner(f);
     if (f.mapOpen) this.drawBigMap(f);

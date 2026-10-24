@@ -1,6 +1,6 @@
 import { CLAWS } from '../../src/shared/br/items';
 import { describe, expect, it } from 'vitest';
-import { CAT, TICK_DT, TILE, WALL_ITEM } from '../../src/shared/br/constants';
+import { CAT, TICK_DT, TILE, WALL_ITEM, SPAWN_GRACE_S } from '../../src/shared/br/constants';
 import { countKind } from '../../src/shared/br/inventory';
 import type { Item, Rarity, WeaponKind } from '../../src/shared/br/items';
 import { G, isSolidTile } from '../../src/shared/br/map';
@@ -33,6 +33,8 @@ function arena(mapKind: 'bosque' | 'casa' | 'piscina' = 'bosque') {
       skin: defaultSkin(),
     })),
   });
+  // La proteccion inicial termina a los 10 s: las pruebas de combate empiezan despues.
+  game.time = SPAWN_GRACE_S + 1;
   const m = game.map;
   let spot: { x: number; y: number } | null = null;
   for (let y = 4; y < m.h - 4 && !spot; y++) {
@@ -416,7 +418,7 @@ describe('fin de la partida', () => {
     expect(game.result?.rows[0]?.kills).toBe(1);
   });
 
-  it('si todos los humanos mueren la partida termina aunque queden bots', () => {
+  it('si el humano cae la partida sigue para que la vea y termina cuando se va', () => {
     const game = new BRGame({
       seed: 3,
       mapKind: 'bosque',
@@ -426,11 +428,32 @@ describe('fin de la partida', () => {
         { id: 3, name: 'bot2', userId: null, bot: true, skin: defaultSkin() },
       ],
     });
+    game.time = SPAWN_GRACE_S + 1;
     game.damageCat(game.cat(1) as Cat, 999, game.cat(2) as Cat);
+    game.step();
+    expect(game.over).toBe(false);
+    expect(game.drainDeaths()[0]?.payload.placement).toBe(3);
+    game.setConnected(1, false);
     game.step();
     expect(game.over).toBe(true);
     expect(game.result?.humanWon).toBe(false);
-    expect(game.drainDeaths()[0]?.payload.placement).toBe(3);
+  });
+
+  it('nadie recibe dano durante la proteccion inicial', () => {
+    const game = new BRGame({
+      seed: 3,
+      mapKind: 'bosque',
+      cats: [
+        { id: 1, name: 'yo', userId: 1, bot: false, skin: defaultSkin() },
+        { id: 2, name: 'bot1', userId: null, bot: true, skin: defaultSkin() },
+      ],
+    });
+    const me = game.cat(1) as Cat;
+    game.damageCat(me, 50, game.cat(2) as Cat);
+    expect(me.hp).toBe(100);
+    game.time = SPAWN_GRACE_S + 0.1;
+    game.damageCat(me, 50, game.cat(2) as Cat);
+    expect(me.hp).toBe(50);
   });
 });
 

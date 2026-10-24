@@ -364,12 +364,18 @@ export class Lobby {
     const member = room.members.get(userId);
     if (room.phase === 'playing' && room.game && member)
       room.game.setConnected(member.catId, false);
+    const everyone = [...room.members.values()];
     room.members.delete(userId);
     this.userRoom.delete(userId);
     void socket?.leave(room.code);
     this.cancelCountdown(room);
 
     if (room.members.size === 0) {
+      // Si se van todos a media partida, igual se guarda el resultado hasta ese momento.
+      if (room.phase === 'playing' && room.game && !room.game.over) {
+        room.game.forceFinish(null);
+        if (room.game.result) this.persist(room, room.game, room.game.result, everyone);
+      }
       this.disposeRoom(room);
       this.rooms.delete(room.code);
       return;
@@ -577,7 +583,31 @@ export class Lobby {
     if (!game || !result) return;
     room.phase = 'ended';
 
-    // Telemetria: solo cuentan los jugadores humanos.
+    this.persist(room, game, result);
+
+    const payload: GameEndPayload = result;
+    this.io.to(room.code).emit('game:end', payload);
+    this.broadcast(room);
+
+    room.resetTimer = setTimeout(() => {
+      room.resetTimer = null;
+      room.game = null;
+      room.phase = 'lobby';
+      for (const m of room.members.values()) m.ready = false;
+      for (const m of [...room.members.values()]) {
+        if (m.socketId === null) this.leaveRoom(m.userId, null);
+      }
+      if (this.rooms.has(room.code)) this.broadcast(room);
+    }, RESULTS_SECONDS * 1000);
+  }
+
+  /** Telemetria: solo cuentan los jugadores humanos. */
+  private persist(
+    room: Room,
+    game: BRGame,
+    result: GameEndPayload,
+    members: Member[] = [...room.members.values()],
+  ): void {
     try {
       this.repo.saveMatch({
         code: room.code,
@@ -586,7 +616,7 @@ export class Lobby {
         durationS: Math.max(1, result.durationS),
         result: result.humanWon ? 'win' : 'loss',
         wave: Math.max(0, game.zone.phase),
-        players: [...room.members.values()].map((m) => {
+        players: members.map((m) => {
           const row = result.rows.find((r) => r.id === m.catId);
           const placement = row?.placement ?? MAX_PLAYERS;
           return {
@@ -603,21 +633,6 @@ export class Lobby {
     } catch (err) {
       console.error('no se pudo guardar la partida', err);
     }
-
-    const payload: GameEndPayload = result;
-    this.io.to(room.code).emit('game:end', payload);
-    this.broadcast(room);
-
-    room.resetTimer = setTimeout(() => {
-      room.resetTimer = null;
-      room.game = null;
-      room.phase = 'lobby';
-      for (const m of room.members.values()) m.ready = false;
-      for (const m of [...room.members.values()]) {
-        if (m.socketId === null) this.leaveRoom(m.userId, null);
-      }
-      if (this.rooms.has(room.code)) this.broadcast(room);
-    }, RESULTS_SECONDS * 1000);
   }
 
   private disposeRoom(room: Room): void {
