@@ -1,0 +1,36 @@
+# Blueprint temporal solo para medir la latencia desde otras regiones. No se mezcla con main.
+services:
+  - type: web
+    name: cybergrid-lat-virginia
+    runtime: node
+    plan: free
+    region: virginia
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/test/health
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+  - type: web
+    name: cybergrid-lat-oregon
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/test/health
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
