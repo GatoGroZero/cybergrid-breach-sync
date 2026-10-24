@@ -853,6 +853,8 @@ function endGame(payload: GameEndPayload): void {
         resultsEl.hidden = false;
         input.active = false;
         $('btn-back').focus({ preventScroll: true });
+        // En pantallas bajas la tabla se desplaza: se deja a la vista la fila del jugador.
+        document.querySelector('#results-body tr.me')?.scrollIntoView({ block: 'nearest' });
       }
     },
     win ? 1600 : 900,
