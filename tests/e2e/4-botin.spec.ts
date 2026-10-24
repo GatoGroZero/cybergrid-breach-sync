@@ -8,10 +8,10 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     await registerViaUi(page, uniqueName('e2e_bot'), true);
     await startSoloGame(page);
 
-    // Un bot puede abrir antes el cofre mas cercano: si esta vacio se prueba con el siguiente.
+    // Los bots abren cofres desde el primer segundo: si el elegido ya estaba vaciado se prueba otro.
     const tried: { x: number; y: number }[] = [];
-    let found = 0;
-    for (let attempt = 0; attempt < 4 && found < 1; attempt++) {
+    let taken = false;
+    for (let attempt = 0; attempt < 6 && !taken; attempt++) {
       const chest = await nearestChest(page, tried);
       tried.push(chest);
       const left = await walkTo(page, chest.x, chest.y);
@@ -19,17 +19,19 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
       await page.keyboard.press('KeyE');
       await expect(page.getByTestId('inv')).toBeVisible();
       await expect(page.getByTestId('loot-block')).toBeVisible();
-      found = await page.locator('[data-testid="loot-slot"]:not(.empty)').count();
-      if (found < 1) await page.keyboard.press('Escape');
+      const items = await page.locator('[data-testid="loot-slot"]:not(.empty)').count();
+      if (items >= 1 && (await page.getByTestId('loot-all').isEnabled())) {
+        await page.getByTestId('loot-all').click();
+        // El inventario nuevo llega con la siguiente instantanea del servidor.
+        await expect
+          .poll(() => page.locator('[data-testid="inv-slot"]:not(.empty)').count())
+          .toBeGreaterThanOrEqual(1);
+        taken = true;
+      } else {
+        await page.keyboard.press('Escape');
+      }
     }
-    expect(found).toBeGreaterThanOrEqual(1);
-
-    await page.getByTestId('loot-all').click();
-    await expect(page.locator('[data-testid="loot-slot"]:not(.empty)')).toHaveCount(0);
-    // El inventario nuevo llega con la siguiente instantanea del servidor.
-    await expect
-      .poll(() => page.locator('[data-testid="inv-slot"]:not(.empty)').count())
-      .toBeGreaterThanOrEqual(1);
+    expect(taken).toBe(true);
 
     // Escape cierra el inventario y la partida sigue.
     await page.keyboard.press('Escape');
@@ -108,6 +110,7 @@ test.describe('Flujo 4b: ordenar y tirar objetos arrastrando', () => {
 
     const slot = (i: number) => page.getByTestId('inv-slot').nth(i);
     const center = async (i: number) => {
+      await expect(slot(i)).toBeVisible();
       const b = (await slot(i).boundingBox()) as {
         x: number;
         y: number;
