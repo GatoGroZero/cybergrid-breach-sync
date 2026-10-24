@@ -9,6 +9,7 @@ import {
   CAT,
   INTEREST_RADIUS,
   INVENTORY_SLOTS,
+  SPAWN_GRACE_S,
   TICK_DT,
   TILE,
   WALL_ITEM,
@@ -536,6 +537,7 @@ export class BRGame {
 
   damageCat(target: Cat, amount: number, attacker: Cat | null): void {
     if (!target.alive || amount <= 0) return;
+    if (this.time < SPAWN_GRACE_S && attacker !== null) return;
     const r = applyDamage(target, amount);
     target.hp = r.hp;
     target.shield = r.shield;
@@ -875,9 +877,10 @@ export class BRGame {
   private checkEnd(): void {
     const alive = this.aliveCats();
     const humans = this.humans();
-    const humansAlive = humans.filter((c) => c.alive);
     if (alive.length <= 1) return this.finish(alive[0] ?? null);
-    if (humans.length > 0 && humansAlive.length === 0) return this.finish(null);
+    // Si el humano cae, la partida sigue para que pueda verla; termina si se va.
+    if (humans.length > 0 && humans.every((c) => !c.alive && !c.connected))
+      return this.finish(null);
     if (this.time >= ZONE_TIMELINE.end / this.zoneScale + HARD_CAP_EXTRA_S) {
       const best = [...alive].sort((a, b) => b.hp + b.shield - (a.hp + a.shield))[0] ?? null;
       this.finish(best);

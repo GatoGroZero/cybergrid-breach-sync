@@ -1,4 +1,4 @@
-import { CAT, INVENTORY_SLOTS, TICK_DT, TILE } from '../../shared/br/constants';
+import { CAT, INVENTORY_SLOTS, SPAWN_GRACE_S, TICK_DT, TILE } from '../../shared/br/constants';
 import { countKind } from '../../shared/br/inventory';
 import { ITEM_KINDS, STACK_MAX, WEAPONS, isAmmo, isWeapon, type Item } from '../../shared/br/items';
 import { G, isSolidTile, type BRMap } from '../../shared/br/map';
@@ -161,6 +161,7 @@ export class BotBrain {
     const g = this.game;
     const c = this.cat;
     const now = g.time;
+    if (now < SPAWN_GRACE_S) return false;
     const d = dist(c.x, c.y, enemy.x, enemy.y);
     const item = g.held(c);
     const armed = item !== null && isWeapon(item.kind);

@@ -8,19 +8,24 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     await registerViaUi(page, uniqueName('e2e_bot'), true);
     await startSoloGame(page);
 
-    const chest = await nearestChest(page);
-    const left = await walkTo(page, chest.x, chest.y);
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(left).toBeLessThan(26);
-
-    await page.keyboard.press('KeyE');
-    await expect(page.getByTestId('inv')).toBeVisible();
-    await expect(page.getByTestId('loot-block')).toBeVisible();
-    const found = await page.getByTestId('loot-slot').count();
-    expect(found).toBeGreaterThanOrEqual(2);
+    // Un bot puede abrir antes el cofre mas cercano: si esta vacio se prueba con el siguiente.
+    const tried: { x: number; y: number }[] = [];
+    let found = 0;
+    for (let attempt = 0; attempt < 4 && found < 1; attempt++) {
+      const chest = await nearestChest(page, tried);
+      tried.push(chest);
+      const left = await walkTo(page, chest.x, chest.y);
+      if (left < 0 || left >= 26) continue;
+      await page.keyboard.press('KeyE');
+      await expect(page.getByTestId('inv')).toBeVisible();
+      await expect(page.getByTestId('loot-block')).toBeVisible();
+      found = await page.locator('[data-testid="loot-slot"]:not(.empty)').count();
+      if (found < 1) await page.keyboard.press('Escape');
+    }
+    expect(found).toBeGreaterThanOrEqual(1);
 
     await page.getByTestId('loot-all').click();
-    await expect(page.getByTestId('loot-slot')).toHaveCount(1);
+    await expect(page.locator('[data-testid="loot-slot"]:not(.empty)')).toHaveCount(0);
     const filled = await page.locator('[data-testid="inv-slot"]:not(.empty)').count();
     expect(filled).toBeGreaterThanOrEqual(1);
 

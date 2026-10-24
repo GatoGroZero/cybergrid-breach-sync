@@ -6,6 +6,9 @@ export const TICK_DT = 1 / TICK_HZ;
 export const MAX_PLAYERS = 10;
 export const INVENTORY_SLOTS = 5;
 
+/** Los primeros segundos nadie puede hacerse dano: da tiempo de ubicarse y buscar el primer cofre. */
+export const SPAWN_GRACE_S = 10;
+
 export const CAT = {
   /** Velocidad en pixeles por segundo. */
   speed: 78,
