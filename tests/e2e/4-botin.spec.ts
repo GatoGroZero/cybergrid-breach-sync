@@ -26,8 +26,10 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
 
     await page.getByTestId('loot-all').click();
     await expect(page.locator('[data-testid="loot-slot"]:not(.empty)')).toHaveCount(0);
-    const filled = await page.locator('[data-testid="inv-slot"]:not(.empty)').count();
-    expect(filled).toBeGreaterThanOrEqual(1);
+    // El inventario nuevo llega con la siguiente instantanea del servidor.
+    await expect
+      .poll(() => page.locator('[data-testid="inv-slot"]:not(.empty)').count())
+      .toBeGreaterThanOrEqual(1);
 
     // Escape cierra el inventario y la partida sigue.
     await page.keyboard.press('Escape');

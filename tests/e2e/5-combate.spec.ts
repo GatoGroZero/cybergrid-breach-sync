@@ -63,3 +63,21 @@ test.describe('Flujo 5: combate, objetos y muros', () => {
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
   });
 });
+
+test.describe('Flujo 6: fin de la partida', () => {
+  test('al terminar aparece la tabla de puestos y se puede volver a la sala', async ({ page }) => {
+    await registerViaUi(page, uniqueName('e2e_fin'), true);
+    await startSoloGame(page);
+    await page.evaluate(() =>
+      (window as unknown as { __net: { socket: { emit(e: string): void } } }).__net.socket.emit(
+        'dev:finish',
+      ),
+    );
+    await expect(page.getByTestId('results')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#results-body tr')).toHaveCount(10);
+    await expect(page.locator('#results-body tr.me')).toHaveCount(1);
+    await page.getByTestId('btn-back').click();
+    await expect(page.getByTestId('screen-lobby')).toBeVisible();
+    await expect(page.getByTestId('room-view')).toBeVisible();
+  });
+});

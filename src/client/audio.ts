@@ -83,11 +83,44 @@ export class Sfx {
     src.stop(t + dur + 0.02);
   }
 
-  shot(): void {
-    this.tone(900, 0.07, 'square', 0.05, 420);
+  /** Cada arma suena distinto; `v` baja el volumen cuando el disparo queda lejos. */
+  shot(weapon = 'pistol', v = 1): void {
+    switch (weapon) {
+      case 'rifle':
+        this.tone(700, 0.05, 'square', 0.045 * v, 300);
+        this.noise(0.04, 0.05 * v, 3000);
+        break;
+      case 'shotgun':
+        this.noise(0.2, 0.16 * v, 1800);
+        this.tone(190, 0.16, 'sawtooth', 0.08 * v, 70);
+        break;
+      case 'sniper':
+        this.tone(1500, 0.24, 'sawtooth', 0.07 * v, 180);
+        this.noise(0.12, 0.1 * v, 4000);
+        break;
+      case 'bazooka':
+        this.tone(130, 0.4, 'sawtooth', 0.1 * v, 55);
+        this.noise(0.32, 0.12 * v, 700);
+        break;
+      default:
+        this.tone(900, 0.07, 'square', 0.05 * v, 420);
+    }
   }
-  hit(): void {
-    this.tone(220, 0.05, 'triangle', 0.06, 140);
+  boom(v = 1): void {
+    this.noise(0.5, 0.2 * v, 1300);
+    this.tone(95, 0.4, 'sawtooth', 0.1 * v, 35);
+  }
+  chest(): void {
+    [523, 659, 880].forEach((f, i) =>
+      window.setTimeout(() => this.tone(f, 0.12, 'triangle', 0.07), i * 55),
+    );
+  }
+  warn(): void {
+    this.tone(520, 0.22, 'square', 0.06);
+    window.setTimeout(() => this.tone(390, 0.3, 'square', 0.06), 230);
+  }
+  hit(v = 1): void {
+    this.tone(220, 0.05, 'triangle', 0.06 * v, 140);
   }
   hurt(): void {
     this.tone(160, 0.18, 'sawtooth', 0.09, 70);

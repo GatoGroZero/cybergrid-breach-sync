@@ -191,9 +191,15 @@ export class Lobby {
       const m = me();
       if (parsed.success && m?.game) m.game.pushInput(m.member.catId, parsed.data);
     });
-    socket.on('dev:kit', () => {
+    socket.on('dev:kit', (kind?: unknown) => {
       const m = me();
-      if (this.config.testKit && m?.game) m.game.giveTestKit(m.member.catId);
+      if (this.config.testKit && m?.game) m.game.giveTestKit(m.member.catId, kind === 'heavy');
+    });
+    socket.on('dev:finish', () => {
+      const m = me();
+      if (!this.config.testKit || !m?.game) return;
+      const bot = m.game.cats.find((c) => c.bot && c.alive);
+      m.game.forceFinish(bot?.id ?? null);
     });
     socket.on('game:select', (raw: unknown) => {
       if (!allow(actionBucket)) return;

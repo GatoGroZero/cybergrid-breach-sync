@@ -512,6 +512,7 @@ let fps = 0;
 let lastHud = 0;
 let drawMs = 0;
 let deathTimer: number | null = null;
+let tipTimer: number | null = null;
 let resultsTimer: number | null = null;
 
 function startGame(payload: GameStartPayload): void {
@@ -538,6 +539,16 @@ function startGame(payload: GameStartPayload): void {
   applyMode(input.mode);
   sfx.go();
   game.say('¡Sé el último gato en pie!', 'info', 4200);
+  if (tipTimer !== null) window.clearTimeout(tipTimer);
+  tipTimer = window.setTimeout(() => {
+    tipTimer = null;
+    if (!game || !game.alive || game.result) return;
+    const how =
+      input.mode === 'touch'
+        ? 'Acércate a un cofre y toca ABRIR'
+        : `Busca un cofre: acércate y pulsa ${keyLabel(input.keys.interact).toUpperCase()}`;
+    game.say(how, 'good', 4500);
+  }, 4600);
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
     raf = requestAnimationFrame(frame);
@@ -582,7 +593,7 @@ function updateHud(g: ClientBR, n: Net): void {
     coords.textContent = `${x}, ${y}`;
   }
   $('hud-fps').textContent = `${fps} FPS`;
-  $('hud-rtt').textContent = n.connected ? `${Math.round(n.rttMedian)} ms` : 'sin red';
+  $('hud-rtt').textContent = n.connected ? `ping ${Math.round(n.rttMedian)} ms` : 'sin red';
   if (!specBar.hidden) {
     const spec = g.latest?.spectating;
     $('spec-name').textContent =
@@ -714,7 +725,8 @@ function leaveGameView(): void {
   raf = 0;
   if (deathTimer !== null) window.clearTimeout(deathTimer);
   if (resultsTimer !== null) window.clearTimeout(resultsTimer);
-  deathTimer = resultsTimer = null;
+  if (tipTimer !== null) window.clearTimeout(tipTimer);
+  deathTimer = resultsTimer = tipTimer = null;
   game = null;
   renderer.setGame(null);
   window.__cybergrid = undefined;

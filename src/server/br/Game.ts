@@ -921,16 +921,26 @@ export class BRGame {
   }
 
   /** Solo para pruebas y demostraciones: equipo basico para un gato. */
-  giveTestKit(catId: number): void {
+  giveTestKit(catId: number, heavy = false): void {
     const cat = this.cat(catId);
-    if (cat && !cat.bot) {
-      addItem(cat.inv, { kind: 'rifle', qty: 1, rarity: 2 });
-      addItem(cat.inv, { kind: 'ammo_rifle', qty: 90, rarity: 0 });
-      addItem(cat.inv, { kind: 'medkit', qty: 3, rarity: 0 });
-      addItem(cat.inv, { kind: 'shield', qty: 3, rarity: 0 });
-      addItem(cat.inv, { kind: 'wall', qty: 5, rarity: 0 });
-      cat.invDirty = true;
-    }
+    if (!cat || cat.bot) return;
+    const kit: Item[] = heavy
+      ? [
+          { kind: 'bazooka', qty: 1, rarity: 2 },
+          { kind: 'ammo_bazooka', qty: 6, rarity: 0 },
+          { kind: 'sniper', qty: 1, rarity: 2 },
+          { kind: 'ammo_sniper', qty: 16, rarity: 0 },
+          { kind: 'shield', qty: 3, rarity: 0 },
+        ]
+      : [
+          { kind: 'rifle', qty: 1, rarity: 2 },
+          { kind: 'ammo_rifle', qty: 90, rarity: 0 },
+          { kind: 'medkit', qty: 3, rarity: 0 },
+          { kind: 'shield', qty: 3, rarity: 0 },
+          { kind: 'wall', qty: 5, rarity: 0 },
+        ];
+    for (const item of kit) addItem(cat.inv, item);
+    cat.invDirty = true;
   }
 
   /** Solo para pruebas: termina la partida de inmediato. */
