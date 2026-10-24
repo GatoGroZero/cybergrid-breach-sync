@@ -218,8 +218,13 @@ export class Renderer {
     // --- interfaz
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawHud(game, world.players, now);
+    this.drawObjectiveArrow(game, camX, camY, scale);
+    if (!game.connected && !game.result) this.drawReconnecting();
     if (fx.hurtFlash > 0) this.drawHurt(fx.hurtFlash);
-    if (this.input.mode === 'touch') this.drawTouchControls(game);
+    if (this.input.mode === 'touch') {
+      this.drawTouchControls(game);
+      if (this.cssH > this.cssW) this.drawRotateHint();
+    }
   }
 
   // ------------------------------------------------------------------ mapa
@@ -308,9 +313,13 @@ export class Renderer {
     const t = now / 1000;
     const nodes = game.nodes;
     ctx.textAlign = 'center';
+    const drones = game.latest?.dr ?? [];
+    const contestedAt = (p: { x: number; y: number }, radius: number): boolean =>
+      drones.some((d) => d[5] === 0 && Math.hypot(d[2] - p.x, d[3] - p.y) <= radius);
     game.map.nodes.forEach((node, i) => {
       const [pct, open] = nodes[i] ?? [0, 0];
-      const color = open ? C.green : C.amber;
+      const contested = !open && contestedAt(node, NODE.radius + 55);
+      const color = open ? C.green : contested ? C.red : C.amber;
       const pulse = 0.6 + 0.4 * Math.sin(t * 3 + i);
       this.drawGlow(node.x, node.y, color, 54, open ? 0.5 : 0.25 + 0.25 * pulse);
       ctx.strokeStyle = color;
@@ -344,7 +353,7 @@ export class Renderer {
       ctx.fillStyle = color;
       ctx.font = '700 12px Rajdhani, sans-serif';
       ctx.fillText(
-        open ? `NODO ${i + 1} ABIERTO` : `NODO ${i + 1}`,
+        open ? `NODO ${i + 1} ABIERTO` : contested ? `NODO ${i + 1} DISPUTADO` : `NODO ${i + 1}`,
         node.x,
         node.y - NODE.radius - 8,
       );
@@ -353,7 +362,8 @@ export class Renderer {
     const ex = game.map.exit;
     const open = (game.latest?.ex[0] ?? 0) === 1;
     const sync = game.latest?.ex[1] ?? 0;
-    const color = open ? C.magenta : '#3a4a66';
+    const exitContested = open && contestedAt(ex, EXIT.radius + 50);
+    const color = open ? (exitContested ? C.red : C.magenta) : '#3a4a66';
     if (open) this.drawGlow(ex.x, ex.y, C.magenta, 90, 0.35 + 0.25 * Math.sin(t * 4));
     ctx.strokeStyle = color;
     for (let r = 0; r < 3; r++) {
@@ -379,7 +389,11 @@ export class Renderer {
     }
     ctx.fillStyle = color;
     ctx.font = '700 13px Rajdhani, sans-serif';
-    ctx.fillText(open ? 'SALIDA: SINCRONIZAR' : 'SALIDA BLOQUEADA', ex.x, ex.y - EXIT.radius - 10);
+    ctx.fillText(
+      open ? (exitContested ? 'SALIDA DISPUTADA' : 'SALIDA: SINCRONIZAR') : 'SALIDA BLOQUEADA',
+      ex.x,
+      ex.y - EXIT.radius - 10,
+    );
   }
 
   private drawPickups(game: ClientGame, now: number): void {
@@ -814,6 +828,87 @@ export class Renderer {
         ctx.fillText(String(i + 1), cx, cy - r - 5);
       }
     }
+  }
+
+  /** Flecha en el borde de la pantalla hacia el siguiente objetivo cuando queda fuera de vista. */
+  private drawObjectiveArrow(game: ClientGame, camX: number, camY: number, scale: number): void {
+    if (game.dead || !game.latest) return;
+    const exitOpen = game.latest.ex[0] === 1;
+    let target: { x: number; y: number } | null = null;
+    let label = '';
+    if (exitOpen) {
+      target = game.map.exit;
+      label = 'SALIDA';
+    } else {
+      let best = Infinity;
+      game.map.nodes.forEach((n, i) => {
+        if (game.nodes[i]?.[1]) return;
+        const d = Math.hypot(n.x - game.x, n.y - game.y);
+        if (d < best) {
+          best = d;
+          target = n;
+          label = `NODO ${i + 1}`;
+        }
+      });
+    }
+    if (!target) return;
+    const t = target as { x: number; y: number };
+    const sx = this.cssW / 2 + (t.x - camX) * scale;
+    const sy = this.cssH / 2 + (t.y - camY) * scale;
+    const margin = 48;
+    if (sx > margin && sx < this.cssW - margin && sy > margin && sy < this.cssH - margin) return;
+
+    const ctx = this.ctx;
+    const cx = this.cssW / 2;
+    const cy = this.cssH / 2;
+    const dx = sx - cx;
+    const dy = sy - cy;
+    const k = Math.min(
+      (cx - margin) / Math.max(Math.abs(dx), 1e-6),
+      (cy - margin - 40) / Math.max(Math.abs(dy), 1e-6),
+    );
+    const ax = cx + dx * k;
+    const ay = cy + dy * k;
+    const ang = Math.atan2(dy, dx);
+    const color = exitOpen ? C.magenta : C.amber;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, 9);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-8, -9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    const meters = Math.round(Math.hypot(t.x - game.x, t.y - game.y) / TILE);
+    ctx.textAlign = 'center';
+    ctx.font = '700 12px Rajdhani, sans-serif';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.95;
+    ctx.fillText(`${label} · ${meters} m`, ax - Math.cos(ang) * 38, ay - Math.sin(ang) * 26 + 4);
+    ctx.globalAlpha = 1;
+  }
+
+  private drawRotateHint(): void {
+    const ctx = this.ctx;
+    ctx.textAlign = 'center';
+    ctx.font = '700 14px Rajdhani, sans-serif';
+    ctx.fillStyle = C.amber;
+    ctx.fillText('Gira el teléfono para jugar mejor', this.cssW / 2, 96);
+  }
+
+  private drawReconnecting(): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(2, 4, 10, 0.6)';
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.amber;
+    ctx.font = '700 22px Orbitron, sans-serif';
+    ctx.fillText('RECONECTANDO…', this.cssW / 2, this.cssH / 2);
   }
 
   private drawHurt(amount: number): void {

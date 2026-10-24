@@ -81,6 +81,7 @@ function showView(view: View): void {
   canvas.hidden = view !== 'game';
   hud.hidden = view !== 'game';
   btnMute.hidden = view !== 'game';
+  $('btn-quit').hidden = view !== 'game';
   document.body.classList.toggle('playing', view === 'game');
   if (input) input.active = view === 'game';
   if (view === 'game') renderer?.resize();
@@ -172,6 +173,7 @@ $('btn-logout').addEventListener('click', async () => {
 });
 
 function disconnect(): void {
+  hasConnectedBefore = false;
   stopRoomsPolling();
   net?.close();
   net = null;
@@ -208,15 +210,47 @@ async function enterLobby(): Promise<void> {
   startRoomsPolling();
 }
 
+let resumeTimer: number | null = null;
+let gotStateSinceConnect = false;
+let hasConnectedBefore = false;
+
+/** Tras reconectar, el servidor reengancha la sala o la partida. Si no lo hace es que se reinicio. */
+function watchResume(): void {
+  if (resumeTimer !== null) window.clearTimeout(resumeTimer);
+  gotStateSinceConnect = false;
+  resumeTimer = window.setTimeout(() => {
+    resumeTimer = null;
+    if (gotStateSinceConnect) return;
+    if (game && !game.result) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      game = null;
+      room = null;
+      countdownEl.hidden = true;
+      navigate('/lobby');
+      toast('El servidor se reinició, crea la sala de nuevo');
+      void enterLobby();
+    } else if (room) {
+      room = null;
+      renderRoom();
+    }
+  }, 2500);
+}
+
 function wireNet(n: Net): void {
   const s = n.socket;
-  s.on('connect', () => setNetChip(true));
+  s.on('connect', () => {
+    setNetChip(true);
+    if (hasConnectedBefore) watchResume();
+    hasConnectedBefore = true;
+  });
   s.on('disconnect', () => setNetChip(false));
   s.on('session:replaced', () => {
     disconnect();
     showAuth('Abriste tu sesión en otra pestaña');
   });
   s.on('room:state', (state: RoomState) => {
+    gotStateSinceConnect = true;
     room = state;
     renderRoom();
     updateCountdown(state);
@@ -394,6 +428,7 @@ let lastHud = 0;
 
 function startGame(payload: GameStartPayload): void {
   if (!net) return;
+  gotStateSinceConnect = true;
   countdownEl.hidden = true;
   resultsEl.hidden = true;
   showView('game');
@@ -410,6 +445,11 @@ function startGame(payload: GameStartPayload): void {
   game = new ClientGame(payload, net, input, sfx);
   $('hud-mode').textContent = input.mode === 'touch' ? 'táctil' : 'teclado';
   sfx.go();
+  game.banner = {
+    text: 'Abran los 3 nodos y luego sincronicen en la salida',
+    until: performance.now() + 5000,
+    tone: 'info',
+  };
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
     raf = requestAnimationFrame(frame);
@@ -506,6 +546,19 @@ function endGame(payload: GameEndPayload): void {
     if (game?.result) resultsEl.hidden = false;
   }, 900);
 }
+
+$('btn-quit').addEventListener('click', async () => {
+  if (!net || !game) return;
+  if (!game.result && !window.confirm('¿Salir de la partida? Tu equipo seguirá sin ti.')) return;
+  await net.ack('room:leave');
+  room = null;
+  resultsEl.hidden = true;
+  cancelAnimationFrame(raf);
+  raf = 0;
+  game = null;
+  navigate('/lobby');
+  void enterLobby();
+});
 
 $('btn-back').addEventListener('click', () => {
   resultsEl.hidden = true;

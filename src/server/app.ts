@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Express } from 'express';
 import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { authRouter, sameOrigin } from './auth';
@@ -21,6 +22,18 @@ export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
+
+  if (config.trustCloudflare) {
+    // Cloudflare siempre reescribe esta cabecera con la IP real del cliente, y el origen solo es
+    // alcanzable a traves de el. Los limites de peticiones se aplican por cliente, no por nodo.
+    app.use((req, _res, next) => {
+      const real = req.headers['cf-connecting-ip'];
+      if (typeof real === 'string' && isIP(real.trim()) !== 0) {
+        Object.defineProperty(req, 'ip', { value: real.trim(), configurable: true });
+      }
+      next();
+    });
+  }
 
   app.use(
     helmet({

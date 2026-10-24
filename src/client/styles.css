@@ -52,6 +52,7 @@ body.playing {
   -webkit-user-select: none;
   touch-action: none;
   overscroll-behavior: none;
+  -webkit-touch-callout: none;
 }
 
 #game {
@@ -474,6 +475,10 @@ code {
   border-radius: 4px;
   padding: 3px 9px;
   cursor: pointer;
+}
+
+.mute.quit {
+  top: 170px;
 }
 
 .mute[data-muted='true'] {

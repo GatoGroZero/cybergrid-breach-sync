@@ -11,6 +11,7 @@ export default defineConfig({
       include: ['src/shared/**', 'src/server/**'],
       exclude: ['src/server/index.ts'],
       reporter: ['text-summary', 'lcov'],
+      thresholds: { statements: 80, lines: 80, functions: 85, branches: 65 },
     },
   },
 });

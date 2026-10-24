@@ -65,7 +65,7 @@ export function buildTelemetry(deps: TestApiDeps) {
       sockets: runtime.sockets,
     },
     breakdown: { real: summary(totals.real), seed: summary(totals.seed) },
-    meta: { queryMs: ms(queryMs), source: 'sqlite' },
+    meta: { queryMs: ms(queryMs), serverMs: 0, source: 'sqlite' },
   };
 }
 
@@ -101,7 +101,7 @@ export function testRouter(deps: TestApiDeps): Router {
   router.use((req, res, next) => {
     res.set({
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Expose-Headers': 'Server-Timing',
       'Cache-Control': 'no-store',
@@ -142,7 +142,8 @@ export function testRouter(deps: TestApiDeps): Router {
   router.get('/telemetry', limited(config.limits.telemetry), (_req, res) => {
     const t0 = performance.now();
     const body = buildTelemetry(deps);
-    timing(res, { db: body.meta.queryMs, total: performance.now() - t0 });
+    body.meta.serverMs = ms(performance.now() - t0);
+    timing(res, { db: body.meta.queryMs, total: body.meta.serverMs });
     res.json(body);
   });
 
@@ -192,6 +193,11 @@ export function testRouter(deps: TestApiDeps): Router {
       });
     },
   );
+
+  router.delete('/seed', limited(config.limits.seed), (_req, res) => {
+    const removed = repo.clearSeeded();
+    res.status(200).json({ status: 'ok', removed });
+  });
 
   return router;
 }

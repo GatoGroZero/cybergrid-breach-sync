@@ -80,6 +80,15 @@ describe('endpoints de prueba /api/test/*', () => {
     expect(garbage.status).toBe(200);
   });
 
+  it('DELETE /seed limpia solo lo sembrado', async () => {
+    await request(server.app).post('/api/test/seed').send({ count: 120 });
+    const removed = await request(server.app).delete('/api/test/seed');
+    expect(removed.status).toBe(200);
+    expect(removed.body.removed).toBeGreaterThanOrEqual(120);
+    const after = await request(server.app).get('/api/test/telemetry');
+    expect(after.body.breakdown.seed.matches).toBe(0);
+  });
+
   it('rechaza cantidades fuera de rango con 400 y un mensaje claro', async () => {
     for (const count of [0, 1001, 50000]) {
       const res = await request(server.app).post('/api/test/seed').send({ count });
@@ -87,6 +96,23 @@ describe('endpoints de prueba /api/test/*', () => {
       expect(res.body.error).toBe('payload_invalido');
       expect(res.body.detalles.length).toBeGreaterThan(0);
     }
+  });
+
+  it('detras de Cloudflare toma la IP real del cliente de CF-Connecting-IP', async () => {
+    const behind = await startServer({ trustCloudflare: true });
+    const real = await request(behind.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', '203.0.113.7');
+    expect(real.body.clientIp).toBe('203.0.113.7');
+    const forged = await request(behind.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', 'no-es-una-ip');
+    expect(forged.body.clientIp).not.toBe('no-es-una-ip');
+    const direct = await request(server.app)
+      .get('/api/test/health')
+      .set('CF-Connecting-IP', '203.0.113.7');
+    expect(direct.body.clientIp).not.toBe('203.0.113.7');
+    await behind.close();
   });
 
   it('health responde rapido y los endpoints se pueden apagar con la bandera', async () => {

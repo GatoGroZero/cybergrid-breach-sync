@@ -11,6 +11,8 @@ export interface Config {
   testEndpoints: boolean;
   demoAccounts: boolean;
   trustProxy: number | boolean;
+  /** Detras de Cloudflare (Render) la IP real viene en CF-Connecting-IP. */
+  trustCloudflare: boolean;
   tickHz: number;
   snapshotEvery: number;
   countdownSeconds: number;
@@ -46,6 +48,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     testEndpoints: process.env.ENABLE_TEST_ENDPOINTS !== 'false',
     demoAccounts: process.env.DEMO_ACCOUNTS !== 'false',
     trustProxy: int(process.env.TRUST_PROXY, env === 'production' ? 2 : 0),
+    trustCloudflare: process.env.TRUST_CLOUDFLARE
+      ? process.env.TRUST_CLOUDFLARE === 'true'
+      : env === 'production',
     tickHz: SIM_HZ,
     snapshotEvery: Math.max(1, int(process.env.SNAPSHOT_EVERY, 1)),
     countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
