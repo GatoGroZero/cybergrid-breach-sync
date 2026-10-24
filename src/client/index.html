@@ -7,6 +7,12 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#04060c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CyberGrid" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta
       name="description"
       content="CyberGrid: Breach & Sync. Juego cooperativo en tiempo real con servidor autoritativo, WebSockets y Canvas 2D."
@@ -16,6 +22,13 @@
   </head>
   <body>
     <canvas id="game" hidden aria-label="Área de juego de CyberGrid"></canvas>
+    <div id="safe-probe" aria-hidden="true"></div>
+
+    <div id="rotate" class="rotate" role="alert" data-testid="rotate">
+      <div class="rotate-phone" aria-hidden="true"></div>
+      <h2>Gira tu teléfono</h2>
+      <p>CyberGrid se juega en horizontal. Voltea el teléfono para continuar.</p>
+    </div>
 
     <main id="screen-auth" class="screen" hidden data-testid="screen-auth">
       <section class="card auth-card">
@@ -160,6 +173,7 @@
             <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
           </div>
         </div>
+        <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
         <ul id="member-list" class="member-list" data-testid="member-list"></ul>
         <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
         <div class="row">
@@ -183,8 +197,15 @@
       Sonido
     </button>
 
-    <button id="btn-quit" class="mute quit" type="button" hidden data-testid="btn-quit">
-      Salir de la partida
+    <button
+      id="btn-quit"
+      class="mute quit"
+      type="button"
+      hidden
+      aria-label="Salir de la partida"
+      data-testid="btn-quit"
+    >
+      Salir
     </button>
 
     <div id="countdown" class="overlay" hidden data-testid="countdown">
