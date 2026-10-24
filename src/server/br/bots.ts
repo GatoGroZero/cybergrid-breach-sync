@@ -329,8 +329,8 @@ export class BotBrain {
             ? 110
             : 88
       : 10;
-    let mx = 0;
-    let my = 0;
+    let mx: number;
+    let my: number;
     const toward = Math.atan2(enemy.y - c.y, enemy.x - c.x);
     if (d > preferred + 14) {
       mx = Math.cos(toward);
