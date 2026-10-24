@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PongPayload } from '../../src/shared/protocol';
+import type { PongPayload } from '../../src/shared/br/protocol';
 import {
   connectSocket,
   onceEvent,

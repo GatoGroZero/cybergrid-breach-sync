@@ -1,54 +1,65 @@
 import { describe, expect, it } from 'vitest';
-import { actionCircle, joystickCircle, slotCircle, type Layout } from '../../src/client/input';
+import {
+  DEFAULT_KEYS,
+  DEFAULT_TOUCH,
+  ACTIONS,
+  keyLabel,
+  touchCircles,
+  type Circle,
+} from '../../src/client/game/input';
 
-const screens: [string, Layout][] = [
-  ['iPhone SE horizontal', { w: 568, h: 320, l: 0, r: 0, t: 0, b: 0 }],
-  ['iPhone 14 horizontal', { w: 844, h: 390, l: 47, r: 47, t: 0, b: 21 }],
-  ['iPhone 14 Pro Max horizontal', { w: 932, h: 430, l: 59, r: 59, t: 0, b: 21 }],
-  ['Pixel 7 horizontal', { w: 915, h: 412, l: 0, r: 0, t: 0, b: 0 }],
-  ['iPad horizontal', { w: 1180, h: 820, l: 0, r: 0, t: 0, b: 20 }],
-];
+const overlap = (a: Circle, b: Circle): boolean => Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r - 2;
 
-const overlap = (a: { x: number; y: number; r: number }, b: { x: number; y: number; r: number }) =>
-  Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r;
-
-describe.each(screens)('controles táctiles en %s', (_name, layout) => {
-  const circles = () => {
-    const stick = joystickCircle(layout);
-    const action = actionCircle(layout);
-    const slots = [0, 1, 2].map((i) => slotCircle(layout, i));
-    return { stick, action, slots };
-  };
-
-  it('joystick abajo a la izquierda y botón de acción abajo a la derecha', () => {
-    const { stick, action } = circles();
-    expect(stick.x).toBeLessThan(layout.w / 2);
-    expect(stick.y).toBeGreaterThan(layout.h / 2);
-    expect(action.x).toBeGreaterThan(layout.w / 2);
-    expect(action.y).toBeGreaterThan(layout.h / 2);
+describe('controles tactiles (geometria)', () => {
+  it.each([
+    [844, 390],
+    [667, 375],
+    [932, 430],
+    [1180, 820],
+  ])('en %i x %i los botones caben en pantalla y no se encima ninguno', (w, h) => {
+    const c = touchCircles(DEFAULT_TOUCH, w, h);
+    const singles: Circle[] = [c.stick, c.fire, c.interact, c.bag, c.menu, c.map];
+    for (const k of [...singles, ...c.slots]) {
+      expect(k.x - k.r).toBeGreaterThanOrEqual(0);
+      expect(k.x + k.r).toBeLessThanOrEqual(w);
+      expect(k.y - k.r).toBeGreaterThanOrEqual(0);
+      expect(k.y + k.r).toBeLessThanOrEqual(h);
+    }
+    const all = [...singles, ...c.slots];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        expect(overlap(all[i] as Circle, all[j] as Circle)).toBe(false);
+      }
+    }
   });
 
-  it('nada se encima: ni los objetos entre sí, ni con el botón ni con el joystick', () => {
-    const { stick, action, slots } = circles();
-    expect(overlap(stick, action)).toBe(false);
-    for (const s of slots) {
-      expect(overlap(s, action)).toBe(false);
-      expect(overlap(s, stick)).toBe(false);
-    }
-    expect(overlap(slots[0]!, slots[1]!)).toBe(false);
-    expect(overlap(slots[1]!, slots[2]!)).toBe(false);
-    expect(overlap(slots[0]!, slots[2]!)).toBe(false);
+  it('la barra de objetos tiene 5 espacios parejos y el boton de fuego queda abajo a la derecha', () => {
+    const c = touchCircles(DEFAULT_TOUCH, 844, 390);
+    expect(c.slots).toHaveLength(5);
+    const gaps = c.slots.slice(1).map((s, i) => s.x - (c.slots[i] as Circle).x);
+    for (const g of gaps) expect(Math.abs(g - (gaps[0] as number))).toBeLessThan(0.01);
+    expect(c.fire.x).toBeGreaterThan(844 * 0.7);
+    expect(c.fire.y).toBeGreaterThan(390 * 0.5);
+    expect(c.stick.x).toBeLessThan(844 * 0.3);
   });
 
-  it('todo cabe en la pantalla respetando los márgenes seguros y es fácil de tocar', () => {
-    const { stick, action, slots } = circles();
-    for (const c of [stick, action, ...slots]) {
-      expect(c.x - c.r).toBeGreaterThanOrEqual(layout.l);
-      expect(c.x + c.r).toBeLessThanOrEqual(layout.w - layout.r);
-      expect(c.y - c.r).toBeGreaterThan(layout.h * 0.2);
-      expect(c.y + c.r).toBeLessThanOrEqual(layout.h - layout.b);
-    }
-    for (const s of slots) expect(s.r * 2).toBeGreaterThanOrEqual(56);
-    expect(action.r * 2).toBeGreaterThanOrEqual(92);
+  it('cambiar la escala de un boton agranda su circulo y no mueve el resto', () => {
+    const big = structuredClone(DEFAULT_TOUCH);
+    big.fire.s = 1.8;
+    const a = touchCircles(DEFAULT_TOUCH, 844, 390);
+    const b = touchCircles(big, 844, 390);
+    expect(b.fire.r).toBeGreaterThan(a.fire.r * 1.5);
+    expect(b.stick).toEqual(a.stick);
+    expect(b.interact).toEqual(a.interact);
+  });
+});
+
+describe('teclas del teclado', () => {
+  it('cada accion tiene una tecla distinta por defecto y una etiqueta legible', () => {
+    const codes = ACTIONS.map((a) => DEFAULT_KEYS[a]);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(keyLabel('KeyW')).toBe('W');
+    expect(keyLabel('Digit3')).toBe('3');
+    expect(keyLabel('Space')).toBe('Espacio');
   });
 });

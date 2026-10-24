@@ -84,6 +84,9 @@ export class BotBrain {
   private readonly aimError: number;
   private readonly reaction: number;
   private readonly boldness: number;
+  private readonly sight: number;
+  private idleUntil = 0;
+  private provokedUntil = 0;
 
   constructor(
     private readonly game: BRGame,
@@ -92,7 +95,8 @@ export class BotBrain {
   ) {
     this.aimError = rng.range(0.07, 0.16);
     this.reaction = rng.range(0.35, 0.75);
-    this.boldness = rng.range(0.3, 1);
+    this.boldness = rng.range(0.15, 1);
+    this.sight = rng.range(110, 170);
     this.lastX = cat.x;
     this.lastY = cat.y;
   }
@@ -110,6 +114,7 @@ export class BotBrain {
       this.equipBest();
     }
     c.moving = false;
+    if (c.hurtUntil > now) this.provokedUntil = now + 6;
 
     const z = g.zone;
     const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
@@ -140,8 +145,8 @@ export class BotBrain {
       return;
     }
 
-    // 3) pelear
-    if (enemy && enemy.alive) {
+    // 3) pelear, solo si conviene: no todos los gatos buscan pleito
+    if (enemy && enemy.alive && this.wantsFight(enemy)) {
       this.fight(enemy, dt);
       return;
     }
@@ -151,12 +156,25 @@ export class BotBrain {
     this.roam(dt);
   }
 
+  /** Decide si vale la pena pelear: con arma y valor sí; sin arma solo en defensa propia o a quemarropa. */
+  private wantsFight(enemy: Cat): boolean {
+    const g = this.game;
+    const c = this.cat;
+    const now = g.time;
+    const d = dist(c.x, c.y, enemy.x, enemy.y);
+    const item = g.held(c);
+    const armed = item !== null && isWeapon(item.kind);
+    if (now < this.provokedUntil || (armed && d < 50)) return true;
+    const pressure = g.zone.phase >= 2 ? 0.35 : g.zone.phase === 1 ? 0.15 : 0;
+    return this.boldness * (armed ? 1 : 0.25) + pressure > 0.88;
+  }
+
   // ---------------------------------------------------------------- percepcion
 
   private scan(): void {
     const c = this.cat;
     let best: Cat | null = null;
-    let bestD = 200;
+    let bestD = this.sight;
     for (const o of this.game.cats) {
       if (!o.alive || o.id === c.id) continue;
       const d = dist(c.x, c.y, o.x, o.y);
@@ -426,18 +444,37 @@ export class BotBrain {
   private roam(dt: number): void {
     const g = this.game;
     const c = this.cat;
+    const now = g.time;
+    if (now < this.idleUntil) {
+      this.game.fireControl(c, c.aim, false, false);
+      return;
+    }
+    const early = g.zone.phase === 0 && g.zone.nextIn > 30;
     const z = g.zone.next && g.zone.next.r > 0 && g.zone.nextIn < 60 ? g.zone.next : g.zone.circle;
     if (
       !this.roamGoal ||
       dist(c.x, c.y, this.roamGoal.x, this.roamGoal.y) < 20 ||
       this.rng.chance(0.002)
     ) {
-      const r = Math.max(30, Math.min(z.r, 400) * 0.7);
-      const a = this.rng.range(0, Math.PI * 2);
+      if (this.roamGoal && this.rng.chance(0.5)) this.idleUntil = now + this.rng.range(2, 8);
+      const mapW = g.map.w * TILE;
+      const mapH = g.map.h * TILE;
+      let gx: number;
+      let gy: number;
+      if (early) {
+        gx = this.rng.range(60, mapW - 60);
+        gy = this.rng.range(60, mapH - 60);
+      } else {
+        const r = Math.max(30, Math.min(z.r, 400) * 0.7);
+        const a = this.rng.range(0, Math.PI * 2);
+        gx = z.cx + Math.cos(a) * this.rng.next() * r;
+        gy = z.cy + Math.sin(a) * this.rng.next() * r;
+      }
       this.roamGoal = {
-        x: Math.min(g.map.w * TILE - 40, Math.max(40, z.cx + Math.cos(a) * this.rng.next() * r)),
-        y: Math.min(g.map.h * TILE - 40, Math.max(40, z.cy + Math.sin(a) * this.rng.next() * r)),
+        x: Math.min(mapW - 40, Math.max(40, gx)),
+        y: Math.min(mapH - 40, Math.max(40, gy)),
       };
+      if (now < this.idleUntil) return;
     }
     const res = this.goTo(this.roamGoal.x, this.roamGoal.y, dt);
     if (res === 'blocked') this.roamGoal = null;

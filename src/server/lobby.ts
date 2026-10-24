@@ -503,7 +503,12 @@ export class Lobby {
 
     room.phase = 'playing';
     room.countdown = 0;
-    room.game = new BRGame({ seed: randomInt(1, 2_000_000_000), mapKind, cats });
+    room.game = new BRGame({
+      seed: randomInt(1, 2_000_000_000),
+      mapKind,
+      cats,
+      zoneScale: this.config.zoneTimeScale,
+    });
     this.broadcast(room);
     for (const m of members) {
       if (m.socketId) this.sockets.get(m.userId)?.emit('game:start', this.startPayload(room, m));

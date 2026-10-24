@@ -119,7 +119,7 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
 };
 
 /** Ataque de garras cuando no llevas arma: siempre disponible, sin balas. */
-export const CLAWS = { damage: 6, cooldown: 0.55, range: 18 } as const;
+export const CLAWS = { damage: 3, cooldown: 0.7, range: 18 } as const;
 
 export const ITEM_NAMES: Record<ItemKind, string> = {
   pistol: 'Pistola',

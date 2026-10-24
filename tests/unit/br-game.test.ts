@@ -1,3 +1,4 @@
+import { CLAWS } from '../../src/shared/br/items';
 import { describe, expect, it } from 'vitest';
 import { CAT, TICK_DT, TILE, WALL_ITEM } from '../../src/shared/br/constants';
 import { countKind } from '../../src/shared/br/inventory';
@@ -227,7 +228,7 @@ describe('armas, balas y daño', () => {
     game.select(1, 0);
     expect(game.held(a)).toBeNull();
     game.fireControl(a, 0, true, false);
-    expect(b.hp).toBe(94);
+    expect(b.hp).toBe(100 - CLAWS.damage);
   });
 
   it('el fusil automático no atraviesa un muro colocado: lo desgasta', () => {

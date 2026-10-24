@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
-import { SIM_HZ } from '../shared/constants';
+import { TICK_HZ as SIM_HZ } from '../shared/br/constants';
 
 export interface Config {
   env: 'production' | 'development' | 'test';
@@ -16,6 +16,8 @@ export interface Config {
   tickHz: number;
   snapshotEvery: number;
   countdownSeconds: number;
+  /** Acelera la ola (solo pruebas): 1 es el ritmo real. */
+  zoneTimeScale: number;
   version: string;
   limits: {
     login: number;
@@ -54,6 +56,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     tickHz: SIM_HZ,
     snapshotEvery: Math.max(1, int(process.env.SNAPSHOT_EVERY, 1)),
     countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
+    zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     version: '1.0.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),

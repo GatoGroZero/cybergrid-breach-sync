@@ -1,27 +1,28 @@
-import { FLOOR, WALL, type GameMap } from '../../src/shared/map';
+import { G, type BRMap } from '../../src/shared/br/map';
 
-/** Mapa vacio con muros solo en el borde, util para probar fisica sin depender del generador. */
-export function openMap(w = 20, h = 20): GameMap {
-  const tiles = new Uint8Array(w * h).fill(FLOOR);
+/** Mapa vacio y abierto para probar movimiento y tiempos sin obstaculos. */
+export function openMap(w: number, h: number): BRMap {
+  const ground = new Uint8Array(w * h).fill(G.GRASS);
+  const solid = new Uint8Array(w * h);
   for (let x = 0; x < w; x++) {
-    tiles[x] = WALL;
-    tiles[(h - 1) * w + x] = WALL;
+    solid[x] = 1;
+    solid[(h - 1) * w + x] = 1;
   }
   for (let y = 0; y < h; y++) {
-    tiles[y * w] = WALL;
-    tiles[y * w + (w - 1)] = WALL;
+    solid[y * w] = 1;
+    solid[y * w + w - 1] = 1;
   }
   return {
     seed: 0,
+    kind: 'bosque',
     w,
     h,
-    tiles,
-    rooms: [],
-    spawn: { x: 64, y: 64 },
-    nodes: [],
-    exit: { x: 128, y: 128 },
-    spawnRoom: 0,
-    nodeRooms: [],
-    exitRoom: 0,
+    ground,
+    solid,
+    houses: [],
+    props: [],
+    chests: [],
+    spawns: [],
+    landmarks: [],
   };
 }
