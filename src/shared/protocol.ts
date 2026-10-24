@@ -9,11 +9,11 @@ export const credentialsSchema = z.object({
   username: z
     .string()
     .trim()
-    .regex(USERNAME_PATTERN, 'El usuario debe tener de 3 a 20 letras, numeros o guion bajo'),
+    .regex(USERNAME_PATTERN, 'El usuario debe tener de 3 a 20 letras, números o guion bajo'),
   password: z
     .string()
-    .min(PASSWORD_MIN, `La contrasena debe tener al menos ${PASSWORD_MIN} caracteres`)
-    .max(PASSWORD_MAX, `La contrasena no puede pasar de ${PASSWORD_MAX} caracteres`),
+    .min(PASSWORD_MIN, `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres`)
+    .max(PASSWORD_MAX, `La contraseña no puede pasar de ${PASSWORD_MAX} caracteres`),
 });
 
 export const pingSchema = z.object({
@@ -40,7 +40,7 @@ export const createRoomSchema = z.object({
 
 const roomCodePattern = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
 export const joinRoomSchema = z.object({
-  code: z.string().trim().toUpperCase().regex(roomCodePattern, 'Codigo de sala invalido'),
+  code: z.string().trim().toUpperCase().regex(roomCodePattern, 'Código de sala inválido'),
 });
 
 export const readySchema = z.object({ ready: z.boolean() });
