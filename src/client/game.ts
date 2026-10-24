@@ -363,6 +363,7 @@ export class ClientGame {
             fx.hurtFlash = 1;
             fx.addShake(5);
             this.sfx.hurt();
+            this.input.buzz(35);
           }
         }
         break;
@@ -398,6 +399,7 @@ export class ClientGame {
           fx.burst(node.x, node.y, '#3dff8b', 36, 260, 0.9);
         }
         fx.addShake(7);
+        this.input.buzz(60);
         this.sfx.node();
         this.say(`Nodo ${ev.i + 1} abierto`, 'good');
         break;
@@ -410,6 +412,7 @@ export class ClientGame {
         fx.ring(ev.x, ev.y, 60, '#ff3b5c');
         if (ev.id === this.you) {
           this.sfx.death();
+          this.input.buzz(150);
           fx.addShake(10);
           this.say('Sistema caído, reiniciando', 'bad');
         }
