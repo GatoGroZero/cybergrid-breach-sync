@@ -183,7 +183,7 @@ const HIT_RADIUS = 7;
 const MAX_SHOTS = 320;
 const MAX_WALLS = 120;
 const OFFLINE_FORFEIT_S = 25;
-const HARD_CAP_EXTRA_S = 45;
+const HARD_CAP_EXTRA_S = 15;
 
 const q1 = (v: number): number => Math.round(v * 10) / 10;
 
