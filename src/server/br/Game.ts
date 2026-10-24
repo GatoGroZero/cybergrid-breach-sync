@@ -93,6 +93,8 @@ export interface GameOptions {
   seed: number;
   mapKind: MapKind;
   cats: CatInit[];
+  /** Acelera la linea de tiempo de la ola (solo para pruebas y demostraciones). */
+  zoneScale?: number;
 }
 
 export interface Cat {
@@ -180,7 +182,7 @@ const HIT_RADIUS = 7;
 const MAX_SHOTS = 320;
 const MAX_WALLS = 120;
 const OFFLINE_FORFEIT_S = 25;
-const HARD_CAP_S = ZONE_TIMELINE.end + 45;
+const HARD_CAP_EXTRA_S = 45;
 
 const q1 = (v: number): number => Math.round(v * 10) / 10;
 
@@ -192,6 +194,7 @@ export class BRGame {
   readonly startedAt = Date.now();
   readonly plan: ZonePlan;
   readonly rng: Rng;
+  private readonly zoneScale: number;
 
   tick = 0;
   time = 0;
@@ -212,6 +215,7 @@ export class BRGame {
 
   constructor(options: GameOptions) {
     this.seed = options.seed;
+    this.zoneScale = Math.max(1, options.zoneScale ?? 1);
     this.mapKind = options.mapKind;
     this.map = generateMap(options.mapKind, options.seed);
     this.rng = createRng((options.seed ^ 0x9e3779b9) >>> 0);
@@ -737,7 +741,12 @@ export class BRGame {
     if (this.over) return;
     this.tick++;
     this.time += TICK_DT;
-    this.zone = zoneAt(this.plan, mapWidthPx(this.map), mapHeightPx(this.map), this.time);
+    this.zone = zoneAt(
+      this.plan,
+      mapWidthPx(this.map),
+      mapHeightPx(this.map),
+      this.time * this.zoneScale,
+    );
     if (this.zone.phase !== this.lastPhase) {
       this.lastPhase = this.zone.phase;
       if (this.zone.phase > 0) this.emit({ e: 'zone', phase: this.zone.phase });
@@ -869,7 +878,7 @@ export class BRGame {
     const humansAlive = humans.filter((c) => c.alive);
     if (alive.length <= 1) return this.finish(alive[0] ?? null);
     if (humans.length > 0 && humansAlive.length === 0) return this.finish(null);
-    if (this.time >= HARD_CAP_S) {
+    if (this.time >= ZONE_TIMELINE.end / this.zoneScale + HARD_CAP_EXTRA_S) {
       const best = [...alive].sort((a, b) => b.hp + b.shield - (a.hp + a.shield))[0] ?? null;
       this.finish(best);
     }
@@ -996,7 +1005,7 @@ export class BRGame {
       ny: next ? Math.round(next.cy) : 0,
       nr: next ? Math.round(next.r) : -1,
       dps: z.dps,
-      nextIn: Math.max(0, Math.round(z.nextIn)),
+      nextIn: Math.max(0, Math.round(z.nextIn / this.zoneScale)),
     };
     const me: MeState = {
       x: q1(cat.x),

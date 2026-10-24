@@ -659,15 +659,20 @@ input::placeholder {
 
 #hud {
   position: fixed;
-  right: max(10px, env(safe-area-inset-right, 0px));
-  bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  top: max(46px, calc(env(safe-area-inset-top, 0px) + 46px));
   z-index: 5;
   display: flex;
-  gap: 10px;
-  font-size: 15px;
-  color: rgba(244, 244, 244, 0.55);
+  gap: 12px;
+  transform: translateX(-50%);
+  font-size: 16px;
+  color: rgba(244, 244, 244, 0.78);
   pointer-events: none;
-  text-shadow: 0 2px 0 var(--black);
+  text-shadow:
+    0 2px 0 var(--black),
+    0 -1px 0 var(--black),
+    1px 0 0 var(--black),
+    -1px 0 0 var(--black);
 }
 
 .bag-btn,
@@ -1127,11 +1132,29 @@ input::placeholder {
   }
 }
 
-@media (pointer: coarse) {
-  #hud {
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
+
+@media (max-height: 520px) {
+  .overlay {
+    align-items: start;
+  }
+
+  .slot {
+    min-height: 48px;
+  }
+
+  .inv-card,
+  .modal,
+  .death-card,
+  .results-card {
+    padding: 12px 14px;
+  }
+
+  h2 {
+    margin-bottom: 8px;
+  }
+
+  .detail {
+    min-height: 1.3em;
   }
 }
 

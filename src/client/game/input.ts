@@ -54,6 +54,20 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   mute: 'KeyN',
 };
 
+/** Las flechas siempre mueven al gato, ademas de las teclas que cada jugador elija. */
+export const ARROW_ALIASES: Record<string, Action> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+};
+const ARROW_FOR: Partial<Record<Action, string>> = {
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+};
+
 export function keyLabel(code: string): string {
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
@@ -301,7 +315,7 @@ export class InputController {
 
   actionFor(code: string): Action | null {
     for (const a of ACTIONS) if (this.keys[a] === code) return a;
-    return null;
+    return ARROW_ALIASES[code] ?? null;
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -470,7 +484,10 @@ export class InputController {
         else aim = game.facing === 1 ? 0 : Math.PI;
       }
     } else {
-      const d = (a: Action): boolean => this.down.has(this.keys[a]);
+      const d = (a: Action): boolean => {
+        const alias = ARROW_FOR[a];
+        return this.down.has(this.keys[a]) || (alias !== undefined && this.down.has(alias));
+      };
       if (d('left')) mx -= 1;
       if (d('right')) mx += 1;
       if (d('up')) my -= 1;

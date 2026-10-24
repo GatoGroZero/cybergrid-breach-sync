@@ -263,12 +263,12 @@ export class BRRenderer {
 
   private makeWave(): HTMLCanvasElement {
     const [cv, c] = make(32, 32);
-    rect(c, 0, 0, 32, 32, 'rgba(37,113,121,0.62)');
+    rect(c, 0, 0, 32, 32, 'rgba(37,113,121,0.42)');
     for (let row = 0; row < 4; row++) {
       for (let x = 0; x < 32; x++) {
         const y = row * 8 + 3 + Math.round(Math.sin((x / 32) * Math.PI * 2 + row) * 1.6);
-        px(c, x, y, 'rgba(115,239,247,0.55)');
-        px(c, x, y + 1, 'rgba(41,54,111,0.4)');
+        px(c, x, y, 'rgba(115,239,247,0.4)');
+        px(c, x, y + 1, 'rgba(41,54,111,0.22)');
       }
     }
     for (const [x, y] of [
@@ -341,7 +341,7 @@ export class BRRenderer {
           life: 0.4,
           grav: 90,
         });
-        fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
+        if (ev.v >= 4 || ev.kill) fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
         const d = this.distToMe(ev.x, ev.y);
         if (d < 12 && g?.alive) this.sfx.hurt();
         else if (d < 240) this.sfx.hit();

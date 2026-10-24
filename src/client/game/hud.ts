@@ -705,7 +705,7 @@ export class Hud {
             ctx,
             `OBSERVANDO A ${name.toUpperCase()}`,
             w / 2,
-            safe.t + 62,
+            safe.t + 84,
             22,
             C.white,
             'center',
@@ -723,7 +723,7 @@ export class Hud {
       color = C.sky;
     }
     if (msg && Math.floor(f.now / 300) % 2 === 0)
-      text(ctx, msg, w / 2, safe.t + 62, 24, color, 'center');
+      text(ctx, msg, w / 2, safe.t + 84, 24, color, 'center');
   }
 
   private drawBanner(f: HudFrame): void {

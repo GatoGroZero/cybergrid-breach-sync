@@ -2,17 +2,17 @@ import { expect, test } from '@playwright/test';
 import { coords, registerViaUi, startSoloGame, uniqueName } from './helpers';
 
 test.describe('Móvil: controles táctiles', () => {
-  test('aparece el joystick y arrastrarlo mueve al jugador', async ({ page }) => {
+  test('el modo tactil se activa solo y arrastrar el joystick mueve al gato', async ({ page }) => {
     await registerViaUi(page, uniqueName('e2e_mov'));
     await startSoloGame(page);
 
     expect((await page.evaluate(() => window.__cybergrid))?.mode).toBe('touch');
     await expect(page.getByTestId('hud-mode')).toHaveText('táctil');
 
-    // El joystick es flotante: se apoya el pulgar abajo a la izquierda y se arrastra desde ahi.
+    // El joystick esta abajo a la izquierda: se apoya el pulgar en su centro y se arrastra.
     const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
-    const r = Math.max(52, Math.min(80, size.h * 0.15));
-    const stick = { x: r + 40, y: size.h - r - 32 };
+    const stick = { x: size.w * 0.13, y: size.h * 0.72 };
+    const r = Math.max(46, size.h * 0.12);
 
     const cdp = await page.context().newCDPSession(page);
     const before = await coords(page);

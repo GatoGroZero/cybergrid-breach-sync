@@ -5,7 +5,10 @@ import {
   inputSchema,
   joinRoomSchema,
   pingSchema,
-} from '../../src/shared/protocol';
+  moveItemSchema,
+  selectSchema,
+  skinSchema,
+} from '../../src/shared/br/protocol';
 import {
   generateSyntheticMatches,
   parseSeedPayload,
@@ -62,8 +65,26 @@ describe('esquemas Zod del payload de seed', () => {
   });
 });
 
+describe('esquemas Zod del inventario y del pelaje', () => {
+  it('limita los espacios del inventario a 5 y rechaza indices fuera de rango', () => {
+    expect(selectSchema.safeParse({ slot: 4 }).success).toBe(true);
+    expect(selectSchema.safeParse({ slot: 5 }).success).toBe(false);
+    expect(selectSchema.safeParse({ slot: -1 }).success).toBe(false);
+    expect(moveItemSchema.safeParse({ from: 0, to: 4 }).success).toBe(true);
+    expect(moveItemSchema.safeParse({ from: 0, to: 9 }).success).toBe(false);
+  });
+
+  it('el pelaje solo acepta 384 celdas hexadecimales y una base valida', () => {
+    const paint = '0'.repeat(384);
+    expect(skinSchema.safeParse({ base: 2, paint }).success).toBe(true);
+    expect(skinSchema.safeParse({ base: 99, paint }).success).toBe(false);
+    expect(skinSchema.safeParse({ base: 0, paint: 'x'.repeat(384) }).success).toBe(false);
+    expect(skinSchema.safeParse({ base: 0, paint: '0'.repeat(383) }).success).toBe(false);
+  });
+});
+
 describe('esquemas Zod del protocolo de juego', () => {
-  const valid = { seq: 10, mx: 1, my: -0.5, aim: 1.2, auto: false, fire: true };
+  const valid = { seq: 10, mx: 1, my: -0.5, aim: 1.2, assist: false, fire: true };
 
   it('acepta un input valido', () => {
     expect(inputSchema.safeParse(valid).success).toBe(true);
@@ -95,6 +116,8 @@ describe('esquemas Zod del protocolo de juego', () => {
     expect(joinRoomSchema.parse({ code: ' ab3cd ' }).code).toBe('AB3CD');
     expect(joinRoomSchema.safeParse({ code: 'AB10O' }).success).toBe(false);
     expect(createRoomSchema.parse({}).isPrivate).toBe(false);
+    expect(createRoomSchema.parse({}).map).toBe('azar');
+    expect(createRoomSchema.safeParse({ map: 'luna' }).success).toBe(false);
     expect(pingSchema.safeParse({ t: 123.4 }).success).toBe(true);
     expect(pingSchema.safeParse({ t: 'x' }).success).toBe(false);
   });
