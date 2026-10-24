@@ -14,6 +14,7 @@ import type {
   RoomState,
 } from '../shared/br/protocol';
 import { credentialsSchema } from '../shared/br/protocol';
+import { BOTS_FILL, maxHumans, type BotsSetting } from '../shared/br/rooms';
 import { randomSkin } from '../shared/br/skin';
 import type { BRSnapshot } from '../shared/br/types';
 import { createRng } from '../shared/rng';
@@ -54,7 +55,22 @@ const ERRORS: Record<string, string> = {
   datos_invalidos: 'Datos inválidos',
   sin_respuesta: 'El servidor no respondió, intenta de nuevo',
   no_estas_en_una_sala: 'No estás en una sala',
+  solo_el_anfitrion: 'Solo el anfitrión puede hacer eso',
+  demasiados_jugadores: 'Hay más personas en la sala que lugares con esos bots',
+  faltan_jugadores: 'Con esos bots hacen falta al menos 2 personas',
 };
+/** Enlace de invitacion (?sala=ABCDE): se guarda para entrar a la sala cuando haya sesion. */
+let pendingInvite: string | null = null;
+{
+  const params = new URLSearchParams(window.location.search);
+  const code = (params.get('sala') ?? '').trim().toUpperCase();
+  if (code) {
+    pendingInvite = code;
+    params.delete('sala');
+    const rest = params.toString();
+    history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+  }
+}
 
 let user: User | null = null;
 let net: Net | null = null;
@@ -266,6 +282,31 @@ const mapSelect = $<HTMLSelectElement>('room-map');
   }
 }
 
+/** Opciones de bots: llenar, o una cantidad exacta de 0 a 9. */
+function fillBotsSelect(select: HTMLSelectElement): void {
+  const fill = el('option', '', 'Llenar con bots');
+  fill.value = BOTS_FILL;
+  select.append(fill);
+  for (let n = 0; n <= 9; n++) {
+    const o = el(
+      'option',
+      '',
+      n === 0 ? 'Sin bots (solo personas)' : n === 1 ? '1 bot' : `${n} bots`,
+    );
+    o.value = String(n);
+    select.append(o);
+  }
+}
+
+const botsSelect = $<HTMLSelectElement>('room-bots');
+fillBotsSelect(botsSelect);
+const setBotsSelect = $<HTMLSelectElement>('set-bots');
+fillBotsSelect(setBotsSelect);
+const setMapSelect = $<HTMLSelectElement>('set-map');
+setMapSelect.append(...[...mapSelect.options].map((o) => o.cloneNode(true)));
+
+const parseBots = (value: string): BotsSetting => (value === BOTS_FILL ? BOTS_FILL : Number(value));
+
 async function enterLobby(): Promise<void> {
   if (!user) return;
   showView('lobby');
@@ -285,6 +326,11 @@ async function enterLobby(): Promise<void> {
   setNetChip(true);
   await refreshRooms();
   startRoomsPolling();
+  if (pendingInvite && !room) {
+    const code = pendingInvite;
+    pendingInvite = null;
+    await joinRoom(code);
+  }
 }
 
 let resumeTimer: number | null = null;
@@ -325,6 +371,9 @@ function wireNet(n: Net): void {
     disconnect();
     showAuth('Abriste tu sesión en otra pestaña');
   });
+  s.on('rooms:update', (list: PublicRoom[]) => {
+    if (!room) renderRoomList(list);
+  });
   s.on('room:state', (state: RoomState) => {
     gotStateSinceConnect = true;
     room = state;
@@ -363,26 +412,36 @@ function updateCountdown(state: RoomState): void {
 async function refreshRooms(): Promise<void> {
   if (!net || room) return;
   const res = await net.ack<PublicRoom[]>('rooms:list');
-  if (!res.ok) return;
+  if (!res.ok || room) return;
+  renderRoomList(res.data ?? []);
+}
+
+function botsLabel(n: number): string {
+  return n === 1 ? '1 bot' : `${n} bots`;
+}
+
+function renderRoomList(rooms: PublicRoom[]): void {
   const list = $('room-list');
   list.replaceChildren();
-  const rooms = res.data ?? [];
   $('room-empty').hidden = rooms.length > 0;
   for (const r of rooms) {
     const li = el('li');
-    const info = el('div');
+    li.dataset.testid = 'public-room';
+    li.dataset.code = r.code;
+    const joinable = r.phase === 'lobby' || r.phase === 'countdown';
+    const full = r.players >= r.maxPlayers;
+    li.dataset.busy = String(!joinable);
+    const info = el('div', 'info');
     const mapName = MAP_NAMES[r.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
     info.append(
       el('strong', '', r.name),
-      el('div', 'muted', `${r.players}/${r.maxPlayers} gatos · ${mapName}`),
+      el('div', 'muted', `Anfitrión: ${r.host}`),
+      el('div', 'muted', mapName),
+      el('div', 'muted', `${r.players}/${r.maxPlayers} personas · ${botsLabel(r.bots)}`),
     );
-    const join = el(
-      'button',
-      'btn small',
-      r.phase === 'lobby' || r.phase === 'countdown' ? 'Entrar' : 'En curso',
-    );
+    const join = el('button', 'btn small', !joinable ? 'En curso' : full ? 'Llena' : 'Entrar');
     join.type = 'button';
-    join.disabled = r.phase === 'playing' || r.phase === 'ended' || r.players >= r.maxPlayers;
+    join.disabled = !joinable || full;
     join.addEventListener('click', () => void joinRoom(r.code));
     li.append(info, join);
     list.append(li);
@@ -391,7 +450,7 @@ async function refreshRooms(): Promise<void> {
 
 function startRoomsPolling(): void {
   stopRoomsPolling();
-  roomsTimer = window.setInterval(() => void refreshRooms(), 3000);
+  roomsTimer = window.setInterval(() => void refreshRooms(), 15000);
 }
 
 function stopRoomsPolling(): void {
@@ -403,12 +462,17 @@ function lobbyError(code: string | undefined): void {
   $('lobby-error').textContent = code ? (ERRORS[code] ?? 'No se pudo completar la acción') : '';
 }
 
-async function createRoom(isPrivate: boolean, name?: string): Promise<boolean> {
+async function createRoom(
+  isPrivate: boolean,
+  name?: string,
+  bots: BotsSetting = BOTS_FILL,
+): Promise<boolean> {
   if (!net) return false;
   const res = await net.ack<{ code: string }>('room:create', {
     name: name || undefined,
     isPrivate,
     map: mapSelect.value,
+    bots,
   });
   lobbyError(res.ok ? undefined : res.error);
   return res.ok;
@@ -424,7 +488,7 @@ $<HTMLFormElement>('create-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   enterImmersive();
   const name = $<HTMLInputElement>('room-name').value.trim();
-  await createRoom($<HTMLInputElement>('room-private').checked, name);
+  await createRoom($<HTMLInputElement>('room-private').checked, name, parseBots(botsSelect.value));
 });
 
 $<HTMLFormElement>('join-form').addEventListener('submit', async (event) => {
@@ -454,14 +518,48 @@ $('btn-ready').addEventListener('click', async () => {
   if (!res.ok) toast(ERRORS[res.error] ?? 'No se pudo marcar Listo, intenta de nuevo');
 });
 
-$('btn-copy').addEventListener('click', async () => {
-  if (!room) return;
+async function copyText(text: string, done: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(room.code);
-    toast('Código copiado');
+    await navigator.clipboard.writeText(text);
+    toast(done);
   } catch {
-    toast(`Código: ${room.code}`);
+    toast(text);
   }
+}
+
+$('btn-copy').addEventListener('click', () => {
+  if (room) void copyText(room.code, 'Código copiado');
+});
+
+$('btn-copy-link').addEventListener('click', () => {
+  if (room) void copyText(`${window.location.origin}/?sala=${room.code}`, 'Enlace copiado');
+});
+
+/** Ajustes del anfitrion: cada cambio se manda al servidor y el estado de vuelta lo confirma. */
+async function sendSettings(settings: Record<string, unknown>): Promise<void> {
+  if (!net) return;
+  const res = await net.ack('room:settings', settings);
+  if (!res.ok) {
+    toast(ERRORS[res.error] ?? 'No se pudo cambiar el ajuste');
+    renderRoom();
+  }
+}
+
+setMapSelect.addEventListener('change', () => void sendSettings({ map: setMapSelect.value }));
+setBotsSelect.addEventListener(
+  'change',
+  () => void sendSettings({ bots: parseBots(setBotsSelect.value) }),
+);
+$<HTMLInputElement>('set-private').addEventListener(
+  'change',
+  (e) => void sendSettings({ isPrivate: (e.target as HTMLInputElement).checked }),
+);
+
+$('btn-start').addEventListener('click', async () => {
+  enterImmersive();
+  if (!net) return;
+  const res = await net.ack('room:start');
+  if (!res.ok) toast(ERRORS[res.error] ?? 'No se pudo iniciar la partida');
 });
 
 $('btn-settings').addEventListener('click', () => settings.open());
@@ -474,9 +572,14 @@ function renderRoom(): void {
 
   $('room-title').textContent = room.name;
   const mapName = MAP_NAMES[room.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
+  const people = room.members.length === 1 ? '1 persona' : `${room.members.length} personas`;
   $('room-meta').textContent =
-    `${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · los lugares libres se llenan con bots`;
+    `${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · ${people} + ${botsLabel(room.botCount)}`;
   $('room-code').textContent = room.code;
+  $('bots-line').textContent =
+    room.bots === BOTS_FILL
+      ? `Los lugares libres se llenan con bots (hasta ${room.maxPlayers} gatos).`
+      : `${botsLabel(room.bots)} fijos: caben ${room.maxHumans} personas.`;
 
   const list = $('member-list');
   list.replaceChildren();
@@ -501,14 +604,41 @@ function renderRoom(): void {
   }
 
   const me = room.members.find((m) => m.userId === user?.id);
+  const isHost = me?.host === true;
+  const open = room.phase === 'lobby' || room.phase === 'countdown';
   $('btn-ready').textContent = me?.ready ? 'Cancelar listo' : 'Estoy listo';
-  $<HTMLButtonElement>('btn-ready').disabled = room.phase === 'ended' || room.phase === 'playing';
+  $<HTMLButtonElement>('btn-ready').disabled = !open;
+
+  const startBtn = $<HTMLButtonElement>('btn-start');
+  startBtn.hidden = !isHost;
+  startBtn.disabled = room.phase !== 'lobby' || !room.canStart;
+
+  const settingsBox = $('room-settings');
+  settingsBox.hidden = !isHost;
+  if (isHost) {
+    setMapSelect.value = room.map;
+    setBotsSelect.value = String(room.bots);
+    $<HTMLInputElement>('set-private').checked = room.isPrivate;
+    for (const o of setBotsSelect.options) {
+      const n = o.value === BOTS_FILL ? 0 : Number(o.value);
+      o.disabled = room.members.length > maxHumans(n);
+    }
+    for (const c of settingsBox.querySelectorAll<HTMLElement>('select, input'))
+      (c as HTMLSelectElement | HTMLInputElement).disabled = !open;
+  }
+
   const status = $('room-status');
-  if (room.phase === 'countdown') status.textContent = 'Todos listos, iniciando…';
+  if (room.phase === 'countdown') status.textContent = 'Iniciando…';
   else if (room.phase === 'playing') status.textContent = 'Partida en curso';
   else if (room.phase === 'ended') status.textContent = 'Partida terminada, preparando la sala...';
+  else if (!room.canStart)
+    status.textContent = 'Faltan jugadores: sin bots hacen falta al menos 2 personas.';
   else
-    status.textContent = `Listos: ${ready} de ${room.members.length}. La partida empieza cuando todos estén listos.`;
+    status.textContent = `Listos: ${ready} de ${room.members.length}. ${
+      isHost
+        ? 'Empieza cuando todos estén listos o cuando pulses Iniciar ya.'
+        : 'Empieza cuando todos estén listos o cuando el anfitrión inicie.'
+    }`;
 }
 
 // ---------------------------------------------------------------- partida

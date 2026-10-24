@@ -162,4 +162,137 @@ describe('lobby y proteccion de salas', () => {
     expect(totals.real.matches).toBe(before + 1);
     expect(totals.real.appearances).toBeGreaterThanOrEqual(1);
   });
+  describe('salas tipo Among Us', () => {
+    it('la sala publica muestra anfitrion, personas y bots, y se actualiza sola', async () => {
+      const mirador = await login('mirador');
+      const host = await login('anfitrion_pub');
+      const seen = new Promise<PublicRoom[]>((resolve) => {
+        mirador.on('rooms:update', (list: PublicRoom[]) => {
+          if (list.some((r) => r.host === 'anfitrion_pub')) resolve(list);
+        });
+      });
+      const created = await emitAck<{ code: string }>(host, 'room:create', {
+        name: 'Con amigos',
+        isPrivate: false,
+        bots: 4,
+      });
+      const code = created.ok ? created.data!.code : '';
+      const list = await seen;
+      const row = list.find((r) => r.code === code)!;
+      expect(row).toMatchObject({
+        name: 'Con amigos',
+        host: 'anfitrion_pub',
+        players: 1,
+        maxPlayers: 6,
+        bots: 4,
+        phase: 'lobby',
+      });
+      const rival = await login('rival_pub');
+      const second = new Promise<PublicRoom[]>((resolve) => {
+        mirador.on('rooms:update', (l: PublicRoom[]) => {
+          if (l.find((r) => r.code === code)?.players === 2) resolve(l);
+        });
+      });
+      await emitAck(rival, 'room:join', { code });
+      expect((await second).find((r) => r.code === code)?.players).toBe(2);
+    });
+
+    it('con bots exactos se reservan sus lugares: no caben mas personas que 10 menos los bots', async () => {
+      const host = await login('cupo_host');
+      const created = await emitAck<{ code: string }>(host, 'room:create', {
+        isPrivate: true,
+        bots: 8,
+      });
+      const code = created.ok ? created.data!.code : '';
+      expect((await emitAck(await login('cupo_2'), 'room:join', { code })).ok).toBe(true);
+      expect(await emitAck(await login('cupo_3'), 'room:join', { code })).toEqual({
+        ok: false,
+        error: 'sala_llena',
+      });
+    });
+
+    it('solo el anfitrion cambia los ajustes y cada cambio quita el Listo de todos', async () => {
+      const host = await login('ajustes_host');
+      const guest = await login('ajustes_guest');
+      const created = await emitAck<{ code: string }>(host, 'room:create', { isPrivate: false });
+      const code = created.ok ? created.data!.code : '';
+      await emitAck(guest, 'room:join', { code });
+      await emitAck(guest, 'room:ready', { ready: true });
+
+      expect(await emitAck(guest, 'room:settings', { bots: 2 })).toEqual({
+        ok: false,
+        error: 'solo_el_anfitrion',
+      });
+      expect(await emitAck(host, 'room:settings', { bots: 99 })).toEqual({
+        ok: false,
+        error: 'datos_invalidos',
+      });
+      // Con 2 personas dentro no se pueden reservar 9 bots.
+      expect(await emitAck(host, 'room:settings', { bots: 9 })).toEqual({
+        ok: false,
+        error: 'demasiados_jugadores',
+      });
+
+      const state = onceEvent<RoomState>(guest, 'room:state');
+      expect(
+        (await emitAck(host, 'room:settings', { bots: 6, map: 'piscina', isPrivate: true })).ok,
+      ).toBe(true);
+      const next = await state;
+      expect(next).toMatchObject({
+        bots: 6,
+        botCount: 6,
+        maxHumans: 4,
+        map: 'piscina',
+        isPrivate: true,
+        canStart: true,
+      });
+      expect(next.members.every((m) => !m.ready)).toBe(true);
+      const listed = await emitAck<PublicRoom[]>(host, 'rooms:list');
+      expect(listed.ok && listed.data!.some((r) => r.code === code)).toBe(false);
+    });
+
+    it('el anfitrion arranca con sus amigos y los bots exactos, sin esperar el Listo de todos', async () => {
+      const host = await login('amigos_host');
+      const friend = await login('amigos_uno');
+      const created = await emitAck<{ code: string }>(host, 'room:create', {
+        isPrivate: true,
+        map: 'casa',
+        bots: 3,
+      });
+      const code = created.ok ? created.data!.code : '';
+      await emitAck(friend, 'room:join', { code });
+
+      expect(await emitAck(friend, 'room:start')).toEqual({
+        ok: false,
+        error: 'solo_el_anfitrion',
+      });
+      const hostStart = onceEvent<GameStartPayload>(host, 'game:start', 6000);
+      const friendStart = onceEvent<GameStartPayload>(friend, 'game:start', 6000);
+      expect((await emitAck(host, 'room:start')).ok).toBe(true);
+      const [a, b] = await Promise.all([hostStart, friendStart]);
+      expect(a.cats).toHaveLength(5);
+      expect(a.cats.filter((c) => c.bot)).toHaveLength(3);
+      expect(
+        b.cats
+          .filter((c) => !c.bot)
+          .map((c) => c.name)
+          .sort(),
+      ).toEqual(['amigos_host', 'amigos_uno']);
+      expect(a.map).toBe('casa');
+    });
+
+    it('sin bots hacen falta dos personas: una sola no puede empezar ni con Listo', async () => {
+      const host = await login('sinbots_host');
+      const created = await emitAck<{ code: string }>(host, 'room:create', {
+        isPrivate: true,
+        bots: 0,
+      });
+      const code = created.ok ? created.data!.code : '';
+      expect(await emitAck(host, 'room:start')).toEqual({ ok: false, error: 'faltan_jugadores' });
+      await emitAck(host, 'room:ready', { ready: true });
+      await new Promise((r) => setTimeout(r, 1500));
+      const lobby = server.realtime.lobby as unknown as { rooms: Map<string, { phase: string }> };
+      expect(lobby.rooms.get(code)?.phase).toBe('lobby');
+    });
+  });
 });

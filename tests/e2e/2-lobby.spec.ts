@@ -74,4 +74,75 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await ctxA.close();
     await ctxB.close();
   });
+  test('sala con amigos y bots exactos: enlace de invitación, ajustes del anfitrión e inicio', async ({
+    browser,
+  }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const a = await ctxA.newPage();
+    const b = await ctxB.newPage();
+    const nameA = uniqueName('e2e_host');
+    const nameB = uniqueName('e2e_amigo');
+    await registerViaUi(a, nameA, true);
+    await registerViaUi(b, nameB, true);
+
+    await a.getByTestId('room-name').fill('Con bots');
+    await a.getByTestId('room-bots').selectOption('3');
+    await a.getByTestId('btn-create').click();
+    await expect(a.getByTestId('room-view')).toBeVisible();
+    await expect(a.getByTestId('room-meta')).toContainText('3 bots');
+    const code = (await a.getByTestId('room-code').textContent()) ?? '';
+
+    // B ve la sala en la lista con el anfitrion y los bots, sin recargar nada.
+    const row = b.locator(`[data-testid="public-room"][data-code="${code}"]`);
+    await expect(row).toContainText(nameA, { timeout: 8000 });
+    await expect(row).toContainText('3 bots');
+
+    // El enlace de invitación mete a B directo a la sala.
+    await b.goto(`/?debug&sala=${code}`);
+    await expect(b.getByTestId('room-view')).toBeVisible({ timeout: 10_000 });
+    await expect(b).not.toHaveURL(/sala=/);
+    await expect(a.getByTestId('member')).toHaveCount(2);
+
+    // Solo el anfitrion ve los ajustes y el boton de iniciar.
+    await expect(a.getByTestId('room-settings')).toBeVisible();
+    await expect(a.getByTestId('btn-start')).toBeVisible();
+    await expect(b.getByTestId('room-settings')).toBeHidden();
+    await expect(b.getByTestId('btn-start')).toBeHidden();
+
+    // Cambiar los bots se refleja en los dos y quita el Listo.
+    await b.getByTestId('btn-ready').click();
+    await expect(
+      a.locator(`[data-testid="member"][data-name="${nameB}"] [data-testid="member-state"]`),
+    ).toHaveText('Listo');
+    await a.getByTestId('set-bots').selectOption('4');
+    await expect(b.getByTestId('room-meta')).toContainText('4 bots');
+    await expect(
+      a.locator(`[data-testid="member"][data-name="${nameB}"] [data-testid="member-state"]`),
+    ).toHaveText('Esperando');
+
+    // El anfitrion inicia sin esperar a nadie: 2 personas + 4 bots = 6 gatos.
+    await a.getByTestId('btn-start').click();
+    await expect(a.locator('#game')).toBeVisible({ timeout: 15_000 });
+    await expect(b.locator('#game')).toBeVisible({ timeout: 15_000 });
+    const counts = await a.evaluate(() => {
+      const g = (window as unknown as { __game: { cats: Map<number, { bot: boolean }> } }).__game;
+      const all = [...g.cats.values()];
+      return { total: all.length, bots: all.filter((c) => c.bot).length };
+    });
+    expect(counts).toEqual({ total: 6, bots: 4 });
+
+    await ctxA.close();
+    await ctxB.close();
+  });
+
+  test('sin bots no se puede empezar con una sola persona', async ({ page }) => {
+    await registerViaUi(page, uniqueName('e2e_solo0'));
+    await page.getByTestId('room-bots').selectOption('0');
+    await page.getByTestId('room-private').check();
+    await page.getByTestId('btn-create').click();
+    await expect(page.getByTestId('room-view')).toBeVisible();
+    await expect(page.getByTestId('room-status')).toContainText('Faltan jugadores');
+    await expect(page.getByTestId('btn-start')).toBeDisabled();
+  });
 });

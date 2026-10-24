@@ -159,6 +159,9 @@
               Jugar solo
             </button>
             <p class="muted">Tú contra 9 bots. La partida empieza al instante.</p>
+            <p class="muted">
+              ¿Con amigos? Crea una sala, elige cuántos bots y comparte el enlace.
+            </p>
             <hr />
             <form id="create-form" novalidate>
               <label class="field">
@@ -173,6 +176,10 @@
               <label class="field">
                 <span>Mapa</span>
                 <select id="room-map" data-testid="room-map"></select>
+              </label>
+              <label class="field">
+                <span>Bots</span>
+                <select id="room-bots" data-testid="room-bots"></select>
               </label>
               <label class="check">
                 <input id="room-private" data-testid="room-private" type="checkbox" />
@@ -226,20 +233,48 @@
           <div class="room-head">
             <div>
               <h2 id="room-title"></h2>
-              <p class="muted" id="room-meta"></p>
+              <p class="muted" id="room-meta" data-testid="room-meta"></p>
             </div>
             <div class="room-code">
               <span class="muted">Código</span>
               <strong id="room-code" data-testid="room-code"></strong>
               <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
+              <button
+                id="btn-copy-link"
+                class="btn ghost small"
+                type="button"
+                data-testid="btn-copy-link"
+              >
+                Invitar
+              </button>
             </div>
           </div>
           <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
           <ul id="member-list" class="member-list" data-testid="member-list"></ul>
+          <p id="bots-line" class="bots-line" data-testid="bots-line"></p>
+          <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
+            <legend>Ajustes de la sala</legend>
+            <label class="field">
+              <span>Mapa</span>
+              <select id="set-map" data-testid="set-map"></select>
+            </label>
+            <label class="field">
+              <span>Bots</span>
+              <select id="set-bots" data-testid="set-bots"></select>
+            </label>
+            <label class="check">
+              <input id="set-private" data-testid="set-private" type="checkbox" />
+              <span>Privada (solo entra quien tenga el código)</span>
+            </label>
+            <p class="muted">Si cambias algo, todos tienen que volver a marcar Listo.</p>
+          </fieldset>
           <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
           <div class="row">
             <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
               Estoy listo
+            </button>
+            <button id="btn-start" class="btn" type="button" hidden data-testid="btn-start">
+              Iniciar ya
             </button>
             <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
               Salir de la sala

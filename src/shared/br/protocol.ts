@@ -1,7 +1,14 @@
 import { z } from 'zod';
-import { INVENTORY_SLOTS, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, SKIN_CELLS } from './constants';
+import {
+  INVENTORY_SLOTS,
+  MAX_PLAYERS,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  SKIN_CELLS,
+} from './constants';
 import { AMMO_KINDS } from './items';
 import { BASE_COATS } from './skin';
+import { BOTS_FILL, type BotsSetting } from './rooms';
 import type { Item } from './items';
 
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
@@ -66,10 +73,31 @@ export const skinSchema = z.object({
   paint: z.string().regex(new RegExp(`^[0-9a-f]{${SKIN_CELLS}}$`)),
 });
 
+const roomName = z.string().trim().min(1).max(24);
+const roomMap = z.enum(['bosque', 'casa', 'piscina', 'azar']);
+/** `'llenar'` completa la partida con bots; un numero (0 a 9) es la cantidad exacta. */
+export const botsSchema = z.union([
+  z.literal(BOTS_FILL),
+  z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_PLAYERS - 1),
+]);
+
 export const createRoomSchema = z.object({
-  name: z.string().trim().min(1).max(24).optional(),
+  name: roomName.optional(),
   isPrivate: z.boolean().default(false),
-  map: z.enum(['bosque', 'casa', 'piscina', 'azar']).default('azar'),
+  map: roomMap.default('azar'),
+  bots: botsSchema.default(BOTS_FILL),
+});
+
+/** El anfitrion cambia lo que quiera de la sala mientras nadie ha empezado. */
+export const roomSettingsSchema = z.object({
+  name: roomName.optional(),
+  isPrivate: z.boolean().optional(),
+  map: roomMap.optional(),
+  bots: botsSchema.optional(),
 });
 
 const roomCodePattern = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
@@ -82,6 +110,7 @@ export const readySchema = z.object({ ready: z.boolean() });
 export type Credentials = z.infer<typeof credentialsSchema>;
 export type InputPayload = z.infer<typeof inputSchema>;
 export type CreateRoomPayload = z.infer<typeof createRoomSchema>;
+export type RoomSettingsPayload = z.infer<typeof roomSettingsSchema>;
 
 export interface PongPayload {
   t: number;
@@ -105,7 +134,16 @@ export interface RoomState {
   isPrivate: boolean;
   phase: RoomPhase;
   map: string;
+  /** Gatos por partida contando bots. */
   maxPlayers: number;
+  /** Personas que caben segun los bots reservados. */
+  maxHumans: number;
+  /** Ajuste del anfitrion: `'llenar'` o una cantidad exacta. */
+  bots: BotsSetting;
+  /** Bots que entrarian ahora mismo a la partida. */
+  botCount: number;
+  /** Hay gatos suficientes para empezar (al menos 2 contando bots). */
+  canStart: boolean;
   members: RoomMember[];
   countdown: number;
 }
@@ -113,8 +151,13 @@ export interface RoomState {
 export interface PublicRoom {
   code: string;
   name: string;
+  host: string;
+  /** Personas dentro. */
   players: number;
+  /** Personas que caben. */
   maxPlayers: number;
+  /** Bots que entrarian ahora mismo. */
+  bots: number;
   phase: RoomPhase;
   map: string;
 }
