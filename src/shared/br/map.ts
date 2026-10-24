@@ -931,15 +931,20 @@ function validate(m: BRMap): boolean {
  * y obtienen exactamente el mismo mundo, asi solo viaja la semilla.
  */
 export function generateMap(kind: MapKind, seed: number): BRMap {
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    // El ruido del terreno tambien depende de la semilla, asi que cada intento la cambia.
+    const s = attempt === 0 ? seed : (seed ^ Math.imul(attempt, 0x9e3779b1)) >>> 0;
     const rng = createRng((seed + attempt * 104729) >>> 0);
     const m =
       kind === 'bosque'
-        ? buildBosque(rng, seed)
+        ? buildBosque(rng, s)
         : kind === 'casa'
-          ? buildCasa(rng, seed)
-          : buildPiscina(rng, seed);
-    if (validate(m)) return m;
+          ? buildCasa(rng, s)
+          : buildPiscina(rng, s);
+    if (validate(m)) {
+      m.seed = seed;
+      return m;
+    }
   }
   throw new Error(`no se pudo generar el mapa ${kind} para la semilla ${seed}`);
 }

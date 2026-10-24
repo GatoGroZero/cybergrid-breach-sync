@@ -191,6 +191,10 @@ export class Lobby {
       const m = me();
       if (parsed.success && m?.game) m.game.pushInput(m.member.catId, parsed.data);
     });
+    socket.on('dev:kit', () => {
+      const m = me();
+      if (this.config.testKit && m?.game) m.game.giveTestKit(m.member.catId);
+    });
     socket.on('game:select', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = selectSchema.safeParse(raw);
@@ -503,12 +507,26 @@ export class Lobby {
 
     room.phase = 'playing';
     room.countdown = 0;
-    room.game = new BRGame({
-      seed: randomInt(1, 2_000_000_000),
-      mapKind,
-      cats,
-      zoneScale: this.config.zoneTimeScale,
-    });
+    // La generacion del mapa es determinista y casi siempre pasa; si una semilla falla se prueba otra.
+    let game: BRGame | null = null;
+    for (let i = 0; i < 5 && !game; i++) {
+      try {
+        game = new BRGame({
+          seed: randomInt(1, 2_000_000_000),
+          mapKind,
+          cats,
+          zoneScale: this.config.zoneTimeScale,
+        });
+      } catch (err) {
+        console.error('no se pudo crear la partida', err);
+      }
+    }
+    if (!game) {
+      room.phase = 'lobby';
+      this.broadcast(room);
+      return;
+    }
+    room.game = game;
     this.broadcast(room);
     for (const m of members) {
       if (m.socketId) this.sockets.get(m.userId)?.emit('game:start', this.startPayload(room, m));
