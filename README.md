@@ -96,7 +96,7 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Curación:** el botiquín da +10 de vida por segundo hasta 100 y el escudo +5 por segundo hasta 100. Si cambias de objeto a media curación se cancela.
 - **Mini muros:** 150 de vida y se van rompiendo visualmente con cada golpe.
 - **Inventario:** 5 espacios, abre con el botón de la lata de sardinas (o I). Arrastra para ordenar, suelta fuera para tirar. Los objetos del mismo tipo se apilan.
-- **La ola:** durante los primeros 4 minutos no hay ola. A los 4, 8 y 12 minutos el agua avanza hacia una zona segura al azar (círculo) cada vez más chica, y desde el minuto 13:30 se cierra hasta no dejar zona libre. La partida dura máximo 15 minutos. Fuera del círculo y dentro del agua se recibe daño.
+- **La ola:** durante los primeros 4 minutos no hay ola. A los 4, 8 y 12 minutos el agua avanza hacia una zona segura al azar (círculo) cada vez más chica, y desde el minuto 13:20 se cierra hasta no dejar zona libre. La partida dura máximo 15 minutos. Fuera del círculo y dentro del agua se recibe daño.
 - **Mapas:** Bosque (casas con fachada, al menos 2 puertas e interior para saquear), Casa de gatitos (las casas son camas y los gatos se meten por debajo) y Piscina (el agua daña 5 cada medio segundo). Medianos, con minimapa y lugares con nombre (tecla M para verlo grande).
 - **Pelaje:** en el lobby pintas a tu gato (colores, pincel de 1 a 3, rayas, manchas) y así te ven los demás.
 - **PC:** WASD o flechas para moverte, ratón para apuntar, clic o espacio para disparar, E abre cofres, 1 a 5 eligen objeto, I inventario, M mapa, Esc menú. Todas las teclas se pueden cambiar en **Ajustes**.

@@ -8,7 +8,7 @@ export interface Circle {
 
 /**
  * Linea de tiempo de la ola (en segundos desde el inicio): sin ola los primeros 4 minutos,
- * la zona 1 llega a los 4, la zona 2 a los 8, la zona 3 a los 12 y desde los 13:30 se cierra
+ * la zona 1 llega a los 4, la zona 2 a los 8, la zona 3 a los 12 y desde los 13:20 se cierra
  * hasta no dejar zona libre. A los 15 minutos la partida termina.
  */
 export const ZONE_TIMELINE = {
@@ -18,8 +18,8 @@ export const ZONE_TIMELINE = {
   shrink2: 75,
   start3: 720,
   shrink3: 70,
-  collapseAt: 810,
-  collapse: 90,
+  collapseAt: 800,
+  collapse: 70,
   end: 900,
 } as const;
 
