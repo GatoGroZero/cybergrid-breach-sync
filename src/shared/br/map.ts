@@ -143,7 +143,14 @@ const NAMES_BOSQUE = [
   'Colita',
   'Atún',
 ];
-const NAMES_CAMA = ['Cama de Mimi', 'Cama de Pelusa', 'Cama de Luna', 'Cama de Tigre', 'Cama de Nube', 'Cama de Mochi'];
+const NAMES_CAMA = [
+  'Cama de Mimi',
+  'Cama de Pelusa',
+  'Cama de Luna',
+  'Cama de Tigre',
+  'Cama de Nube',
+  'Cama de Mochi',
+];
 const NAMES_CABANA = ['Vestidor', 'Bar del Atún', 'Cabaña Salmón', 'Caseta Splash', 'Cabaña Coral'];
 
 interface Rect {
@@ -232,7 +239,9 @@ class Builder {
   }
 
   isFree(x: number, y: number): boolean {
-    return inBounds(this.m, x, y) && this.m.solid[this.at(x, y)] === 0 && !this.reserved[this.at(x, y)];
+    return (
+      inBounds(this.m, x, y) && this.m.solid[this.at(x, y)] === 0 && !this.reserved[this.at(x, y)]
+    );
   }
 
   fillGround(x: number, y: number, w: number, h: number, g: number): void {
@@ -252,7 +261,14 @@ class Builder {
     }
   }
 
-  addProp(kind: PropKind, x: number, y: number, w: number, h: number, solidTiles: 'all' | 'base' | 'none'): void {
+  addProp(
+    kind: PropKind,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    solidTiles: 'all' | 'base' | 'none',
+  ): void {
     this.m.props.push({ kind, x, y, w, h });
     if (solidTiles === 'all') {
       for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.setSolid(xx, yy);
@@ -262,9 +278,27 @@ class Builder {
   }
 
   /** Casa con muros solidos, interior visible y al menos 2 puertas de 2 casillas. */
-  house(kind: HouseKind, x: number, y: number, w: number, h: number, name: string, floor: number): House {
+  house(
+    kind: HouseKind,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    name: string,
+    floor: number,
+  ): House {
     const doors: { x: number; y: number }[] = [];
-    const house: House = { id: this.nextHouse++, kind, x, y, w, h, doors, name, style: this.rng.int(0, 3) };
+    const house: House = {
+      id: this.nextHouse++,
+      kind,
+      x,
+      y,
+      w,
+      h,
+      doors,
+      name,
+      style: this.rng.int(0, 3),
+    };
     this.reserve(x - 2, y - 2, w + 4, h + 4);
     this.fillGround(x, y, w, h, floor);
     for (let yy = y; yy < y + h; yy++) {
@@ -312,7 +346,17 @@ class Builder {
   /** Cama: mesa grande con cuatro patas. Los gatos entran por debajo desde 3 lados. */
   bed(x: number, y: number, w: number, h: number, name: string): House {
     const doors: { x: number; y: number }[] = [];
-    const house: House = { id: this.nextHouse++, kind: 'bed', x, y, w, h, doors, name, style: this.rng.int(0, 3) };
+    const house: House = {
+      id: this.nextHouse++,
+      kind: 'bed',
+      x,
+      y,
+      w,
+      h,
+      doors,
+      name,
+      style: this.rng.int(0, 3),
+    };
     this.reserve(x - 1, y - 1, w + 2, h + 2);
     this.fillGround(x, y, w, h, G.BEDSHADE);
     // patas en las esquinas y cabecera cerrada al oeste
@@ -325,7 +369,11 @@ class Builder {
       this.setSolid(px, py);
     }
     for (let yy = y; yy < y + h; yy++) this.setSolid(x, yy);
-    doors.push({ x: x + Math.floor(w / 2), y }, { x: x + Math.floor(w / 2), y: y + h - 1 }, { x: x + w - 1, y: y + Math.floor(h / 2) });
+    doors.push(
+      { x: x + Math.floor(w / 2), y },
+      { x: x + Math.floor(w / 2), y: y + h - 1 },
+      { x: x + w - 1, y: y + Math.floor(h / 2) },
+    );
     this.m.houses.push(house);
     this.rects.push({ x, y, w, h });
     this.m.landmarks.push({ name, x: (x + w / 2) * TILE, y: (y + h / 2) * TILE, kind: 'bed' });
@@ -343,7 +391,12 @@ class Builder {
   }
 
   chest(tx: number, ty: number, golden: boolean): void {
-    this.m.chests.push({ id: this.nextChest++, x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2, golden });
+    this.m.chests.push({
+      id: this.nextChest++,
+      x: tx * TILE + TILE / 2,
+      y: ty * TILE + TILE / 2,
+      golden,
+    });
     // Un cofre ocupa su casilla pero no la bloquea del todo: es solido para no atravesarlo.
     this.setSolid(tx, ty);
     this.reserved[this.at(tx, ty)] = 1;
@@ -355,7 +408,10 @@ class Builder {
       const doorSet = new Set(house.doors.map((d) => `${d.x},${d.y}`));
       const candidates = this.interiorTiles(house).filter((t) => {
         const nearWall =
-          t.x === house.x + 1 || t.y === house.y + 1 || t.x === house.x + house.w - 2 || t.y === house.y + house.h - 2;
+          t.x === house.x + 1 ||
+          t.y === house.y + 1 ||
+          t.x === house.x + house.w - 2 ||
+          t.y === house.y + house.h - 2;
         const nearDoor = [...doorSet].some((d) => {
           const [dx, dy] = d.split(',').map(Number) as [number, number];
           return Math.abs(dx - t.x) + Math.abs(dy - t.y) <= 1;
@@ -484,7 +540,9 @@ class Builder {
       const targets: Vec[] = [
         ...this.m.spawns,
         ...this.m.chests.map((c) => ({ x: c.x, y: c.y })),
-        ...this.m.houses.flatMap((hs) => hs.doors.map((d) => ({ x: d.x * TILE + 8, y: d.y * TILE + 8 }))),
+        ...this.m.houses.flatMap((hs) =>
+          hs.doors.map((d) => ({ x: d.x * TILE + 8, y: d.y * TILE + 8 })),
+        ),
       ];
       let fixed = true;
       for (const t of targets) {
@@ -497,7 +555,9 @@ class Builder {
           [-1, 0],
           [0, 1],
           [0, -1],
-        ].some(([dx, dy]) => inBounds(this.m, tx + dx!, ty + dy!) && seen[this.at(tx + dx!, ty + dy!)]);
+        ].some(
+          ([dx, dy]) => inBounds(this.m, tx + dx!, ty + dy!) && seen[this.at(tx + dx!, ty + dy!)],
+        );
         if (near) continue;
         fixed = false;
         this.carveTo(tx, ty, seen);
@@ -570,7 +630,8 @@ function baseGrass(b: Builder, floraRate: number): void {
       let g: number = G.GRASS;
       if (r < 0.18) g = G.GRASS2;
       else if (r < 0.3) g = G.GRASS3;
-      if (hash2(x + 91, y + 17, seed) < floraRate) g = hash2(x, y + 5, seed) < 0.5 ? G.FLOWER : G.FLOWER2;
+      if (hash2(x + 91, y + 17, seed) < floraRate)
+        g = hash2(x, y + 5, seed) < 0.5 ? G.FLOWER : G.FLOWER2;
       b.setGround(x, y, g);
     }
   }
@@ -724,15 +785,32 @@ function buildCasa(rng: Rng, seed: number): BRMap {
   attempts = 0;
   let furniture = 0;
   while (furniture < 40 && attempts++ < 900) {
-    const kind = rng.pick<PropKind>(['couch', 'table', 'shelf', 'plant', 'cattree', 'crate', 'crate']);
+    const kind = rng.pick<PropKind>([
+      'couch',
+      'table',
+      'shelf',
+      'plant',
+      'cattree',
+      'crate',
+      'crate',
+    ]);
     const [pw, ph] =
-      kind === 'couch' ? [4, 2] : kind === 'table' ? [3, 2] : kind === 'shelf' ? [3, 1] : kind === 'cattree' ? [2, 2] : [1, 1];
+      kind === 'couch'
+        ? [4, 2]
+        : kind === 'table'
+          ? [3, 2]
+          : kind === 'shelf'
+            ? [3, 1]
+            : kind === 'cattree'
+              ? [2, 2]
+              : [1, 1];
     const x = rng.int(4, w - 4 - pw);
     const y = rng.int(4, h - 4 - ph);
     let ok = true;
     for (let yy = y - 1; yy <= y + ph && ok; yy++) {
       for (let xx = x - 1; xx <= x + pw && ok; xx++) {
-        if (!inBounds(b.m, xx, yy) || b.m.solid[b.at(xx, yy)] !== 0 || b.reserved[b.at(xx, yy)]) ok = false;
+        if (!inBounds(b.m, xx, yy) || b.m.solid[b.at(xx, yy)] !== 0 || b.reserved[b.at(xx, yy)])
+          ok = false;
       }
     }
     if (!ok) continue;
@@ -775,7 +853,12 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
     }
     b.reserve(x - 2, y - 2, ww + 4, hh + 4);
     b.rects.push({ x: x - 1, y: y - 1, w: ww + 2, h: hh + 2 });
-    b.m.landmarks.push({ name: 'Piscina', x: (x + ww / 2) * TILE, y: (y + hh / 2) * TILE, kind: 'water' });
+    b.m.landmarks.push({
+      name: 'Piscina',
+      x: (x + ww / 2) * TILE,
+      y: (y + hh / 2) * TILE,
+      kind: 'water',
+    });
   };
   pool(px, py, pw, ph);
   const sx = rng.chance(0.5) ? 6 : w - 6 - 12;
@@ -850,7 +933,12 @@ function validate(m: BRMap): boolean {
 export function generateMap(kind: MapKind, seed: number): BRMap {
   for (let attempt = 0; attempt < 40; attempt++) {
     const rng = createRng((seed + attempt * 104729) >>> 0);
-    const m = kind === 'bosque' ? buildBosque(rng, seed) : kind === 'casa' ? buildCasa(rng, seed) : buildPiscina(rng, seed);
+    const m =
+      kind === 'bosque'
+        ? buildBosque(rng, seed)
+        : kind === 'casa'
+          ? buildCasa(rng, seed)
+          : buildPiscina(rng, seed);
     if (validate(m)) return m;
   }
   throw new Error(`no se pudo generar el mapa ${kind} para la semilla ${seed}`);

@@ -20,7 +20,7 @@ export const CAT = {
   budgetBurst: 5,
 } as const;
 
-export const NATIVE_VIEW_H = 240;
+export const NATIVE_VIEW_H = 270;
 
 export const WALL_ITEM = {
   hp: 150,

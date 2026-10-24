@@ -34,7 +34,11 @@ export const inputSchema = z.object({
   assist: z.boolean(),
 });
 
-const slot = z.number().int().min(0).max(INVENTORY_SLOTS - 1);
+const slot = z
+  .number()
+  .int()
+  .min(0)
+  .max(INVENTORY_SLOTS - 1);
 export const selectSchema = z.object({ slot });
 export const moveItemSchema = z.object({ from: slot, to: slot });
 export const dropSchema = z.object({ slot });
@@ -47,7 +51,11 @@ export const lootTakeSchema = z.object({
 export const spectateSchema = z.object({ dir: z.union([z.literal(1), z.literal(-1)]) });
 
 export const skinSchema = z.object({
-  base: z.number().int().min(0).max(BASE_COATS.length - 1),
+  base: z
+    .number()
+    .int()
+    .min(0)
+    .max(BASE_COATS.length - 1),
   paint: z.string().regex(new RegExp(`^[0-9a-f]{${SKIN_CELLS}}$`)),
 });
 

@@ -97,7 +97,14 @@ export function zoneAt(plan: ZonePlan, widthPx: number, heightPx: number, t: num
     };
   }
   if (t < T.start2) {
-    return { circle: z1, phase: 1, shrinking: false, next: z2, dps: ZONE_DPS[1], nextIn: T.start2 - t };
+    return {
+      circle: z1,
+      phase: 1,
+      shrinking: false,
+      next: z2,
+      dps: ZONE_DPS[1],
+      nextIn: T.start2 - t,
+    };
   }
   if (t < T.start2 + T.shrink2) {
     return {
@@ -110,7 +117,14 @@ export function zoneAt(plan: ZonePlan, widthPx: number, heightPx: number, t: num
     };
   }
   if (t < T.start3) {
-    return { circle: z2, phase: 2, shrinking: false, next: z3, dps: ZONE_DPS[2], nextIn: T.start3 - t };
+    return {
+      circle: z2,
+      phase: 2,
+      shrinking: false,
+      next: z3,
+      dps: ZONE_DPS[2],
+      nextIn: T.start3 - t,
+    };
   }
   if (t < T.start3 + T.shrink3) {
     return {
@@ -123,7 +137,14 @@ export function zoneAt(plan: ZonePlan, widthPx: number, heightPx: number, t: num
     };
   }
   if (t < T.collapseAt) {
-    return { circle: z3, phase: 3, shrinking: false, next: zero, dps: ZONE_DPS[3], nextIn: T.collapseAt - t };
+    return {
+      circle: z3,
+      phase: 3,
+      shrinking: false,
+      next: zero,
+      dps: ZONE_DPS[3],
+      nextIn: T.collapseAt - t,
+    };
   }
   const k = clamp01((t - T.collapseAt) / T.collapse);
   return {

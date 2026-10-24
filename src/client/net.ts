@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import type { Ack, PongPayload } from '../shared/protocol';
+import type { Ack, PongPayload } from '../shared/br/protocol';
 
 /** Conexion WebSocket con el servidor y medicion continua de latencia con eventos ping y pong. */
 export class Net {

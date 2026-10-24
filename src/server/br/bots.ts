@@ -113,7 +113,12 @@ export class BotBrain {
 
     const z = g.zone;
     const outside = z.dps > 0 && !insideCircle(z.circle, c.x, c.y);
-    const soon = z.next !== null && z.next.r > 0 && z.nextIn < 25 && !insideCircle(z.next, c.x, c.y) && z.phase >= 0;
+    const soon =
+      z.next !== null &&
+      z.next.r > 0 &&
+      z.nextIn < 25 &&
+      !insideCircle(z.next, c.x, c.y) &&
+      z.phase >= 0;
     const enemy = this.enemy;
     const enemyClose = enemy !== null && dist(c.x, c.y, enemy.x, enemy.y) < 110;
 
@@ -217,7 +222,10 @@ export class BotBrain {
   private wanted(item: Item): boolean {
     const c = this.cat;
     const free = c.inv.some((it) => it === null);
-    const stackRoom = c.inv.some((it) => it && it.kind === item.kind && it.rarity === item.rarity && it.qty < STACK_MAX[item.kind]);
+    const stackRoom = c.inv.some(
+      (it) =>
+        it && it.kind === item.kind && it.rarity === item.rarity && it.qty < STACK_MAX[item.kind],
+    );
     if (isWeapon(item.kind)) {
       if (!free) return false;
       const owned = c.inv.filter((it): it is Item => !!it && isWeapon(it.kind));
@@ -225,7 +233,9 @@ export class BotBrain {
       return !owned.some((o) => o.kind === item.kind && o.rarity >= item.rarity);
     }
     if (isAmmo(item.kind)) {
-      const weaponOwned = c.inv.some((it) => it && isWeapon(it.kind) && WEAPONS[it.kind].ammo === item.kind);
+      const weaponOwned = c.inv.some(
+        (it) => it && isWeapon(it.kind) && WEAPONS[it.kind].ammo === item.kind,
+      );
       return (weaponOwned || !c.inv.some((it) => it && isWeapon(it.kind))) && (free || stackRoom);
     }
     if (item.kind === 'wall') return free && c.inv.filter((it) => it === null).length >= 2;
@@ -347,11 +357,17 @@ export class BotBrain {
       my = Math.sin(toward + (Math.PI / 2) * this.strafe);
     }
     const before = { x: c.x, y: c.y };
-    stepCat(g.map, c, { mx: mx * (0.55 + this.boldness * 0.45), my: my * (0.55 + this.boldness * 0.45) }, dt);
+    stepCat(
+      g.map,
+      c,
+      { mx: mx * (0.55 + this.boldness * 0.45), my: my * (0.55 + this.boldness * 0.45) },
+      dt,
+    );
     c.moving = Math.hypot(c.x - before.x, c.y - before.y) > 0.05;
 
     const ready = now - this.seenAt >= this.reaction;
-    const wantFire = ready && d <= range * 0.95 && hasLineOfSight(g.map, c.x, c.y, enemy.x, enemy.y);
+    const wantFire =
+      ready && d <= range * 0.95 && hasLineOfSight(g.map, c.x, c.y, enemy.x, enemy.y);
     const press = wantFire && (def ? def.auto || !c.prevFire : !c.prevFire);
     g.fireControl(c, c.aim, press, false);
     void TICK_DT;
@@ -411,7 +427,11 @@ export class BotBrain {
     const g = this.game;
     const c = this.cat;
     const z = g.zone.next && g.zone.next.r > 0 && g.zone.nextIn < 60 ? g.zone.next : g.zone.circle;
-    if (!this.roamGoal || dist(c.x, c.y, this.roamGoal.x, this.roamGoal.y) < 20 || this.rng.chance(0.002)) {
+    if (
+      !this.roamGoal ||
+      dist(c.x, c.y, this.roamGoal.x, this.roamGoal.y) < 20 ||
+      this.rng.chance(0.002)
+    ) {
       const r = Math.max(30, Math.min(z.r, 400) * 0.7);
       const a = this.rng.range(0, Math.PI * 2);
       this.roamGoal = {
