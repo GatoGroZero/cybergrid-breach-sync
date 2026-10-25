@@ -141,6 +141,11 @@ const input = new InputController(canvas, {
       if (id) game.sendKit(id);
       return;
     }
+    // tocar otra vez la casilla del objeto en mano lo usa (curas, pociones y muros)
+    if (game && game.me?.sel === slot && game.useKind !== null) {
+      game.useSelected();
+      return;
+    }
     game?.select(slot);
   },
   onKit: (index) => {
@@ -839,7 +844,7 @@ function startGame(payload: GameStartPayload): void {
       input.mode === 'touch'
         ? 'Acércate a un cofre y toca ABRIR'
         : `Busca un cofre: acércate y pulsa ${keyLabel(input.keys.interact).toUpperCase()}`;
-    game.say(how, 'good', 4500);
+    game.say(how, 'good', 3000);
   }, 9000);
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
@@ -939,7 +944,9 @@ async function doInteract(): Promise<void> {
   }
   const box = g.nearestBox();
   if (!box) {
-    toast('No hay nada cerca para abrir');
+    // sin nada que abrir, la tecla de interactuar usa la cura o la pocion que llevas en la mano
+    if (g.useKind !== null) g.useSelected();
+    else toast('No hay nada cerca para abrir');
     return;
   }
   const loot = await g.interact();

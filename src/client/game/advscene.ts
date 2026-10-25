@@ -130,8 +130,8 @@ export class AdvScene {
       }
       case 'boss': {
         const def = mobDef(ev.kind);
-        if (ev.phase <= 1) this.hooks.say(`¡${def.name}!`, 'bad', 3600);
-        else this.hooks.say(`${def.name} se enfurece`, 'bad', 3000);
+        if (ev.phase <= 1) this.hooks.say(`¡${def.name}!`, 'bad', 2000);
+        else this.hooks.say(`${def.name} se enfurece`, 'bad', 1800);
         this.sfx.bossRoar(ev.kind, ev.phase);
         this.hooks.shake(4);
         break;
@@ -202,7 +202,7 @@ export class AdvScene {
             -28,
           );
         this.hooks.light(ev.x, ev.y, 50, '#ffd25e', 0.8);
-        if (ev.id === g.you) this.hooks.say('¡Siete vidas! Vuelves a la pelea', 'good', 2600);
+        if (ev.id === g.you) this.hooks.say('¡Siete vidas! Vuelves a la pelea', 'good', 1800);
         const s = near(ev.x, ev.y, 400);
         if (s.v > 0.05) this.sfx.revive(Math.max(0.3, s.v), s.pan);
         break;

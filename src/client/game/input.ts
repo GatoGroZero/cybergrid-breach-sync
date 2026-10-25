@@ -340,6 +340,12 @@ export class InputController {
   /** La voltereta existe solo en la Aventura: ahi se muestra su boton y la tecla funciona. */
   dashEnabled = false;
   private dashLatch = false;
+
+  /** Usa el objeto en mano una vez (botiquin, escudo, pocion o muro) sin tener que apuntar ni disparar. */
+  requestUse(): void {
+    if (this.mode === 'touch') this.tapLatch = true;
+    else this.clickLatch = true;
+  }
   /** La mira (movil) esta tocando un objetivo en este momento: se usa para dibujar la guia. */
   aimLocked = false;
   /** La barra de emotes esta abierta; el renderizador pone aqui sus botones mientras lo este. */

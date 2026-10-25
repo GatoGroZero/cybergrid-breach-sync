@@ -604,7 +604,7 @@ export class Hud {
     const { ctx, dayToast: t, now, w, safe } = f;
     if (!t) return;
     const age = now - t.at;
-    const dur = 4200;
+    const dur = 2600;
     if (age > dur) return;
     const text1: Record<DayName, string> = {
       Día: '',
@@ -616,18 +616,19 @@ export class Hud {
     const msg = text1[t.name];
     if (!msg) return;
     const k = Math.min(1, age / 260);
-    const alpha = age > dur - 700 ? Math.max(0, (dur - age) / 700) : 1;
-    ctx.font = `22px ${VT}`;
-    const tw = ctx.measureText(msg).width + 36;
+    const alpha = age > dur - 500 ? Math.max(0, (dur - age) / 500) : 1;
+    const sz = f.g.input.mode === 'touch' || f.h < 520 ? 16 : 19;
+    ctx.font = `${sz}px ${VT}`;
+    const tw = ctx.measureText(msg).width + 28;
     const y = safe.t + 52 + Math.round((1 - k) * -10);
     ctx.globalAlpha = alpha * k;
-    panel(ctx, Math.round(w / 2 - tw / 2), y, tw, 30, 'rgba(26,28,44,0.88)');
+    panel(ctx, Math.round(w / 2 - tw / 2), y, tw, 26, 'rgba(26,28,44,0.82)');
     text(
       ctx,
       msg,
       Math.round(w / 2),
-      y + 16,
-      22,
+      y + 14,
+      sz,
       f.daylight.night > 0.5 ? C.cyan : C.yellow,
       'center',
     );
@@ -1067,6 +1068,7 @@ export class Hud {
       running: g.running && g.moving,
       pressed: input.pressed,
       interactReady: box !== null && g.alive,
+      useLabel: box === null && g.alive && g.useKind !== null,
       bagIcon: this.assets.can,
       emoteIcon: this.assets.emote.face[0],
       emoteOpen: input.emoteOpen,
@@ -1138,14 +1140,20 @@ export class Hud {
       g.banner = null;
       return;
     }
-    const a = Math.min(1, left / 400);
+    const a = Math.min(1, left / 300);
     ctx.globalAlpha = a;
     const color = b.tone === 'good' ? C.lime : b.tone === 'bad' ? C.orange : C.white;
-    ctx.font = `15px ${PIX}`;
-    const tw = ctx.measureText(b.text).width + 36;
-    const y = Math.round(h * (g.input.mode === 'touch' ? 0.34 : 0.24));
-    panel(ctx, Math.round(w / 2 - tw / 2), y - 20, tw, 40, 'rgba(26,28,44,0.88)', C.black);
-    text(ctx, b.text, w / 2, y + 1, 15, color, 'center', PIX, null);
+    // en pantallas chicas y en el movil el cartel es mas pequeno para no tapar la pelea
+    const small = g.input.mode === 'touch' || h < 520;
+    const size = small ? 10 : 12;
+    ctx.font = `${size}px ${PIX}`;
+    const tw = Math.min(w - 24, ctx.measureText(b.text).width + 24);
+    const ph = small ? 26 : 32;
+    const y = Math.round(h * (small ? 0.2 : 0.22));
+    ctx.globalAlpha = a * 0.92;
+    panel(ctx, Math.round(w / 2 - tw / 2), y - ph / 2, tw, ph, 'rgba(26,28,44,0.8)', C.black);
+    ctx.globalAlpha = a;
+    text(ctx, b.text, w / 2, y + 1, size, color, 'center', PIX, null);
     ctx.globalAlpha = 1;
   }
 

@@ -691,7 +691,7 @@ export class BRRenderer {
         this.game?.say(
           mine ? `¡Tomaron ${name}!` : `Les quitaron ${name}`,
           mine ? 'good' : 'bad',
-          3200,
+          2000,
         );
         break;
       }
