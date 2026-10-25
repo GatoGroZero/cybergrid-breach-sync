@@ -454,3 +454,147 @@ describe('territorio: patios que se disputan', () => {
     }
   }, 120_000);
 });
+
+describe('territorio: reaparecer en los patios', () => {
+  function turf(cats: CatInit[], teamSize: number): PvpGame {
+    return new PvpGame({
+      seed: 8181,
+      mapKind: 'calle',
+      mode: 'territorio',
+      cats,
+      teamSize,
+      zone: ZONE_TERRITORIO,
+    });
+  }
+  const four = (): CatInit[] => [1, 2, 3, 4].map((id) => cat(id, ((id - 1) % 2) as 0 | 1, false));
+  const stand = (g: PvpGame, id: number, point: number): void => {
+    const p = g.map.points![point]!;
+    g.cat(id)!.x = p.x;
+    g.cat(id)!.y = p.y;
+  };
+  /** Los gatos 1 y 3 son del equipo 0; 2 y 4 del 1. Pone a todos lejos y el equipo 0 toma el patio `i`. */
+  function owned(g: PvpGame, i: number): void {
+    for (const id of [1, 2, 3, 4]) g.cat(id)!.x = 5;
+    stand(g, 1, i);
+    run(g, 6);
+    expect(g.snapshotFor(1)!.pvp!.points![i]![0]).toBe(0);
+  }
+  const kill = (g: PvpGame, id: number): void => g.damageCat(g.cat(id)!, 9999, null);
+
+  it('con un patio propio, quien cae reaparece alli a los 4 segundos con vida, escudo y el kit completo', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    owned(g, 2);
+    const c = g.cat(3)!;
+    kill(g, 3);
+    expect(c.alive).toBe(false);
+    expect(g.snapshotFor(3)!.pvp!.respawn).toBe(4);
+    run(g, 3);
+    expect(c.alive).toBe(false);
+    run(g, 1.3);
+    expect(c.alive).toBe(true);
+    const p = g.map.points![2]!;
+    expect(Math.hypot(c.x - p.x, c.y - p.y)).toBeLessThanOrEqual(p.r);
+    expect(c.hp).toBe(CAT.maxHp);
+    expect(c.inv.some((it) => it && isWeapon(it.kind))).toBe(true);
+    expect(g.snapshotFor(3)!.pvp!.spawnAt).toBe(2);
+    // unos instantes de proteccion al salir
+    g.damageCat(c, 50, null);
+    expect(c.hp).toBe(CAT.maxHp);
+    run(g, 2);
+    g.damageCat(c, 50, null);
+    expect(c.hp).toBeLessThan(CAT.maxHp);
+  });
+
+  it('sin patios propios se reaparece atras con la ultima vida; la siguiente caida elimina', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    for (const id of [2, 3, 4]) g.cat(id)!.x = 5;
+    const c = g.cat(1)!;
+    kill(g, 1);
+    run(g, 4.3);
+    expect(c.alive).toBe(true);
+    // reaparecio en su base, no en un patio
+    expect(Math.hypot(c.x - c.spawn.x, c.y - c.spawn.y)).toBeLessThan(40);
+    const snap = g.snapshotFor(1)!.pvp!;
+    expect(snap.lastLife).toBe(true);
+    expect(snap.spawnAt).toBe(-1);
+    run(g, 2);
+    kill(g, 1);
+    expect(g.snapshotFor(1)!.pvp!.respawn).toBe(-1);
+    run(g, 6);
+    expect(c.alive).toBe(false);
+    // el equipo sigue: su companero esta vivo
+    expect(g.phase).toBe('fight');
+  });
+
+  it('si un companero recupera un patio, el eliminado vuelve a salir', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    for (const id of [2, 4]) g.cat(id)!.x = 5;
+    const c = g.cat(1)!;
+    kill(g, 1);
+    run(g, 4.3);
+    run(g, 2);
+    kill(g, 1);
+    expect(g.snapshotFor(1)!.pvp!.respawn).toBe(-1);
+    // el companero toma un patio: el eliminado tiene salida otra vez
+    stand(g, 3, 0);
+    run(g, 6);
+    expect(g.snapshotFor(3)!.pvp!.points![0]![0]).toBe(0);
+    expect(g.snapshotFor(1)!.pvp!.respawn).toBeGreaterThanOrEqual(0);
+    run(g, 5);
+    expect(c.alive).toBe(true);
+    const p = g.map.points![0]!;
+    expect(Math.hypot(c.x - p.x, c.y - p.y)).toBeLessThanOrEqual(p.r);
+    expect(g.snapshotFor(1)!.pvp!.lastLife).toBe(false);
+  });
+
+  it('un equipo sin patios y sin nadie en pie ni por reaparecer pierde la ronda', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    for (const id of [2, 4]) g.cat(id)!.x = 5;
+    for (const id of [1, 3]) kill(g, id);
+    run(g, 4.5);
+    expect(g.cat(1)!.alive).toBe(true);
+    for (const id of [1, 3]) {
+      g.cat(id)!.protectUntil = 0;
+      kill(g, id);
+    }
+    run(g, 0.3);
+    expect(g.roundWinner).toBe(1);
+    expect(g.wins).toEqual([0, 1]);
+  });
+
+  it('las balas de repuesto no se acaban', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    const c = g.cat(1)!;
+    const slot = c.inv.findIndex((it) => it && isWeapon(it.kind));
+    const w = c.inv[slot]!;
+    const kind = `ammo_${w.kind}` as keyof typeof c.ammo;
+    c.ammo[kind] = 0;
+    run(g, 0.2);
+    expect(c.ammo[kind]).toBeGreaterThanOrEqual(60);
+  });
+
+  it('al quitarle un patio al rival se ve como baja su bandera antes de subir la tuya', () => {
+    const g = turf(four(), 2);
+    fight(g);
+    owned(g, 1);
+    for (const id of [1, 3, 4]) g.cat(id)!.x = 5;
+    stand(g, 2, 1);
+    g.cat(2)!.x += 8;
+    run(g, 1);
+    const [owner, prog, cap] = g.snapshotFor(2)!.pvp!.points![1]!;
+    // sigue siendo del equipo 0, pero su avance ya esta bajando
+    expect(owner).toBe(0);
+    expect(cap).toBe(0);
+    expect(prog).toBeLessThan(90);
+    expect(prog).toBeGreaterThan(0);
+    run(g, 3);
+    expect(g.snapshotFor(2)!.pvp!.points![1]![0]).toBe(-1);
+    run(g, 6);
+    expect(g.snapshotFor(2)!.pvp!.points![1]![0]).toBe(1);
+  });
+});

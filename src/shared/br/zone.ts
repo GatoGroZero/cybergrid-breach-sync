@@ -47,6 +47,8 @@ export interface ZoneSpec {
   /** Cada circulo mide esta fraccion del anterior. */
   f2: number;
   f3: number;
+  /** Los tres circulos comparten el centro del mapa (sin azar): los puntos no se pierden por mala suerte. */
+  centered?: boolean;
 }
 
 export const ZONE_BR: ZoneSpec = {
@@ -94,18 +96,19 @@ export const ZONE_TECHO: ZoneSpec = {
 /** Inundacion del barrio: calles grandes, rondas mas largas. */
 export const ZONE_TERRITORIO: ZoneSpec = {
   timeline: {
-    start1: 40,
-    shrink1: 14,
-    start2: 72,
-    shrink2: 14,
-    start3: 100,
-    collapse: 35,
-    end: 140,
+    start1: 90,
+    shrink1: 16,
+    start2: 135,
+    shrink2: 16,
+    start3: 175,
+    collapse: 40,
+    end: 230,
   },
   dps: [0, 3, 6, 9, 14],
-  r1: 0.5,
-  f2: 0.6,
-  f3: 0.55,
+  r1: 0.62,
+  f2: 0.7,
+  f3: 0.66,
+  centered: true,
 };
 
 export type ZonePlan = [Circle, Circle, Circle];
@@ -120,14 +123,16 @@ export function planZones(
   const minDim = Math.min(widthPx, heightPx);
   const mid = { x: widthPx / 2, y: heightPx / 2 };
   const r1 = minDim * spec.r1;
-  const z1: Circle = {
-    cx: mid.x + rng.range(-0.12, 0.12) * widthPx,
-    cy: mid.y + rng.range(-0.1, 0.1) * heightPx,
-    r: r1,
-  };
+  const z1: Circle = spec.centered
+    ? { cx: mid.x, cy: mid.y, r: r1 }
+    : {
+        cx: mid.x + rng.range(-0.12, 0.12) * widthPx,
+        cy: mid.y + rng.range(-0.1, 0.1) * heightPx,
+        r: r1,
+      };
   const nested = (parent: Circle, factor: number): Circle => {
     const r = parent.r * factor;
-    const maxOffset = Math.max(0, parent.r - r - 6);
+    const maxOffset = spec.centered ? 0 : Math.max(0, parent.r - r - 6);
     const angle = rng.range(0, Math.PI * 2);
     const dist = Math.sqrt(rng.next()) * maxOffset;
     return { cx: parent.cx + Math.cos(angle) * dist, cy: parent.cy + Math.sin(angle) * dist, r };

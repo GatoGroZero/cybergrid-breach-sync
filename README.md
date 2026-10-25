@@ -138,8 +138,9 @@ El lobby ofrece cuatro modos. Cada sala elige uno, y el anfitrión lo puede camb
 ### Territorio
 
 - Equipos de 1 a 5 gatos por lado; los lugares libres los llenan bots. Cada persona elige su equipo en la sala antes de empezar.
-- Los mapas son una **calle de barrio** y unos **patios traseros**, más grandes que los de los techos, con coches, bancas, cercas y jardineras como cobertura.
-- Hay tres patios (A, B y C) que se capturan quedándose dentro; el equipo que los domina todos durante 18 segundos gana la ronda. Una **inundación** cierra el mapa para romper los empates. Mejor de 3 rondas.
+- Los mapas son una **calle de barrio** y unos **patios traseros**: tres plazas (A, B y C) en los cruces, a 14 casillas del centro, rodeadas de bancas, macetas y farolas como cobertura. La zona de inundación siempre se centra en el mapa, así que los tres patios se pueden pelear hasta el final.
+- Los patios son círculos grandes que se capturan quedándose dentro. Al entrar a uno ajeno se ve de inmediato cómo baja la bandera del rival (más rápido que tomar uno vacío) y luego sube la tuya, con una barra de avance sobre el patio. El equipo que domina los tres durante 18 segundos gana la ronda. Mejor de 3 rondas.
+- **Se reaparece.** Cada vez que caes vuelves a los 4 segundos, con vida, escudo y el kit completo (las balas son infinitas), en el patio más seguro que sea de tu equipo. Si tu equipo no tiene ningún patio, reapareces en tu base pero con tu **última vida**; si caes otra vez sin patios quedas eliminado, hasta que un compañero recupere uno y vuelvas a salir. Si todo el equipo queda eliminado, pierde la ronda.
 
 ### Aventura
 

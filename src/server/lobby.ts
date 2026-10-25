@@ -310,6 +310,15 @@ export class Lobby {
       const mine = m.game.cat(m.member.catId);
       if (mine) m.game.forceRoundWin(mine.team);
     });
+    socket.on('dev:tp', (p?: { x?: unknown; y?: unknown }) => {
+      const m = me();
+      if (this.config.testKit && m?.game && typeof p?.x === 'number' && typeof p?.y === 'number')
+        m.game.debugMove(m.member.catId, p.x, p.y);
+    });
+    socket.on('dev:die', () => {
+      const m = me();
+      if (this.config.testKit && m?.game) m.game.debugKill(m.member.catId);
+    });
     socket.on('dev:room', (i?: unknown) => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame && Number.isInteger(i))

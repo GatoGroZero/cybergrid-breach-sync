@@ -791,11 +791,11 @@ export class Hud {
       const def = WEAPONS[item.kind];
       title = `${def.name.toUpperCase()} ${RARITY_NAMES[item.rarity].toUpperCase()}`;
       color = RARITY_COLORS[item.rarity] as string;
-      const ammo = g.ammoOf(def.ammo);
+      const ammo = g.mode === 'territorio' ? '∞' : String(g.ammoOf(def.ammo));
       detail = `${def.damage[item.rarity]} dmg${def.pellets > 1 ? ' x' + def.pellets : ''}   cargador ${magOf(item)}/${def.magazine}   ${ITEM_NAMES[def.ammo]}: ${ammo}`;
     } else {
       title = ITEM_NAMES[item.kind].toUpperCase();
-      const use = touch ? 'toca FUEGO' : 'clic';
+      const use = touch ? 'toca USAR' : 'clic';
       detail =
         item.kind === 'medkit'
           ? `+10 vida por segundo, ${use} para usar`
@@ -987,10 +987,11 @@ export class Hud {
           'right',
         );
         if (selected && this.curGame) {
-          const reserve = this.curGame.ammoOf(def.ammo);
+          const infinite = this.curGame.mode === 'territorio';
+          const reserve = infinite ? 1 : this.curGame.ammoOf(def.ammo);
           text(
             ctx,
-            `+${reserve}`,
+            infinite ? '+∞' : `+${reserve}`,
             Math.round(cx - half + 4),
             Math.round(cy + half - 8),
             Math.max(12, size * 0.26),
@@ -1246,17 +1247,18 @@ export class Hud {
     const sp = g.splash;
     if (!sp) return;
     const age = now - sp.at;
-    const dur = 3800;
+    const dur = 2200;
     if (age > dur) {
       g.splash = null;
       return;
     }
     const k = Math.min(1, age / 240);
     const ease = 1 - (1 - k) ** 3;
-    const alpha = age > dur - 600 ? Math.max(0, (dur - age) / 600) : 1;
+    const alpha = age > dur - 450 ? Math.max(0, (dur - age) / 450) : 1;
     const unit = Math.min(w, h);
+    const small = g.input.mode === 'touch' || h < 520;
     const cx = w / 2;
-    const cy = h * 0.2;
+    const cy = h * (small ? 0.2 : 0.18);
 
     // destello blanco al arrancar
     if (age < 320) {
@@ -1266,7 +1268,7 @@ export class Hud {
     }
     ctx.globalAlpha = alpha;
     // franja con rayas de colores detras del titulo
-    const band = Math.round(unit * 0.27);
+    const band = Math.round(unit * (small ? 0.2 : 0.17));
     const palette = [C.yellow, C.orange, C.pink, C.cyan];
     ctx.fillStyle = 'rgba(26,28,44,0.88)';
     ctx.fillRect(0, Math.round(cy - band / 2), w, band);
@@ -1275,7 +1277,7 @@ export class Hud {
     ctx.fillRect(0, Math.round(cy - band / 2) - 4, w, 4);
     ctx.fillRect(0, Math.round(cy + band / 2), w, 4);
 
-    const size = Math.round(Math.min(78, Math.max(28, w * 0.075)));
+    const size = Math.round(Math.min(small ? 30 : 44, Math.max(18, w * 0.04)));
     const scale = 1 + (1 - ease) * 2.4;
     ctx.save();
     ctx.translate(
@@ -1298,13 +1300,13 @@ export class Hud {
     );
     ctx.restore();
 
-    const sub = Math.round(Math.min(26, Math.max(15, w * 0.02)));
+    const sub = Math.round(Math.min(small ? 10 : 14, Math.max(9, w * 0.012)));
     const teamMode = g.pvp !== null;
     text(
       ctx,
       teamMode ? 'Quien junte dos rondas' : 'Abre cofres y cajas de munición',
       cx,
-      cy + band * 0.2,
+      cy + band * 0.22,
       sub,
       C.white,
       'center',
@@ -1315,7 +1317,7 @@ export class Hud {
       ctx,
       teamMode ? 'gana la partida' : 'y sé el último gato en cuatro patas',
       cx,
-      cy + band * 0.2 + sub * 1.7,
+      cy + band * 0.22 + sub * 1.9,
       sub,
       C.lime,
       'center',

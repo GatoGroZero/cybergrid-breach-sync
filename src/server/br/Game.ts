@@ -171,6 +171,8 @@ export interface Cat {
   hurtUntil: number;
   invDirty: boolean;
   spectate: number | null;
+  /** Sin dano hasta este momento (los que reaparecen tienen un instante de proteccion). */
+  protectUntil: number;
 }
 
 export interface Shot {
@@ -344,6 +346,7 @@ export class BRGame {
         zoneAcc: 0,
         waterAcc: 0,
         hurtUntil: 0,
+        protectUntil: 0,
         invDirty: true,
         spectate: null,
       };
@@ -863,6 +866,7 @@ export class BRGame {
   damageCat(target: Cat, amount: number, attacker: Cat | null): void {
     if (!target.alive || amount <= 0) return;
     if (this.time < this.graceS && attacker !== null) return;
+    if (this.time < target.protectUntil) return;
     if (attacker && !this.canHurt(attacker, target)) return;
     const r = applyDamage(target, amount);
     target.hp = r.hp;
@@ -1364,6 +1368,20 @@ export class BRGame {
         ];
     for (const item of kit) giveItem(cat.inv, cat.ammo, item);
     cat.invDirty = true;
+  }
+
+  /** Solo para pruebas: pone a un gato en un lugar o lo elimina. */
+  debugMove(catId: number, x: number, y: number): void {
+    const cat = this.cat(catId);
+    if (cat) {
+      cat.x = x;
+      cat.y = y;
+    }
+  }
+
+  debugKill(catId: number): void {
+    const cat = this.cat(catId);
+    if (cat) this.damageCat(cat, 99_999, null);
   }
 
   /** Solo para pruebas: termina la partida de inmediato. */
