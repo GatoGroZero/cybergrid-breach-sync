@@ -49,6 +49,7 @@ export type PropKind =
   | 'sunbed'
   | 'parasol'
   | 'duck'
+  | 'pumpkin'
   | 'rug';
 
 export interface Prop {
@@ -983,6 +984,57 @@ function buildPiscina(rng: Rng, seed: number): BRMap {
   return b.m;
 }
 
+/**
+ * Calabazas de Halloween junto a las casas: adorno sin colision. Se coloca despues de generar el
+ * mapa y con su propio hash, asi no cambia nada del reparto de cofres, casas ni apariciones.
+ */
+function decorate(m: BRMap): void {
+  const taken = new Set(m.props.map((p) => `${p.x},${p.y}`));
+  const near = (x: number, y: number, list: Vec[], r: number): boolean =>
+    list.some((v) => Math.abs(v.x / TILE - x) <= r && Math.abs(v.y / TILE - y) <= r);
+  const chests = m.chests.map((c) => ({ x: c.x, y: c.y }));
+  let placed = 0;
+  for (const house of m.houses) {
+    const ring: Vec[] = [];
+    for (let x = house.x - 1; x <= house.x + house.w; x++) {
+      ring.push({ x, y: house.y - 1 }, { x, y: house.y + house.h });
+    }
+    for (let y = house.y; y < house.y + house.h; y++) {
+      ring.push({ x: house.x - 1, y }, { x: house.x + house.w, y });
+    }
+    const doors = house.doors.map((d) => ({ x: d.x * TILE, y: d.y * TILE }));
+    let mine = 0;
+    for (const t of ring) {
+      if (mine >= 2) break;
+      if (hash2(t.x, t.y, m.seed ^ 0x6a09e667) > 0.09) continue;
+      if (!inBounds(m, t.x, t.y) || isSolidTile(m, t.x, t.y)) continue;
+      const g = groundAt(m, t.x, t.y);
+      if (g === G.WATER || g === G.HEDGE || g === G.POOLEDGE || g === G.WALLTOP) continue;
+      if (taken.has(`${t.x},${t.y}`)) continue;
+      // lejos de las puertas, los cofres y los puntos de aparicion
+      if (near(t.x, t.y, doors, 2) || near(t.x, t.y, chests, 1) || near(t.x, t.y, m.spawns, 2))
+        continue;
+      m.props.push({ kind: 'pumpkin', x: t.x, y: t.y, w: 1, h: 1 });
+      taken.add(`${t.x},${t.y}`);
+      mine++;
+      placed++;
+    }
+  }
+  // Si el azar dejo muy pocas, se completan con las primeras casillas libres del anillo de cada casa.
+  for (const house of m.houses) {
+    if (placed >= 6) break;
+    const t = { x: house.x - 1, y: house.y + 1 };
+    if (!inBounds(m, t.x, t.y) || isSolidTile(m, t.x, t.y)) continue;
+    const g = groundAt(m, t.x, t.y);
+    if (g === G.WATER || g === G.HEDGE || g === G.POOLEDGE || g === G.WALLTOP) continue;
+    if (taken.has(`${t.x},${t.y}`) || near(t.x, t.y, chests, 1) || near(t.x, t.y, m.spawns, 2))
+      continue;
+    m.props.push({ kind: 'pumpkin', x: t.x, y: t.y, w: 1, h: 1 });
+    taken.add(`${t.x},${t.y}`);
+    placed++;
+  }
+}
+
 /** Motivo por el que un mapa generado no sirve, o `null` si esta bien. */
 export function mapProblem(m: BRMap): string | null {
   if (m.houses.length < (m.kind === 'piscina' ? 4 : 5)) return 'casas';
@@ -1025,6 +1077,7 @@ export function generateMapReport(
     const problem = mapProblem(m);
     if (!problem) {
       m.seed = seed;
+      decorate(m);
       return { map: m, problems };
     }
     problems.push(problem);

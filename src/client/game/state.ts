@@ -67,6 +67,7 @@ const DEG = Math.PI / 180;
 export class ClientBR {
   readonly map: BRMap;
   readonly mapKind: MapKind;
+  readonly seed: number;
   readonly you: number;
   readonly cats = new Map<number, CatInfo>();
 
@@ -142,6 +143,7 @@ export class ClientBR {
     private readonly sfx: Sfx,
   ) {
     this.mapKind = start.map as MapKind;
+    this.seed = start.seed;
     this.map = generateMap(this.mapKind, start.seed);
     this.you = start.you;
     start.cats.forEach((c) => this.cats.set(c.id, c));

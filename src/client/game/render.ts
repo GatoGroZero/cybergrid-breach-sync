@@ -22,9 +22,11 @@ import type { BREvent, ZoneView } from '../../shared/br/types';
 import { spatial, surfaceFor, type Sfx } from '../audio';
 import { C, ell, flipH, hash, make, px, rect } from '../pixel/draw';
 import { buildAssets, roofSprite, type Assets } from '../pixel/art';
+import { dayPhase, type DayName, type Daylight } from '../../shared/br/daytime';
 import { outfitInfo } from '../../shared/br/outfits';
 import { CAT_PAD, catSprites } from '../pixel/cat';
 import { paintWorld } from '../pixel/world';
+import { DaylightFx, staticLights, type LightSrc } from './daylight';
 import { Fx } from './fx';
 import { Hud, type Label } from './hud';
 import type { ClientBR, CatView } from './state';
@@ -142,6 +144,17 @@ export class BRRenderer {
   private nextRocketAt = 0;
   private celebrated = false;
   private confettiUntil = 0;
+  private readonly sky = new DaylightFx();
+  private skyLights: LightSrc[] = [];
+  /** Solo para pruebas y capturas: fija la hora del dia (0 a 1). */
+  dayOverride: number | null = null;
+  private lastDayName: DayName | null = null;
+  phaseToast: { name: DayName; at: number } | null = null;
+
+  /** Hora del dia de este cuadro. */
+  get daylight(): Daylight {
+    return this.sky.light;
+  }
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -211,6 +224,8 @@ export class BRRenderer {
     this.confettiUntil = 0;
     this.rockets.length = 0;
     this.nextRocketAt = 0;
+    this.lastDayName = null;
+    this.phaseToast = null;
     if (!game) {
       this.map = null;
       this.ground = null;
@@ -225,6 +240,7 @@ export class BRRenderer {
 
   private setMap(map: BRMap): void {
     this.map = map;
+    this.skyLights = staticLights(map);
     this.ground = this.bakeGround(map);
     this.hud.setMap(map);
     this.statics = [];
@@ -664,7 +680,9 @@ export class BRRenderer {
     if (!g || !map) return;
     const camX = this.camX;
     const camY = this.camY;
-    const rate = map.kind === 'bosque' ? 1.6 : map.kind === 'casa' ? 2 : 2.4;
+    const rate =
+      (map.kind === 'bosque' ? 1.6 : map.kind === 'casa' ? 2 : 2.4) *
+      (1 - 0.6 * this.sky.light.night);
     this.ambientAcc += dt * rate;
     while (this.ambientAcc >= 1) {
       this.ambientAcc -= 1;
@@ -744,6 +762,17 @@ export class BRRenderer {
     g.processEvents();
     this.fx.update(dt);
     this.shake = Math.max(0, this.shake - dt * 10);
+    // Hora del dia: sale de la semilla y del reloj de la partida, igual para todos.
+    const clockS = g.latest ? Math.max(0, g.serverNow / 1000) : 0;
+    const dl = this.sky.setPhase(this.dayOverride ?? dayPhase(g.seed, clockS));
+    this.sfx.setDaytime(dl.p);
+    if (dl.name !== this.lastDayName) {
+      if (this.lastDayName !== null) {
+        this.phaseToast = { name: dl.name, at: now };
+        this.sfx.phaseChime(dl.name);
+      }
+      this.lastDayName = dl.name;
+    }
     this.ambient(dt, now);
     if (g.alive && g.me) {
       if (g.me.tired && !this.wasTired) this.sfx.huff();
@@ -782,6 +811,7 @@ export class BRRenderer {
     b.globalAlpha = 1;
     b.fillStyle = BG;
     b.fillRect(0, 0, this.viewW, this.viewH);
+    this.sky.update(dt, now, map.kind, { x: camX, y: camY, w: this.viewW, h: this.viewH });
     this.drawGround(b, map, camX, camY, now);
     this.drawGroundFx(b, map, camX, camY, now);
 
@@ -797,9 +827,19 @@ export class BRRenderer {
 
     this.drawShots(b, shots, camX, camY);
     this.fx.draw(b, camX, camY);
+    this.sky.drawCreatures(b, camX, camY, now);
     this.drawRoofs(b, g, cats, camX, camY, dt);
-    this.drawLights(b, camX, camY, dt);
+    const flashes = this.drawLights(b, camX, camY, dt);
     this.drawMood(b, map.kind);
+    this.sky.drawVeil(
+      b,
+      map.kind,
+      camX,
+      camY,
+      this.viewW,
+      this.viewH,
+      this.veilLights(g, cats, target, flashes),
+    );
     if (g.zone) this.drawZone(b, g.zone, camX, camY, now);
 
     // buffer -> pantalla
@@ -832,6 +872,8 @@ export class BRRenderer {
       mapOpen: this.mapOpen,
       fps: this.fps,
       target,
+      daylight: dl,
+      dayToast: this.phaseToast,
     });
   }
 
@@ -887,7 +929,8 @@ export class BRRenderer {
     this.lights.push({ x, y, r, color, life, max: life });
   }
 
-  private drawLights(b: Ctx, camX: number, camY: number, dt: number): void {
+  private drawLights(b: Ctx, camX: number, camY: number, dt: number): LightSrc[] {
+    const out: LightSrc[] = [];
     for (let i = this.lights.length - 1; i >= 0; i--) {
       const l = this.lights[i] as (typeof this.lights)[number];
       l.life -= dt;
@@ -896,6 +939,7 @@ export class BRRenderer {
         continue;
       }
       const k = l.life / l.max;
+      out.push({ x: l.x, y: l.y, r: l.r * 1.5, k: Math.min(1, 0.9 * k + 0.1) });
       this.glow(
         b,
         Math.round(l.x - camX),
@@ -905,6 +949,33 @@ export class BRRenderer {
         0.6 * k,
       );
     }
+    return out;
+  }
+
+  /** Todas las luces que aclaran la noche: el gato, los demas gatos, las casas, los cofres y los fogonazos. */
+  private veilLights(
+    g: ClientBR,
+    cats: Map<number, CatView>,
+    target: { x: number; y: number },
+    flashes: LightSrc[],
+  ): LightSrc[] {
+    if (this.sky.light.alpha < 0.05) return [];
+    const out: LightSrc[] = [...this.skyLights, ...flashes];
+    out.push({ x: target.x, y: target.y, r: 66, k: 0.95 });
+    for (const c of cats.values()) out.push({ x: c.x, y: c.y, r: 26, k: 0.7 });
+    for (const bx of g.boxes) {
+      const closed = bx[4] === 0 && (bx[3] === 0 || bx[3] === 1 || bx[3] === 4);
+      if (!closed) continue;
+      out.push({
+        x: bx[1],
+        y: bx[2],
+        r: 18,
+        k: 0.55,
+        warm: bx[3] === 1 ? '#ffd24a' : '#ffa850',
+        warmK: 0.25,
+      });
+    }
+    return out;
   }
 
   /** Tinte de ambiente de cada mapa: calido en el bosque y la casa, fresco en la piscina. */
@@ -925,6 +996,10 @@ export class BRRenderer {
    */
   private drawGroundFx(b: Ctx, map: BRMap, camX: number, camY: number, now: number): void {
     const mapW = map.w * T;
+    const dl = this.sky.light;
+    // Color de la luz que entra: sol de dia, naranja al atardecer y luna azulada de noche.
+    const beamColor = dl.night > 0.45 ? '#a9c6ff' : dl.dusk > 0.35 ? '#ffb27a' : '#fff1c4';
+    const beamK = dl.night > 0.45 ? 0.8 : 1 + dl.dusk * 0.6;
     if (map.kind === 'casa') {
       // rayos de sol: un par por cuarto, inclinados, que respiran despacio
       const rooms = [0.17, 0.5, 0.83];
@@ -933,13 +1008,13 @@ export class BRRenderer {
       rooms.forEach((fx, i) => {
         const bx = mapW * fx - camX + Math.sin(now / 5200 + i * 2) * 10;
         const top = 2 * T - camY;
-        const a = 0.05 + 0.025 * Math.sin(now / 1700 + i * 1.7);
+        const a = (0.05 + 0.025 * Math.sin(now / 1700 + i * 1.7)) * beamK;
         for (const [w, off] of [
           [18, 0],
           [9, 40],
         ] as const) {
           b.globalAlpha = a;
-          b.fillStyle = '#fff1c4';
+          b.fillStyle = beamColor;
           b.beginPath();
           b.moveTo(bx + off, top);
           b.lineTo(bx + off + w, top);
@@ -952,10 +1027,30 @@ export class BRRenderer {
       b.globalCompositeOperation = prev;
       b.globalAlpha = 1;
     } else {
-      // sombras de nubes
+      // rayos de luz que cruzan el bosque y la piscina mientras queda sol (y luna despues)
+      const shaft = dl.night > 0.45 ? 0.028 * dl.night : 0.035 * (dl.sun + dl.dusk * 0.8);
+      if (shaft > 0.004) {
+        const prev = b.globalCompositeOperation;
+        b.globalCompositeOperation = 'lighter';
+        b.fillStyle = beamColor;
+        for (let i = 0; i < 3; i++) {
+          const bx =
+            ((now / 1000) * 3 + i * 190 + Math.sin(now / 4300 + i) * 14) % (this.viewW + 220);
+          b.globalAlpha = shaft * (0.7 + 0.3 * Math.sin(now / 1900 + i * 2.3));
+          b.beginPath();
+          b.moveTo(bx - 40, 0);
+          b.lineTo(bx - 14, 0);
+          b.lineTo(bx + 60, this.viewH);
+          b.lineTo(bx + 34, this.viewH);
+          b.closePath();
+          b.fill();
+        }
+        b.globalCompositeOperation = prev;
+      }
+      // sombras de nubes (de noche ya no hay sol que las proyecte)
       const mapH = map.h * T;
-      b.globalAlpha = 0.085;
-      for (let i = 0; i < 4; i++) {
+      b.globalAlpha = 0.085 * dl.sun;
+      for (let i = 0; i < (dl.sun > 0.05 ? 4 : 0); i++) {
         const cx = (((now / 1000) * (5 + i) + i * mapW * 0.31) % (mapW + 360)) - 180;
         const cy = (mapH * (0.18 + i * 0.22) + Math.sin(now / 9000 + i) * 30) % mapH;
         const cloud = this.cloudSprite(i, map.kind === 'bosque' ? '#0b2a1f' : '#2a4a66');
@@ -974,11 +1069,12 @@ export class BRRenderer {
       const tx1 = Math.min(map.w - 1, Math.floor((camX + this.viewW) / T));
       const ty1 = Math.min(map.h - 1, Math.floor((camY + this.viewH) / T));
       const beat = Math.floor(now / 150);
-      b.fillStyle = '#ffffff';
+      b.fillStyle = dl.night > 0.45 ? '#cfe4ff' : '#ffffff';
+      const sparkle = dl.night > 0.45 ? 29 : 17;
       for (let ty = ty0; ty <= ty1; ty++) {
         for (let tx = tx0; tx <= tx1; tx++) {
           if (map.ground[ty * map.w + tx] !== G.WATER) continue;
-          if ((tx * 7 + ty * 13 + beat) % 17 !== 0) continue;
+          if ((tx * 7 + ty * 13 + beat) % sparkle !== 0) continue;
           const px0 = tx * T - camX + ((tx * 5 + ty * 3 + beat) % 11) + 2;
           const py0 = ty * T - camY + ((tx * 3 + ty * 7 + beat) % 11) + 2;
           b.fillRect(px0, py0, 2, 1);
