@@ -51,6 +51,8 @@ export interface Config {
   zoneTimeScale: number;
   /** Segundos de celebracion (fuegos artificiales) antes de la tabla de resultados. */
   celebrationSeconds: number;
+  /** Una sala que sigue en el lobby sin ningun cambio durante tanto tiempo se cierra sola. */
+  roomIdleSeconds: number;
   /** Solo pruebas: los humanos arrancan con un fusil, botiquines, escudos y muros. */
   testKit: boolean;
   version: string;
@@ -63,6 +65,8 @@ export interface Config {
     emailVerify: number;
     seed: number;
     telemetry: number;
+    /** Conexiones de WebSocket abiertas a la vez desde una misma IP. */
+    socketsPerIp: number;
   };
 }
 
@@ -155,6 +159,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     countdownSeconds: Math.max(1, int(process.env.COUNTDOWN_SECONDS, 3)),
     testKit: process.env.TEST_KIT === 'true' && env !== 'production',
     celebrationSeconds: Math.min(20, Math.max(0, int(process.env.CELEBRATION_SECONDS, 7))),
+    roomIdleSeconds: Math.max(1, int(process.env.ROOM_IDLE_SECONDS, 1800)),
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     introSeconds: Math.min(15, Math.max(0, int(process.env.INTRO_SECONDS, 5))),
     pickSeconds: Math.min(40, Math.max(2, int(process.env.PICK_SECONDS, 14))),
@@ -168,6 +173,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
       emailVerify: int(process.env.LIMIT_EMAIL_VERIFY, 30),
       seed: int(process.env.LIMIT_SEED, 60),
       telemetry: int(process.env.LIMIT_TELEMETRY, 600),
+      socketsPerIp: int(process.env.LIMIT_SOCKETS_PER_IP, 30),
     },
   };
   return { ...base, ...overrides, limits: { ...base.limits, ...overrides.limits } };

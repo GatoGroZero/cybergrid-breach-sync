@@ -97,9 +97,13 @@ interface Room {
   /** Si la partida ya termino: hasta cuando dura la celebracion antes de mostrar resultados. */
   celebrateUntil: number | null;
   persisted: boolean;
+  /** Ultima vez que algo cambio en la sala (para cerrar las abandonadas). */
+  touchedAt: number;
 }
 
 const MAX_ROOMS = 40;
+/** Cuantos pelajes y mejoras guarda el servidor en memoria: los mas viejos se olvidan. */
+const MAX_REMEMBERED = 5000;
 /** Canal de los sockets que estan mirando la lista de salas publicas. */
 const BROWSE = 'salas';
 const ROOMS_PUSH_MS = 250;
@@ -159,12 +163,34 @@ export class Lobby {
   /** Ultima lista publica enviada, para avisar solo cuando cambia. */
   private publicSignature = '[]';
   private publicTimer: NodeJS.Timeout | null = null;
+  private readonly reaper: NodeJS.Timeout;
 
   constructor(
     private readonly io: Server,
     private readonly repo: Repo,
     private readonly config: Config,
-  ) {}
+  ) {
+    // Una sala olvidada en el lobby ocuparia uno de los 40 lugares para siempre.
+    const idleMs = config.roomIdleSeconds * 1000;
+    this.reaper = setInterval(() => this.reapIdle(), Math.max(250, Math.min(60_000, idleMs / 2)));
+    this.reaper.unref();
+  }
+
+  /** Cierra las salas que llevan demasiado en el lobby sin que pase nada y avisa a quienes estaban. */
+  reapIdle(now = Date.now()): number {
+    const idleMs = this.config.roomIdleSeconds * 1000;
+    let closed = 0;
+    for (const room of [...this.rooms.values()]) {
+      if (room.phase !== 'lobby' || now - room.touchedAt < idleMs) continue;
+      for (const id of [...room.members.keys()]) {
+        const socket = this.sockets.get(id) ?? null;
+        socket?.emit('room:closed');
+        this.leaveRoom(id, socket);
+      }
+      closed++;
+    }
+    return closed;
+  }
 
   stats(): { rooms: number; players: number } {
     let players = 0;
@@ -173,6 +199,7 @@ export class Lobby {
   }
 
   shutdown(): void {
+    clearInterval(this.reaper);
     if (this.publicTimer) clearTimeout(this.publicTimer);
     this.publicTimer = null;
     for (const room of this.rooms.values()) this.disposeRoom(room);
@@ -216,7 +243,7 @@ export class Lobby {
       if (!allow(actionBucket)) return;
       const parsed = skinSchema.safeParse(raw);
       if (!parsed.success) return ack?.(fail('pelaje_invalido'));
-      this.skins.set(user.id, parsed.data);
+      this.remember(this.skins, user.id, parsed.data);
       const m = me();
       if (m && m.room.phase !== 'playing') {
         m.member.skin = parsed.data;
@@ -291,7 +318,7 @@ export class Lobby {
       if (!allow(actionBucket)) return;
       const parsed = metaSchema.safeParse(raw);
       if (!parsed.success) return ack?.(fail('datos_invalidos'));
-      this.metas.set(user.id, clampMeta(parsed.data));
+      this.remember(this.metas, user.id, clampMeta(parsed.data));
       ack?.({ ok: true });
     });
     socket.on('game:emote', (raw: unknown) => {
@@ -534,6 +561,7 @@ export class Lobby {
       resetTimer: null,
       celebrateUntil: null,
       persisted: false,
+      touchedAt: Date.now(),
     };
     this.rooms.set(room.code, room);
     this.addMember(room, user, socket);
@@ -753,6 +781,7 @@ export class Lobby {
   }
 
   private broadcast(room: Room): void {
+    room.touchedAt = Date.now();
     this.io.to(room.code).emit('room:state', this.stateOf(room));
     this.notifyRooms();
   }
@@ -1021,6 +1050,16 @@ export class Lobby {
       });
     } catch (err) {
       console.error('no se pudo guardar la partida', err);
+    }
+  }
+
+  /** Guarda un dato por jugador sin dejar que el mapa crezca sin limite (se olvida lo mas viejo). */
+  private remember<V>(map: Map<number, V>, id: number, value: V): void {
+    map.delete(id);
+    map.set(id, value);
+    if (map.size > MAX_REMEMBERED) {
+      const oldest = map.keys().next().value;
+      if (oldest !== undefined) map.delete(oldest);
     }
   }
 
