@@ -14,6 +14,8 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
+    // sin animaciones decorativas en las pruebas: los clics esperan elementos quietos
+    contextOptions: { reducedMotion: 'reduce' },
     screenshot: 'only-on-failure',
   },
   projects: [

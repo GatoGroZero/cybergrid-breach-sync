@@ -92,6 +92,39 @@ test.describe('Móvil: controles táctiles', () => {
     }
   });
 
+  test('el menu se maneja con el dedo: pestañas, tarjetas de modo, informacion y Jugar solo', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_dedo'));
+    await page.getByTestId('tab-gato').tap();
+    await expect(page.getByTestId('painter')).toBeVisible();
+    await page.getByTestId('sub-traje').tap();
+    await expect(page.getByTestId('outfits')).toBeVisible();
+    await page.getByTestId('tab-salas').tap();
+    await expect(page.getByTestId('pane-salas')).toBeVisible();
+    await page.getByTestId('tab-jugar').tap();
+
+    // elegir un modo con un toque y leer de que trata con la "i"
+    await page.locator('[data-mode=territorio]').tap();
+    await expect(page.locator('[data-mode=territorio]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#stage-mode')).toHaveText('Territorio');
+    await page.locator('[data-mode=techo] .m-info').tap();
+    await expect(page.getByTestId('mode-info')).toBeVisible();
+    await expect(page.locator('#mode-info-close')).toBeInViewport();
+    await page.locator('#mode-info-close').tap();
+    await expect(page.getByTestId('mode-info')).toBeHidden();
+
+    // las opciones se abren y se cierran sin que nada quede fuera de la pantalla
+    await page.getByTestId('btn-options').tap();
+    await expect(page.getByTestId('options-close')).toBeInViewport();
+    await page.getByTestId('options-close').tap();
+    await expect(page.getByTestId('options')).toBeHidden();
+
+    await page.locator('[data-mode=br]').tap();
+    await page.getByTestId('btn-solo').tap();
+    await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
+  });
+
   test('el inventario se abre con la lata y se ordena arrastrando con el dedo', async ({
     page,
   }) => {

@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # en main no se cancela nada: cada commit del historial queda con su resultado
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   calidad:

@@ -25,7 +25,8 @@
     "test:cov": "vitest run --coverage",
     "test:e2e": "playwright test",
     "verify": "npm run check:text && npm run typecheck && npm run lint && npm run test && npm run build",
-    "audit:prod": "node scripts/audit-prod.mjs"
+    "audit:prod": "node scripts/audit-prod.mjs",
+    "auditoria": "node scripts/auditoria.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
