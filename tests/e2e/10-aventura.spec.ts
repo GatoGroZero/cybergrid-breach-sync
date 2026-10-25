@@ -126,6 +126,50 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
   });
 
+  test('al vencer a un jefe se elige una habilidad, se usa con su tecla y el botin trae armas y curas', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_hab'), true);
+    await page.locator('[data-mode=aventura]').click();
+    await page.getByTestId('btn-solo').click();
+    await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => window.__cybergrid?.intro === 0, null, { timeout: 20_000 });
+    const hud = (): Promise<NonNullable<Window['__cybergrid']>> =>
+      page.evaluate(() => window.__cybergrid as NonNullable<Window['__cybergrid']>);
+
+    // a la guarida del primer minijefe: aparece el jefe y se le da por vencido
+    await emit(page, 'dev:room', 4);
+    await page.waitForFunction(
+      () => (window as unknown as { __game: { adv: { boss: unknown } } }).__game.adv.boss !== null,
+      null,
+      { timeout: 12_000 },
+    );
+    await emit(page, 'dev:boss');
+    // primero se elige la reliquia y luego la habilidad
+    await page.waitForFunction(() => (window.__cybergrid?.advChoice ?? 0) === 3, null, {
+      timeout: 8000,
+    });
+    await page.keyboard.press('Digit1');
+    await page.waitForFunction(() => (window.__cybergrid?.advPChoice ?? 0) === 3, null, {
+      timeout: 8000,
+    });
+    // el botin del jefe: armas, curas, escudos, corazones y balas en el suelo
+    expect((await hud()).advPickups).toBeGreaterThanOrEqual(10);
+    await page.keyboard.press('Digit2');
+    await page.waitForFunction(() => window.__cybergrid?.advPowers === 1);
+    expect((await hud()).advPChoice).toBe(0);
+    // la tecla F usa la primera habilidad y la deja en espera
+    await page.waitForTimeout(2300);
+    await page.keyboard.press('KeyF');
+    await page.waitForFunction(
+      () =>
+        (window as unknown as { __game: { adv: { powers: [number, number, number, number][] } } })
+          .__game.adv.powers[0]![2] > 5,
+      null,
+      { timeout: 5000 },
+    );
+  });
+
   test('si el grupo cae, el bosque gana pero la esencia no se pierde', async ({ page }) => {
     await registerViaUi(page, uniqueName('e2e_cae'), true);
     await page.locator('[data-mode=aventura]').click();

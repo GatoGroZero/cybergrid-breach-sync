@@ -204,6 +204,9 @@ declare global {
       advChoice: number;
       advRelics: number;
       advClosed: number;
+      advPowers: number;
+      advPChoice: number;
+      advPickups: number;
     };
   }
 }

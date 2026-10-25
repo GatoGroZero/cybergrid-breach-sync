@@ -868,6 +868,51 @@ export class Sfx {
     }
   }
 
+  /** Una habilidad de jefe: cada una suena a lo que hace. */
+  power(id: number, v = 1, pan = 0): void {
+    this.ch = 'weapons';
+    switch (id) {
+      case 0: // furia: ronroneo grave que sube
+        this.tone(110, 0.5, 'sawtooth', 0.07 * v, 330, pan);
+        this.tone(220, 0.4, 'square', 0.04 * v, 660, pan, 0.08);
+        this.noise(0.35, 0.05 * v, 2400, pan, 'bandpass', 0.7);
+        break;
+      case 1: // mirada: destello de campanas
+        [880, 1175, 1568].forEach((f, i) =>
+          this.tone(f, 0.4, 'sine', 0.06 * v, undefined, pan, i * 0.06),
+        );
+        this.noise(0.3, 0.04 * v, 5200, pan, 'highpass');
+        break;
+      case 2: // esporas: burbujeo suave
+        for (let i = 0; i < 6; i++)
+          this.tone(320 + i * 70, 0.09, 'sine', 0.05 * v, 480 + i * 90, pan, i * 0.06);
+        this.noise(0.5, 0.03 * v, 1400, pan, 'bandpass', 0.6);
+        break;
+      case 3: // rugido: golpe grave y onda
+        this.tone(95, 0.7, 'sawtooth', 0.11 * v, 40, pan);
+        this.noise(0.6, 0.1 * v, 700, pan);
+        this.tone(190, 0.3, 'square', 0.05 * v, 90, pan);
+        break;
+      case 4: // paso espectral: soplo
+        this.noise(0.5, 0.07 * v, 1800, pan, 'bandpass', 0.5);
+        this.tone(700, 0.45, 'triangle', 0.045 * v, 1400, pan);
+        break;
+      case 5: // nova: explosion de fuego
+        this.noise(0.55, 0.12 * v, 1600, pan);
+        this.tone(160, 0.5, 'sawtooth', 0.08 * v, 60, pan);
+        this.tone(900, 0.2, 'square', 0.03 * v, 300, pan, 0.05);
+        break;
+      case 6: // escudo: campana de cristal
+        [1047, 1319, 1568].forEach((f, i) =>
+          this.tone(f, 0.5, 'triangle', 0.05 * v, undefined, pan, i * 0.05),
+        );
+        break;
+      default: // maullido hipnotico
+        this.tone(420, 0.8, 'sine', 0.06 * v, 880, pan);
+        this.tone(630, 0.8, 'sine', 0.04 * v, 1320, pan, 0.1);
+    }
+  }
+
   /** Sala superada: dos notas que suben y la puerta que se abre. */
   roomClear(): void {
     this.ch = 'ui';

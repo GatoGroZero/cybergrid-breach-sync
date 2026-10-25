@@ -45,6 +45,8 @@ export interface TouchDrawState {
   reloadFrac?: number;
   /** Aventura: el boton de la voltereta y cuanto falta para poder usarla (1 = lista). */
   dash?: { ready: number };
+  /** Aventura: las habilidades de jefe que lleva el gato (hasta tres botones). */
+  powers?: { icon: HTMLCanvasElement; ready: number; active: boolean; level: number }[];
 }
 
 /** Joystick, fuego, interactuar, inventario, menu, mapa y la barra de objetos, en pixeles CSS. */
@@ -230,6 +232,50 @@ export function drawTouchControls(
     ctx.fill();
   }
 
+  // habilidades de jefe (solo las que ya se ganaron; al editar la disposicion se ven las tres)
+  const pids = ['power1', 'power2', 'power3'] as const;
+  pids.forEach((id, i) => {
+    const pw = st.powers?.[i];
+    if (!pw && !st.editing) return;
+    const pc = circles[id];
+    const ready = pw ? pw.ready : 1;
+    ring(
+      ctx,
+      pc,
+      glow(id)
+        ? C.yellow
+        : pw?.active
+          ? C.yellow
+          : ready >= 1
+            ? 'rgba(115,239,247,0.95)'
+            : 'rgba(148,176,194,0.6)',
+      ready >= 1 ? 'rgba(41,54,111,0.75)' : 'rgba(26,28,44,0.7)',
+    );
+    if (pw) {
+      ctx.globalAlpha = ready >= 1 ? 1 : 0.5;
+      const k = (pc.r * 1.25) / Math.max(pw.icon.width, pw.icon.height);
+      ctx.drawImage(
+        pw.icon,
+        Math.round(pc.x - (pw.icon.width * k) / 2),
+        Math.round(pc.y - (pw.icon.height * k) / 2),
+        Math.round(pw.icon.width * k),
+        Math.round(pw.icon.height * k),
+      );
+      ctx.globalAlpha = 1;
+      if (ready < 1) {
+        ctx.beginPath();
+        ctx.arc(pc.x, pc.y, pc.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = C.cyan;
+        ctx.stroke();
+      }
+    } else {
+      ctx.fillStyle = C.white;
+      ctx.font = `${Math.max(9, pc.r * 0.6)}px ${FONT}`;
+      ctx.fillText(String(i + 1), pc.x, pc.y + 1);
+    }
+  });
+
   // menu y mapa
   for (const id of ['menu', 'map'] as const) {
     const c = circles[id];
@@ -267,7 +313,18 @@ export function drawTouchControls(
       ctx.textAlign = align;
       ctx.fillText(label, cx, y);
     };
-    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote', 'reload', 'dash'] as const) {
+    for (const id of [
+      'stick',
+      'aim',
+      'interact',
+      'menu',
+      'emote',
+      'reload',
+      'dash',
+      'power1',
+      'power2',
+      'power3',
+    ] as const) {
       const c = circles[id];
       put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }

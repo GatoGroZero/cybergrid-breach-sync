@@ -315,6 +315,10 @@ export class Lobby {
       if (this.config.testKit && m?.game instanceof AdventureGame && Number.isInteger(i))
         m.game.debugTeleport(i as number);
     });
+    socket.on('dev:boss', () => {
+      const m = me();
+      if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugKillBoss();
+    });
     socket.on('dev:win', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugWin();

@@ -278,7 +278,11 @@ export class Hud {
       this.drawStatus(f, touch);
       this.drawWeaponInfo(f, touch);
       if (touch) this.drawTouch(f);
-      else this.drawHotbar(f);
+      else {
+        this.drawHotbar(f);
+        if (g.mode === 'aventura')
+          this.advHud.drawPowerBar(f, f.h - f.safe.b - 12 - this.slotSize(f) - 16);
+      }
     } else {
       g.input.hotbarRects = [];
     }
@@ -1075,6 +1079,7 @@ export class Hud {
       reloadFrac: this.reloadFrac,
       ...(g.mode === 'aventura'
         ? {
+            powers: this.advHud.powerStates(g),
             dash: {
               ready:
                 g.me?.dash === undefined || g.me.dash <= 0.05 ? 1 : 1 - g.me.dash / DASH.cooldown,

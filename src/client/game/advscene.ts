@@ -1,4 +1,5 @@
-import { HAZARD, HOSTILE_SHOT, MOB_FLAG, mobDef } from '../../shared/br/adventure';
+import { HAZARD, HOSTILE_SHOT, MOB_FLAG, POWERS, mobDef } from '../../shared/br/adventure';
+import { ITEM_KINDS } from '../../shared/br/items';
 import { TILE } from '../../shared/br/constants';
 import type { BREvent } from '../../shared/br/types';
 import type { Sfx } from '../audio';
@@ -6,7 +7,7 @@ import { spatial } from '../audio';
 import { vineGateTile } from '../pixel/art-bosque';
 import { flashed, flippedOf, hostileShotSprite, mobSprite } from '../pixel/art-mobs';
 import { pickupSprite } from '../pixel/art-items';
-import { C, ell, type Ctx } from '../pixel/draw';
+import { C, ell, make, type Ctx } from '../pixel/draw';
 import type { Fx } from './fx';
 import type { ClientBR, MobView } from './state';
 
@@ -73,6 +74,8 @@ export class AdvScene {
     private readonly sfx: Sfx,
     private readonly hooks: {
       light: (x: number, y: number, r: number, color: string, life: number) => void;
+      /** Icono de un objeto del inventario (para el botin del suelo). */
+      icon: (kind: string) => HTMLCanvasElement | undefined;
       shake: (n: number) => void;
       say: (text: string, tone: 'info' | 'good' | 'bad', ms?: number) => void;
     },
@@ -227,6 +230,10 @@ export class AdvScene {
         if (s.v > 0.1) this.sfx.dash(Math.max(0.3, s.v), s.pan);
         break;
       }
+      case 'power': {
+        this.power(ev, g);
+        break;
+      }
       case 'relic': {
         for (let i = 0; i < 12; i++)
           this.fx.star(
@@ -321,6 +328,31 @@ export class AdvScene {
             b.fillRect(Math.round(fx), Math.round(fy - fl), 2, Math.round(fl));
             b.fillStyle = '#fff2a8';
             b.fillRect(Math.round(fx), Math.round(fy - fl * 0.5), 1, Math.round(fl * 0.5));
+          }
+          b.globalAlpha = 1;
+          break;
+        }
+        case HAZARD.espora: {
+          const fade = prog > 85 ? (100 - prog) / 15 : 1;
+          b.globalAlpha = 0.28 * fade;
+          ell(b, sx, sy, r, r * 0.82, '#2f8f4a');
+          b.globalAlpha = 0.4 * fade;
+          ell(b, sx, sy, r * 0.8, r * 0.64, '#7be08a');
+          b.globalAlpha = fade;
+          b.strokeStyle = '#d6ffb0';
+          b.lineWidth = 1;
+          b.setLineDash([2, 3]);
+          b.beginPath();
+          b.arc(sx, sy, r * 0.96, 0, Math.PI * 2);
+          b.stroke();
+          b.setLineDash([]);
+          for (let k = 0; k < 9; k++) {
+            const ph = (now / 900 + k * 0.11 + id * 0.07) % 1;
+            const bx = sx + Math.sin(k * 2.1 + id) * r * 0.75;
+            const by = sy + Math.cos(k * 1.3 + id) * r * 0.5 - ph * 14;
+            b.fillStyle = k % 2 ? '#e6ffd8' : '#a7f070';
+            b.globalAlpha = (1 - ph) * fade;
+            b.fillRect(Math.round(bx), Math.round(by), 2, 2);
           }
           b.globalAlpha = 1;
           break;
@@ -427,15 +459,29 @@ export class AdvScene {
     for (const id of this.moved.keys())
       if (!seen.has(id) && this.moved.size > 120) this.moved.delete(id);
     // botin del suelo
-    for (const [id, x, y, kind] of g.pickups) {
+    for (const [id, x, y, kind, code] of g.pickups) {
       if (x < camX - 12 || y < camY - 12 || x > camX + vw + 12 || y > camY + vh + 12) continue;
       const bob = Math.round(Math.sin(now / 260 + id) * 1.5);
-      const spr = pickupSprite(kind, Math.floor(now / 240 + id) % 2);
+      const spr = this.pickupArt(kind, code, Math.floor(now / 240 + id) % 2);
+      const rarity = kind === 4 && code !== undefined ? code % 3 : 0;
       list.push({
         y: y + 2,
         draw: () => {
           b.globalAlpha = 0.35 + 0.15 * Math.sin(now / 200 + id);
-          ell(b, x - camX, y - camY + 3, 6, 2.4, kind === 0 ? '#ff7ab6' : '#ffd25e');
+          ell(
+            b,
+            x - camX,
+            y - camY + 3,
+            kind === 4 ? 8 : 6,
+            2.4,
+            kind === 0
+              ? '#ff7ab6'
+              : rarity === 2
+                ? '#b55bf0'
+                : rarity === 1
+                  ? '#38b764'
+                  : '#ffd25e',
+          );
           b.globalAlpha = 1;
           b.drawImage(
             spr,
@@ -585,6 +631,87 @@ export class AdvScene {
         }
       },
     });
+  }
+
+  private readonly itemArt = new Map<string, HTMLCanvasElement>();
+
+  /** Dibujo de un objeto tirado: los objetos sueltos (armas, curas) usan su icono del inventario. */
+  private pickupArt(kind: number, code: number | undefined, frame: number): HTMLCanvasElement {
+    if (kind !== 4 || code === undefined) return pickupSprite(kind, frame);
+    const name = ITEM_KINDS[Math.floor(code / 3)] ?? 'medkit';
+    const key = `${name}:${code % 3}`;
+    let art = this.itemArt.get(key);
+    if (!art) {
+      const icon = this.hooks.icon(name);
+      if (!icon) return pickupSprite(2, frame);
+      const [cv, c] = make(icon.width, icon.height);
+      c.drawImage(icon, 0, 0);
+      art = cv;
+      this.itemArt.set(key, art);
+    }
+    return art;
+  }
+
+  /** Efecto de una habilidad al usarse (lo ven todos los gatos cercanos). */
+  private power(ev: Extract<BREvent, { e: 'power' }>, g: ClientBR): void {
+    const fx = this.fx;
+    const { x, y } = ev;
+    const sets: Record<number, { colors: string[]; ring: string; light: string; r: number }> = {
+      0: { colors: ['#ef7d57', '#ffcd75', '#ffffff'], ring: '#ef7d57', light: '#ffb347', r: 26 },
+      1: { colors: ['#ffd25e', '#fff2a8', '#ffffff'], ring: '#ffd25e', light: '#ffe08a', r: 34 },
+      2: { colors: ['#7be08a', '#d6ffb0', '#a7f070'], ring: '#7be08a', light: '#7be08a', r: 60 },
+      3: { colors: ['#ffcd75', '#b13e53', '#f4f4f4'], ring: '#ffcd75', light: '#ff7a3a', r: 82 },
+      4: { colors: ['#bfe9ff', '#73eff7', '#ffffff'], ring: '#73eff7', light: '#73eff7', r: 30 },
+      5: { colors: ['#ffcd75', '#ef7d57', '#d9461f'], ring: '#ff7a3a', light: '#ff9a3a', r: 105 },
+      6: { colors: ['#73c9ff', '#c9e6ff', '#ffffff'], ring: '#41a6f6', light: '#73c9ff', r: 50 },
+      7: { colors: ['#b794f4', '#e0c9ff', '#ffffff'], ring: '#b794f4', light: '#b794f4', r: 150 },
+    };
+    const set = sets[ev.id] ?? (sets[0] as NonNullable<(typeof sets)[number]>);
+    fx.ring(x, y, set.r * 0.45, set.ring, 0.45);
+    fx.ring(x, y, set.r * 0.8, set.colors[1] as string, 0.7);
+    fx.ring(x, y, set.r, set.colors[0] as string, 0.9);
+    fx.burst(x, y - 4, 22 + ev.lvl * 4, {
+      colors: set.colors,
+      speed: ev.id === 5 || ev.id === 3 ? 140 : 70,
+      life: 0.7,
+      size: 2,
+      grav: ev.id === 2 || ev.id === 4 ? -30 : 20,
+    });
+    for (let i = 0; i < 10; i++)
+      fx.star(
+        x + (Math.random() - 0.5) * 24,
+        y - 4 - Math.random() * 18,
+        set.colors[i % set.colors.length] as string,
+        0.9,
+        -24,
+      );
+    this.hooks.light(x, y, set.r * 1.6, set.light, 0.7);
+    if (ev.id === 3 || ev.id === 5) this.hooks.shake(ev.id === 5 ? 4 : 3);
+    const s = spatial(x - g.x, y - g.y, 420);
+    if (s.v > 0.05) this.sfx.power(ev.id, Math.max(0.35, s.v), s.pan);
+    if (ev.who === g.you) this.hooks.say(`${POWERS[ev.id]?.name ?? 'Habilidad'}`, 'good', 1100);
+  }
+
+  /** Halo bajo el gato mientras una habilidad suya sigue activa. */
+  drawPlayerAura(b: Ctx, g: ClientBR, camX: number, camY: number, now: number): void {
+    const list = g.adv?.powers ?? [];
+    let col: string | null = null;
+    for (const [id, , , act] of list) {
+      if (act <= 0) continue;
+      col = id === 0 ? '#ef7d57' : id === 1 ? '#ffd25e' : id === 4 ? '#73eff7' : col;
+    }
+    if (!col) return;
+    const x = g.drawX - camX;
+    const y = g.drawY - camY;
+    b.globalAlpha = 0.35 + 0.2 * Math.sin(now / 90);
+    ell(b, x, y + 5, 13, 5.2, col);
+    b.globalAlpha = 0.6;
+    for (let k = 0; k < 4; k++) {
+      const a = now / 220 + (k * Math.PI) / 2;
+      b.fillStyle = col;
+      b.fillRect(Math.round(x + Math.cos(a) * 11), Math.round(y + Math.sin(a) * 4 + 1), 2, 2);
+    }
+    b.globalAlpha = 1;
   }
 
   // ------------------------------------------------------------------ balas enemigas

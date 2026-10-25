@@ -887,7 +887,8 @@ function boss(ctx: MobCtx, m: Mob, t: Target): void {
       const rate = phase >= 2 ? 0.7 : 1;
       const tempo = 1 - 0.07 * m.hard;
       m.cd =
-        ctx.time + m.def.cooldown * rate * tempo * (m.kind === MOB.reyGato && phase === 3 ? 0.7 : 1);
+        ctx.time +
+        m.def.cooldown * rate * tempo * (m.kind === MOB.reyGato && phase === 3 ? 0.7 : 1);
     }
     if (m.script?.still) return;
   }

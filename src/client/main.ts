@@ -135,6 +135,10 @@ const input = new InputController(canvas, {
       game.sendRelic(slot);
       return;
     }
+    if (game?.adv?.pchoice) {
+      game.sendPower(slot);
+      return;
+    }
     // en la eleccion de kit, los numeros 1 a 4 eligen el kit
     if (game?.pvp?.phase === 'pick') {
       const id = KIT_IDS[slot];
@@ -151,6 +155,10 @@ const input = new InputController(canvas, {
   onKit: (index) => {
     if (game?.adv?.choice) {
       game.sendRelic(index);
+      return;
+    }
+    if (game?.adv?.pchoice) {
+      game.sendPower(index);
       return;
     }
     const id = KIT_IDS[index];
@@ -925,6 +933,9 @@ function updateHud(g: ClientBR, n: Net): void {
     advChoice: g.adv?.choice?.length ?? 0,
     advRelics: g.adv?.relics.length ?? 0,
     advClosed: g.closedRooms.size,
+    advPowers: g.adv?.powers.length ?? 0,
+    advPChoice: g.adv?.pchoice?.length ?? 0,
+    advPickups: g.pickups.length,
   };
 }
 
@@ -1258,6 +1269,9 @@ declare global {
       advChoice: number;
       advRelics: number;
       advClosed: number;
+      advPowers: number;
+      advPChoice: number;
+      advPickups: number;
     };
   }
 }
