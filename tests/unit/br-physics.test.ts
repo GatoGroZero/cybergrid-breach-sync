@@ -54,6 +54,26 @@ describe('física del gato', () => {
   });
 });
 
+describe('empujones largos', () => {
+  it('un desplazamiento de varias casillas se detiene en el primer muro y no lo atraviesa', () => {
+    const m = openMap(20, 20);
+    // una pared gruesa de dos casillas en las filas 12 y 13
+    for (let x = 1; x < 19; x++) {
+      m.solid[12 * 20 + x] = 1;
+      m.solid[13 * 20 + x] = 1;
+    }
+    const start = { x: 8.5 * TILE, y: 10.5 * TILE };
+    const next = moveBox(m, start.x, start.y, 0, 5 * TILE, CAT.half);
+    expect(next.y).toBeLessThan(12 * TILE);
+    // y en diagonal tampoco se cuela
+    const diag = moveBox(m, start.x, start.y, 3 * TILE, 4 * TILE, CAT.half);
+    expect(diag.y).toBeLessThan(12 * TILE);
+    // un paso normal da el mismo resultado que antes
+    const small = moveBox(m, start.x, start.y, 2, 2, CAT.half);
+    expect(small).toEqual({ x: start.x + 2, y: start.y + 2 });
+  });
+});
+
 describe('proyectiles y línea de tiro', () => {
   it('una bala rápida no atraviesa un muro aunque salte varias casillas en un tick', () => {
     const m = generateMap('bosque', 42);

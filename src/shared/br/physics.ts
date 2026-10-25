@@ -5,6 +5,8 @@ export const clamp = (v: number, min: number, max: number): number =>
   v < min ? min : v > max ? max : v;
 
 const EPS = 1e-3;
+/** Lo mas que avanza una caja de una vez: menos que su mitad, para no saltarse una pared. */
+const MAX_STEP = 4;
 
 function moveX(m: BRMap, x: number, y: number, dx: number, half: number): number {
   if (dx === 0) return x;
@@ -58,9 +60,17 @@ function moveY(m: BRMap, x: number, y: number, dy: number, half: number): number
 
 /** Mueve una caja cuadrada contra los muros, un eje a la vez (desliza por las paredes). */
 export function moveBox(m: BRMap, x: number, y: number, dx: number, dy: number, half: number): Vec {
-  const nx = moveX(m, x, y, dx, half);
-  const ny = moveY(m, nx, y, dy, half);
-  return { x: nx, y: ny };
+  // un desplazamiento largo (empujones, voltereta) se parte en pasos cortos: si no, atraviesa muros
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / MAX_STEP));
+  const sx = dx / steps;
+  const sy = dy / steps;
+  let px = x;
+  let py = y;
+  for (let i = 0; i < steps; i++) {
+    px = moveX(m, px, py, sx, half);
+    py = moveY(m, px, py, sy, half);
+  }
+  return { x: px, y: py };
 }
 
 export interface MoveInput {

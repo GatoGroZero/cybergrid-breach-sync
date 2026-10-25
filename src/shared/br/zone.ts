@@ -57,6 +57,23 @@ export const ZONE_BR: ZoneSpec = {
   f3: 0.5,
 };
 
+/** Sin zona: la aventura no tiene ola ni tormenta que cierre el mapa. */
+export const ZONE_NINGUNA: ZoneSpec = {
+  timeline: {
+    start1: 1e9,
+    shrink1: 10,
+    start2: 2e9,
+    shrink2: 10,
+    start3: 3e9,
+    collapse: 10,
+    end: 4e9,
+  },
+  dps: [0, 0, 0, 0, 0],
+  r1: 0.5,
+  f2: 0.5,
+  f3: 0.5,
+};
+
 /** Tormenta sobre el tejado: mapa chico, rondas cortas. */
 export const ZONE_TECHO: ZoneSpec = {
   timeline: {
