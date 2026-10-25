@@ -268,6 +268,7 @@ export const MOB_FLAG = {
   shielded: 32,
   phase2: 64,
   phase3: 128,
+  slowed: 256,
 } as const;
 
 /** Proyectiles de los enemigos: el `kind` de una bala enemiga empieza en 64. */
@@ -284,7 +285,7 @@ export const HOSTILE_SHOT = {
 export const isHostileShot = (kind: number): boolean => kind >= 64;
 
 /** Tipos de zona de peligro en el piso. */
-export const HAZARD = { charco: 0, onda: 1, aviso: 2, fuego: 3, sombra: 4 } as const;
+export const HAZARD = { charco: 0, onda: 1, aviso: 2, fuego: 3, sombra: 4, espora: 5 } as const;
 
 // ---------------------------------------------------------------- oleadas
 
@@ -306,7 +307,7 @@ export function wavePlan(rng: Rng, act: number, players: number): number[][] {
   const waves = act >= 3 ? 3 : 2;
   const plan: number[][] = [];
   for (let w = 0; w < waves; w++) {
-    const count = Math.round(3 + act * 1.1 + w * 1.3 + (players - 1) * 1.0);
+    const count = Math.round(3 + act * 1.1 + w * 1.3 + (players - 1) * 1.4);
     const wave: number[] = [];
     for (let i = 0; i < count; i++) {
       let kind = rng.pick(pool);
@@ -322,7 +323,7 @@ export function wavePlan(rng: Rng, act: number, players: number): number[][] {
 
 /** Cuanta vida extra tienen los enemigos segun el acto y cuantos gatos juegan. */
 export function hpScale(act: number, players: number): number {
-  return (1 + 0.18 * act) * (1 + 0.42 * (players - 1));
+  return (1 + 0.18 * act) * (1 + 0.55 * (players - 1));
 }
 
 /** Cuanto dano hacen los enemigos segun el acto. */
@@ -459,6 +460,111 @@ export function computeMods(
   m.crit = Math.min(0.6, m.crit);
   m.ammoSave = Math.min(0.5, m.ammoSave);
   return m;
+}
+
+// ---------------------------------------------------------------- habilidades de jefe
+
+/** Casillas de habilidad: cada gato puede llevar hasta tres a la vez. */
+export const POWER_SLOTS = 3;
+/** Una habilidad que se vuelve a elegir sube de nivel hasta este tope. */
+export const POWER_MAX_LEVEL = 3;
+
+export interface PowerDef {
+  id: number;
+  name: string;
+  desc: string;
+  /** Segundos de espera tras usarla (nivel 1). */
+  cooldown: number;
+  /** Segundos que dura el efecto (0 si es instantaneo). */
+  duration: number;
+}
+
+/** Habilidades que se ganan al derrotar jefes: cada una se activa con su tecla o boton. */
+export const POWERS: readonly PowerDef[] = [
+  { id: 0, name: 'Furia felina', desc: 'Disparas el doble de rápido', cooldown: 30, duration: 6 },
+  { id: 1, name: 'Mirada de búho', desc: '+80 % de daño y de alcance', cooldown: 32, duration: 6 },
+  {
+    id: 2,
+    name: 'Esporas curativas',
+    desc: 'Una nube cura a quien esté dentro',
+    cooldown: 30,
+    duration: 5,
+  },
+  {
+    id: 3,
+    name: 'Rugido guardián',
+    desc: 'Onda que daña, aturde y empuja',
+    cooldown: 26,
+    duration: 0,
+  },
+  {
+    id: 4,
+    name: 'Paso espectral',
+    desc: 'Intocable y veloz unos segundos',
+    cooldown: 28,
+    duration: 3.5,
+  },
+  {
+    id: 5,
+    name: 'Nova de fuego',
+    desc: 'Estalla y quema todo alrededor',
+    cooldown: 25,
+    duration: 0,
+  },
+  {
+    id: 6,
+    name: 'Escudo de luna',
+    desc: 'Un escudo que absorbe golpes',
+    cooldown: 32,
+    duration: 0,
+  },
+  {
+    id: 7,
+    name: 'Maullido hipnótico',
+    desc: 'Ralentiza a los enemigos cercanos',
+    cooldown: 26,
+    duration: 5,
+  },
+];
+
+/** La habilidad que ensena cada jefe (el jefe final no ensena: ahi termina la aventura). */
+export const BOSS_POWER: Record<number, number> = {
+  [MOB.reinaRata]: 0,
+  [MOB.buhoAnciano]: 1,
+  [MOB.mamaHongo]: 2,
+  [MOB.perroGuardian]: 3,
+  [MOB.zorroEspectral]: 4,
+};
+
+export interface OwnedPower {
+  id: number;
+  level: number;
+}
+
+/** Espera de una habilidad segun su nivel (12 % menos por nivel). */
+export const powerCooldown = (def: PowerDef, level: number): number =>
+  def.cooldown * (1 - 0.12 * (Math.max(1, level) - 1));
+
+/** Cuanto mas fuerte es el efecto segun el nivel (20 % mas por nivel). */
+export const powerEffect = (level: number): number => 1 + 0.2 * (Math.max(1, level) - 1);
+
+/**
+ * Lo que se ofrece al derrotar un jefe: tres habilidades distintas. Con casillas libres salen
+ * habilidades nuevas (siempre la del jefe si todavia no la tienes); con las casillas llenas salen
+ * las que ya tienes, para subirlas de nivel. Devuelve una lista vacia si no hay nada que ofrecer.
+ */
+export function powerOffer(rng: Rng, owned: readonly OwnedPower[], boss: number): number[] {
+  const free = owned.length < POWER_SLOTS;
+  const pool = free
+    ? POWERS.filter((p) => !owned.some((o) => o.id === p.id)).map((p) => p.id)
+    : owned.filter((o) => o.level < POWER_MAX_LEVEL).map((o) => o.id);
+  if (pool.length === 0) return [];
+  const picks: number[] = [];
+  const signature = BOSS_POWER[boss];
+  if (free && signature !== undefined && pool.includes(signature)) picks.push(signature);
+  const rest = rng.shuffle(pool.filter((id) => !picks.includes(id)));
+  while (picks.length < 3 && rest.length > 0) picks.push(rest.shift() as number);
+  return rng.shuffle(picks);
 }
 
 // ---------------------------------------------------------------- mejoras entre partidas

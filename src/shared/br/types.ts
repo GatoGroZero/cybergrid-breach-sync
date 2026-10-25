@@ -14,8 +14,8 @@ export type ContainerTuple = [number, number, number, number, number, number];
 export type MobTuple = [number, number, number, number, number, number, number];
 /** [id, x, y, radio, tipo (HAZARD), avance 0 a 100 de su vida o su aviso] */
 export type HazardTuple = [number, number, number, number, number, number];
-/** [id, x, y, tipo: 0 corazon, 1 balas, 2 pocion, 3 armadura] */
-export type PickupTuple = [number, number, number, number];
+/** [id, x, y, tipo: 0 corazon, 1 balas, 2 pocion, 3 armadura, 4 objeto, y en el 4 el codigo del objeto (indice de ITEM_KINDS * 3 + rareza)] */
+export type PickupTuple = [number, number, number, number, number?];
 
 export type BREvent =
   | { e: 'shot'; x: number; y: number; a: number; w: number }
@@ -52,6 +52,7 @@ export type BREvent =
   | { e: 'heal2'; x: number; y: number }
   | { e: 'revive'; x: number; y: number; id: number }
   | { e: 'dash'; x: number; y: number; a: number }
+  | { e: 'power'; id: number; x: number; y: number; who: number; lvl: number }
   | { e: 'relic'; x: number; y: number };
 
 export interface MeState {
@@ -141,6 +142,10 @@ export interface AdvState {
   equip: [number, number, number];
   /** Reliquias entre las que debes elegir (si hay una eleccion pendiente). */
   choice: number[] | null;
+  /** Habilidades que ofrece un jefe caido y entre las que debes elegir. */
+  pchoice: number[] | null;
+  /** Habilidades que llevas: [id, nivel, segundos de espera, segundos de efecto que quedan]. */
+  powers: [number, number, number, number][];
   /** Segundos que faltan para que te levantes (0 si estas de pie o ya no quedan vidas). */
   fallen: number;
   /** Segundos que quedan de la hierba gatera y de la valeriana. */

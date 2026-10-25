@@ -404,6 +404,11 @@ export class BRGame {
   }
 
   /** Dano de una bala disparada por `cat` (mejoras y pociones lo cambian). */
+  /** Segundos hasta el siguiente disparo (las habilidades de la Aventura lo acortan). */
+  protected shotCooldown(_cat: Cat, base: number): number {
+    return base;
+  }
+
   protected shotDamage(_cat: Cat, base: number): number {
     return base;
   }
@@ -633,7 +638,7 @@ export class BRGame {
     }
     if (this.spendsAmmo(cat)) item.mag = magOf(item) - 1;
     cat.invDirty = true;
-    cat.cooldownUntil = this.time + def.cooldown;
+    cat.cooldownUntil = this.time + this.shotCooldown(cat, def.cooldown);
     cat.heal = null;
     this.shotLog.push({ x: cat.x, y: cat.y, t: this.time, owner: cat.id });
     if (this.shotLog.length > 24) this.shotLog.shift();

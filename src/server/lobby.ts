@@ -29,6 +29,7 @@ import {
   lootTakeSchema,
   metaSchema,
   moveItemSchema,
+  powerPickSchema,
   readySchema,
   relicSchema,
   roomSettingsSchema,
@@ -275,6 +276,15 @@ export class Lobby {
       if (!parsed.success || !(m?.game instanceof AdventureGame))
         return ack?.(fail('datos_invalidos'));
       const done = m.game.chooseRelic(m.member.catId, parsed.data.i);
+      ack?.(done ? { ok: true } : fail('sin_oferta'));
+    });
+    socket.on('game:power', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = powerPickSchema.safeParse(raw);
+      const m = me();
+      if (!parsed.success || !(m?.game instanceof AdventureGame))
+        return ack?.(fail('datos_invalidos'));
+      const done = m.game.choosePower(m.member.catId, parsed.data.i);
       ack?.(done ? { ok: true } : fail('sin_oferta'));
     });
     socket.on('room:meta', (raw: unknown, ack?: (a: Ack) => void) => {

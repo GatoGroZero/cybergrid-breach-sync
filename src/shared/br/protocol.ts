@@ -55,6 +55,8 @@ export const inputSchema = z.object({
   run: z.boolean().optional(),
   /** Aventura: voltereta (el servidor decide si ya se recupero). */
   dash: z.boolean().optional(),
+  /** Aventura: usar la habilidad de la casilla 1, 2 o 3. */
+  pw: z.number().int().min(1).max(3).optional(),
 });
 
 const slot = z
@@ -131,6 +133,8 @@ export const roomSettingsSchema = z.object({
 
 /** Aventura: elegir una de las reliquias que se ofrecen (0 a 2). */
 export const relicSchema = z.object({ i: z.number().int().min(0).max(2) });
+/** Aventura: elegir una de las habilidades que ofrece un jefe (0 a 2). */
+export const powerPickSchema = z.object({ i: z.number().int().min(0).max(2) });
 /** Aventura: mejoras permanentes que trae cada gato (se guardan en su navegador). */
 export const metaSchema = z.object({
   vida: z.number().int().min(0).max(5).default(0),
