@@ -32,6 +32,8 @@ export interface TouchDrawState {
   selected?: TouchId | null;
   editing?: boolean;
   interactReady?: boolean;
+  /** Con una cura, pocion o muro en la mano y nada que abrir cerca, el boton dice USAR. */
+  useLabel?: boolean;
   /** Dibuja el contenido de los objetos; en edicion se muestran casillas vacias. */
   drawSlot?: (c: Circle, i: number) => void;
   bagIcon?: HTMLCanvasElement;
@@ -128,16 +130,17 @@ export function drawTouchControls(
 
   // interactuar
   const it = circles.interact;
-  const pulse = st.interactReady ? 0.55 + 0.45 * Math.sin(performance.now() / 160) : 0;
+  const hot = st.interactReady || st.useLabel === true;
+  const pulse = hot ? 0.55 + 0.45 * Math.sin(performance.now() / 160) : 0;
   ring(
     ctx,
     it,
-    glow('interact') ? C.yellow : st.interactReady ? C.lime : 'rgba(167,240,112,0.55)',
-    st.interactReady ? `rgba(167,240,112,${0.25 + pulse * 0.3})` : 'rgba(26,28,44,0.4)',
+    glow('interact') ? C.yellow : hot ? C.lime : 'rgba(167,240,112,0.55)',
+    hot ? `rgba(167,240,112,${0.25 + pulse * 0.3})` : 'rgba(26,28,44,0.4)',
   );
   ctx.fillStyle = C.white;
   ctx.font = `${Math.max(8, it.r * 0.3)}px ${FONT}`;
-  ctx.fillText('ABRIR', it.x, it.y);
+  ctx.fillText(st.useLabel ? 'USAR' : 'ABRIR', it.x, it.y);
 
   // inventario (lata de sardinas)
   const bag = circles.bag;

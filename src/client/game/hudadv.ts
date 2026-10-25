@@ -164,30 +164,36 @@ export class AdvHud {
     const boss = g.adv?.boss;
     if (!boss) return;
     const def = mobDef(boss.kind);
-    const bw = clamp(w * 0.55, 220, 460);
+    // chica y pegada arriba: en el celular casi no estorba (el nombre y una barrita)
+    const small = g.input.mode === 'touch' || f.h < 520;
+    const bw = small ? clamp(w * 0.34, 150, 260) : clamp(w * 0.4, 220, 380);
     const x = Math.round(w / 2 - bw / 2);
-    const y = this.topBox.y + this.topBox.h + 14;
-    panel(ctx, x - 6, y - 6, bw + 12, 36, 'rgba(26,28,44,0.88)');
-    text(ctx, def.name.toUpperCase(), w / 2, y + 5, 17, C.white, 'center', VT);
+    const y = this.topBox.y + this.topBox.h + (small ? 8 : 12);
+    const fs = small ? 13 : 15;
+    const bh = small ? 5 : 7;
+    ctx.globalAlpha = 0.9;
+    panel(ctx, x - 5, y - 4, bw + 10, fs + bh + 9, 'rgba(26,28,44,0.7)');
+    ctx.globalAlpha = 1;
+    text(ctx, def.name.toUpperCase(), w / 2, y + fs / 2, fs, C.white, 'center', VT);
     ctx.fillStyle = '#4a1c2c';
-    ctx.fillRect(x, y + 16, bw, 8);
+    ctx.fillRect(x, y + fs + 1, bw, bh);
     const fw = Math.round((bw * clamp(boss.hp, 0, 100)) / 100);
     const phase = boss.phase;
     ctx.fillStyle = phase >= 3 ? '#b794f4' : phase === 2 ? '#ef7d57' : '#e0566d';
-    ctx.fillRect(x, y + 16, fw, 8);
+    ctx.fillRect(x, y + fs + 1, fw, bh);
     ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    ctx.fillRect(x, y + 16, fw, 2);
+    ctx.fillRect(x, y + fs + 1, fw, 2);
     // marcas donde cambia de fase
     ctx.fillStyle = C.black;
     const cuts = boss.kind === MOB.reyGato ? [33, 66] : [50];
-    for (const c of cuts) ctx.fillRect(x + Math.round((bw * c) / 100) - 1, y + 14, 2, 12);
-    if (phase >= 2)
+    for (const c of cuts) ctx.fillRect(x + Math.round((bw * c) / 100) - 1, y + fs, 2, bh + 2);
+    if (phase >= 2 && !small)
       text(
         ctx,
         phase >= 3 ? 'FASE FINAL' : 'ENFURECIDO',
         x + bw,
-        y + 5,
-        14,
+        y + fs / 2,
+        13,
         phase >= 3 ? '#b794f4' : C.orange,
         'right',
         VT,
@@ -414,25 +420,20 @@ export class AdvHud {
     const b = g.advBanner;
     if (!b) return;
     const age = now - b.at;
-    const life = b.tone === 'good' ? 2200 : 3000;
+    // un aviso breve: alcanza para leerlo y se quita de en medio
+    const life = b.tone === 'good' ? 1500 : 1800;
     if (age > life) return;
-    const a = age < 250 ? age / 250 : age > life - 500 ? (life - age) / 500 : 1;
+    const a = age < 200 ? age / 200 : age > life - 400 ? (life - age) / 400 : 1;
     ctx.globalAlpha = clamp(a, 0, 1);
-    const y = Math.round(h * 0.2);
-    const size = Math.round(clamp(w * 0.03, 14, 28));
+    const small = g.input.mode === 'touch' || h < 520;
+    const y = Math.round(h * (small ? 0.27 : 0.24));
+    const size = Math.round(clamp(w * 0.016, 10, 15));
     const col = b.tone === 'bad' ? C.red : b.tone === 'good' ? C.lime : C.yellow;
     text(ctx, plain(b.title), w / 2, y, size, col, 'center', PIX);
-    if (b.sub)
-      text(
-        ctx,
-        b.sub,
-        w / 2,
-        y + size * 1.8,
-        Math.round(clamp(w * 0.03, 20, 30)),
-        C.white,
-        'center',
-        VT,
-      );
+    if (b.sub) {
+      const sub = Math.round(clamp(w * 0.017, 15, 20));
+      text(ctx, b.sub, w / 2, y + size * 1.7, sub, C.white, 'center', VT);
+    }
     ctx.globalAlpha = 1;
   }
 

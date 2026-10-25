@@ -472,10 +472,10 @@ export class ClientBR {
       if (payload.adv === 'victory') {
         this.win = payload;
         this.winAt = performance.now();
-        this.say('¡EL BOSQUE ESTÁ A SALVO!', 'good', 6500);
+        this.say('¡EL BOSQUE ESTÁ A SALVO!', 'good', 4000);
         this.sfx.win();
       } else {
-        this.say('El bosque los venció', 'bad', 5200);
+        this.say('El bosque los venció', 'bad', 3200);
         this.sfx.lose();
       }
       return;
@@ -484,10 +484,10 @@ export class ClientBR {
     this.winAt = performance.now();
     this.inputFrozen = true;
     if (payload.winnerId === this.you) {
-      this.say('¡VICTORIA REAL!', 'good', 6500);
+      this.say('¡VICTORIA REAL!', 'good', 4000);
       this.sfx.win();
     } else if (payload.winnerName) {
-      this.say(`¡Ganó ${payload.winnerName}!`, 'info', 6500);
+      this.say(`¡Ganó ${payload.winnerName}!`, 'info', 4000);
     }
   }
 
@@ -739,6 +739,38 @@ export class ClientBR {
     }
   }
 
+  /** Lo que hace el objeto en mano al usarlo: curar, beber una pocion, poner un muro, o nada. */
+  get useKind(): 'heal' | 'potion' | 'wall' | null {
+    const k = this.selectedItem?.kind;
+    if (k === 'medkit' || k === 'shield') return 'heal';
+    if (k === 'potion_catnip' || k === 'potion_valerian') return 'potion';
+    if (k === 'wall') return 'wall';
+    return null;
+  }
+
+  /**
+   * Usa el objeto en mano con un toque (segundo toque a su casilla, boton USAR o tecla E). Si no
+   * sirve en este momento lo dice: asi nunca parece que el objeto "no se deja usar".
+   */
+  useSelected(): boolean {
+    if (!this.alive || !this.me || this.frozen) return false;
+    const kind = this.selectedItem?.kind;
+    const max = this.me.maxHp ?? CAT.maxHp;
+    const maxShield = this.me.maxShield ?? CAT.maxShield;
+    if (kind === 'medkit' && this.me.hp >= max) {
+      this.say('Ya tienes la vida llena', 'info', 1400);
+      return false;
+    }
+    if (kind === 'shield' && this.me.shield >= maxShield) {
+      this.say('Tu escudo ya está lleno', 'info', 1400);
+      return false;
+    }
+    if (this.me.healLeft > 0 && (kind === 'medkit' || kind === 'shield')) return false;
+    if (this.useKind === null) return false;
+    this.input.requestUse();
+    return true;
+  }
+
   /** Pide recargar el arma en mano (tecla R o boton). */
   sendReload(): void {
     if (!this.alive || !this.net.connected || this.frozen) return;
@@ -775,7 +807,7 @@ export class ClientBR {
     this.net.socket.emit('game:emote', { k: kind });
   }
 
-  say(text: string, tone: Banner['tone'] = 'info', ms = 2800): void {
+  say(text: string, tone: Banner['tone'] = 'info', ms = 1800): void {
     this.banner = { text, until: performance.now() + ms, tone };
   }
 
@@ -798,7 +830,7 @@ export class ClientBR {
         else if (ev.phase === 2) text = '¡La segunda ola se cierra!';
         else if (ev.phase === 3) text = '¡ÚLTIMA OLA CERRÁNDOSE!';
         else if (ev.phase === 4) text = '¡La ola lo cubre todo!';
-        if (text) this.say(text, 'bad', ev.phase === 3 ? 4200 : 3600);
+        if (text) this.say(text, 'bad', ev.phase === 3 ? 2400 : 2000);
         break;
       }
       case 'emote':
