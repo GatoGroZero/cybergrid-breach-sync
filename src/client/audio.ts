@@ -89,6 +89,8 @@ export class Sfx {
   /** Canal al que pertenece el sonido que se esta creando ahora mismo. */
   private ch: Channel = 'ui';
   volumes: Volumes = { ...DEFAULT_VOLUMES };
+  /** Hora del dia (0 dia, 1 noche): el ambiente cambia de pajaros a grillos y buhos. */
+  private dayP = 0;
   private noiseBuffer: AudioBuffer | null = null;
   private brownBuffer: AudioBuffer | null = null;
   private voices = 0;
@@ -183,6 +185,36 @@ export class Sfx {
     this.ch = 'ambient';
     this.tone(2600, 0.07, 'sine', 0.05, 3300);
     this.tone(2900, 0.08, 'sine', 0.045, 2300, 0, 0.1);
+  }
+
+  /** El render avisa la hora en cada cuadro; los sonidos de ambiente la leen cuando les toca sonar. */
+  setDaytime(p: number): void {
+    this.dayP = Math.max(0, Math.min(1, p));
+  }
+
+  /** Aviso suave cuando cambia la hora del dia. */
+  phaseChime(name: string): void {
+    this.ch = 'ui';
+    switch (name) {
+      case 'Tarde':
+        [660, 784].forEach((f, i) => this.tone(f, 0.3, 'sine', 0.05, undefined, 0, i * 0.14));
+        break;
+      case 'Atardecer':
+        [784, 659, 523].forEach((f, i) =>
+          this.tone(f, 0.34, 'triangle', 0.06, undefined, 0, i * 0.16),
+        );
+        break;
+      case 'Anochecer':
+        [440, 330].forEach((f, i) => this.tone(f, 0.4, 'triangle', 0.06, undefined, 0, i * 0.2));
+        this.tone(110, 0.7, 'sine', 0.07, 80, 0, 0.1);
+        break;
+      case 'Noche':
+        [330, 392, 311].forEach((f, i) => this.tone(f, 0.55, 'sine', 0.06, undefined, 0, i * 0.25));
+        this.tone(82, 1, 'sine', 0.09, 60);
+        break;
+      default:
+        break;
+    }
   }
 
   // ------------------------------------------------------------------ piezas basicas
@@ -673,11 +705,19 @@ export class Sfx {
       );
     };
     const pan = (): number => rand(-0.85, 0.85);
+    const smooth = (a: number, b: number, v: number): number => {
+      const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    /** Cuanto sol queda (1 de dia, 0 de noche): decide si cantan los pajaros. */
+    const sunLeft = (): number => 1 - smooth(0.4, 0.66, this.dayP);
+    const night = (): number => smooth(0.45, 0.78, this.dayP);
 
     if (kind === 'bosque') {
       layer('lowpass', 520, 0.11, 0.06, 0.1);
       layer('bandpass', 2200, 0.02, 0.012, 0.23, 0.9);
       later(2.2, 6.5, () => {
+        if (Math.random() > sunLeft()) return;
         const p = pan();
         const base = rand(2300, 3600);
         const notes = Math.floor(rand(2, 5));
@@ -712,6 +752,7 @@ export class Sfx {
       layer('bandpass', 900, 0.1, 0.05, 0.33, 0.6);
       layer('lowpass', 300, 0.07, 0.03, 0.12);
       later(1.8, 5, () => {
+        if (Math.random() > sunLeft()) return;
         const p = pan();
         this.noise(0.14, 0.035, 1700, p, 'bandpass', 0.9);
         this.tone(rand(900, 1300), 0.08, 'sine', 0.025, rand(1500, 2000), p, 0.03);
@@ -722,6 +763,41 @@ export class Sfx {
         this.tone(900, 0.25, 'sawtooth', 0.018, 1200, p, 0.22);
       });
     }
+
+    // Noche: coro de grillos, buho, maullido lejano y rafagas de viento.
+    const outdoors = kind === 'casa' ? 0.4 : 1;
+    later(0.7, 1.9, () => {
+      if (Math.random() > night()) return;
+      const p = pan();
+      const base = rand(4200, 5100);
+      for (let i = 0; i < 3; i++)
+        this.tone(base, 0.035, 'square', 0.011 * outdoors, base * 0.96, p, i * 0.055);
+    });
+    later(13, 27, () => {
+      if (kind === 'casa' || night() < 0.6) return;
+      const p = pan();
+      [0, 0.34, 0.78].forEach((d, i) =>
+        this.tone(
+          [420, 400, 340][i] as number,
+          i === 2 ? 0.5 : 0.2,
+          'sine',
+          0.045,
+          undefined,
+          p,
+          d,
+        ),
+      );
+    });
+    later(21, 44, () => {
+      if (night() < 0.7) return;
+      const p = pan();
+      this.tone(520, 0.5, 'triangle', 0.035 * outdoors, 940, p);
+      this.tone(940, 0.5, 'triangle', 0.03 * outdoors, 430, p, 0.38);
+    });
+    later(11, 24, () => {
+      if (night() < 0.6) return;
+      this.noise(1.3, 0.05 * outdoors, 620, pan(), 'bandpass', 0.5);
+    });
 
     this.ambient = {
       stop: () => {

@@ -46,6 +46,12 @@ const menuBtn = $<HTMLButtonElement>('btn-menu');
 const sfx = new Sfx();
 /** Con ?debug en la URL se expone el estado local del juego para las pruebas del navegador. */
 const DEBUG = new URLSearchParams(window.location.search).has('debug');
+/** Con ?debug&hora=0.9 se fija la hora del dia (0 dia, 1 noche) para probar y tomar capturas. */
+const FORCED_HOUR = (() => {
+  const raw = new URLSearchParams(window.location.search).get('hora');
+  const n = raw === null ? Number.NaN : Number(raw);
+  return DEBUG && Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+})();
 const ERRORS: Record<string, string> = {
   sala_no_existe: 'Esa sala no existe',
   sala_llena: 'La sala está llena',
@@ -92,6 +98,7 @@ let lastCountdown = -1;
 
 const painter = new Painter();
 const renderer = new BRRenderer(canvas, sfx);
+renderer.dayOverride = FORCED_HOUR;
 
 const input = new InputController(canvas, {
   onInteract: () => void doInteract(),
@@ -753,6 +760,8 @@ function updateHud(g: ClientBR, n: Net): void {
     players: g.latest?.alive ?? 0,
     intro: g.intro,
     drawMs: Math.round(drawMs * 100) / 100,
+    daytime: Math.round(renderer.daylight.p * 1000) / 1000,
+    dayName: renderer.daylight.name,
   };
 }
 
@@ -993,6 +1002,8 @@ declare global {
       players: number;
       intro: number;
       drawMs: number;
+      daytime: number;
+      dayName: string;
     };
   }
 }

@@ -21,6 +21,31 @@ describe.each(MAP_KINDS)('generador procedural del mapa %s', (kind) => {
     expect(Array.from(c.solid)).not.toEqual(Array.from(a.solid));
   });
 
+  it('lleva calabazas de adorno: sin colision, lejos de cofres y apariciones, siempre las mismas', () => {
+    for (const seed of [11, 12, 13, 14, 15, 16]) {
+      const m = generateMap(kind, seed);
+      const pumpkins = m.props.filter((p) => p.kind === 'pumpkin');
+      expect(pumpkins.length).toBeGreaterThanOrEqual(3);
+      const seen = new Set<string>();
+      for (const p of pumpkins) {
+        // adorno puro: no bloquea el paso ni cae sobre agua o muros
+        expect(isSolidTile(m, p.x, p.y)).toBe(false);
+        expect([G.WATER, G.HEDGE, G.WALLTOP, G.POOLEDGE]).not.toContain(m.ground[p.y * m.w + p.x]);
+        expect(seen.has(`${p.x},${p.y}`)).toBe(false);
+        seen.add(`${p.x},${p.y}`);
+        for (const c of m.chests) {
+          expect(Math.abs(c.x / TILE - p.x) <= 1 && Math.abs(c.y / TILE - p.y) <= 1).toBe(false);
+        }
+        for (const sp of m.spawns) {
+          expect(Math.abs(sp.x / TILE - p.x) <= 2 && Math.abs(sp.y / TILE - p.y) <= 2).toBe(false);
+        }
+      }
+    }
+    const a = generateMap(kind, 99).props.filter((p) => p.kind === 'pumpkin');
+    const b = generateMap(kind, 99).props.filter((p) => p.kind === 'pumpkin');
+    expect(a).toEqual(b);
+  });
+
   it('cada casa tiene al menos 2 puertas abiertas y las casas no se encimar', () => {
     for (const seed of [1, 2, 3, 4, 5, 6]) {
       const m = generateMap(kind, seed);

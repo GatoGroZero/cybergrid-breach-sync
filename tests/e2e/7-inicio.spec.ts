@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { coords, registerViaUi, uniqueName } from './helpers';
+import { coords, registerViaUi, startSoloGame, uniqueName } from './helpers';
 
 test.describe('Flujo 9: inicio de la partida y ajustes de la mira', () => {
   test('la partida arranca con cuenta regresiva, todos quietos y el cartel de a jugar', async ({
@@ -62,5 +62,31 @@ test.describe('Flujo 9: inicio de la partida y ajustes de la mira', () => {
     await page.getByTestId('btn-settings').click();
     await page.locator('#set-tab-touch').click();
     await expect(page.getByTestId('fire-mode-target')).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
+test.describe('Flujo 11: hora del dia', () => {
+  test('la partida pasa de dia a noche sola y se puede fijar la hora para probar', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_hora'), true);
+    await startSoloGame(page);
+    const first = await page.evaluate(() => window.__cybergrid?.daytime ?? -1);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThan(0.5);
+    await page.waitForTimeout(2500);
+    const second = await page.evaluate(() => window.__cybergrid?.daytime ?? -1);
+    // el reloj del cielo solo avanza
+    expect(second).toBeGreaterThan(first);
+
+    // con la hora fijada la partida se ve de noche y el reloj del cielo lo sabe
+    // (al recargar, la partida en curso se retoma sola)
+    await page.goto('/?debug&hora=0.95');
+    await page.waitForFunction(() => (window.__cybergrid?.snapshots ?? 0) > 5);
+    await expect.poll(() => page.evaluate(() => window.__cybergrid?.dayName)).toBe('Noche');
+    // dibujar con velo, luciernagas y luces no cuesta casi nada
+    await page.waitForTimeout(1500);
+    const cost = await page.evaluate(() => window.__cybergrid?.drawMs ?? 99);
+    expect(cost).toBeLessThan(12);
   });
 });

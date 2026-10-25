@@ -428,6 +428,44 @@ function duckSprite(): HTMLCanvasElement {
   return outline(cv, C.black);
 }
 
+/** Calabaza de Halloween con cara tallada que brilla (la luz se agrega de noche en el render). */
+function pumpkinSprite(variant: number): HTMLCanvasElement {
+  const [cv, c] = make(12, 13);
+  ell(c, 6, 11.5, 5.5, 1.6, 'rgba(26,28,44,0.3)');
+  ell(c, 6, 7.5, 5.2, 4.3, '#ef7d57');
+  ell(c, 3.4, 7.5, 2.6, 4, '#f6a15f');
+  ell(c, 8.6, 7.6, 2.6, 4, '#cf5a2b');
+  for (const x of [4, 6, 8]) rect(c, x, 4, 1, 7, '#c9491f');
+  rect(c, 5, 2, 2, 2, '#38b764');
+  px(c, 7, 1, '#a7f070');
+  px(c, 8, 1, '#38b764');
+  const glow = '#ffcd75';
+  const face = variant % 3;
+  // ojos
+  for (const [x, y] of [
+    [3, 6],
+    [4, 6],
+    [8, 6],
+    [7, 6],
+    [4, 5],
+    [7, 5],
+  ] as const)
+    px(c, x, y, glow);
+  // boca
+  if (face === 0) {
+    for (const x of [3, 4, 5, 6, 7, 8]) px(c, x, 9, glow);
+    px(c, 4, 8, glow);
+    px(c, 7, 8, glow);
+  } else if (face === 1) {
+    for (const x of [3, 5, 7]) rect(c, x, 8, 1, 2, glow);
+    for (const x of [4, 6, 8]) px(c, x, 9, glow);
+  } else {
+    rect(c, 4, 8, 4, 1, glow);
+    rect(c, 5, 9, 2, 1, glow);
+  }
+  return outline(cv, C.black);
+}
+
 // ------------------------------------------------------------------ cofres, lapidas, muros
 
 function chestSprite(open: boolean, golden: boolean): HTMLCanvasElement {
@@ -1014,6 +1052,9 @@ export function buildAssets(): Assets {
         break;
       case 'duck':
         sprite = duckSprite();
+        break;
+      case 'pumpkin':
+        sprite = pumpkinSprite(variant);
         break;
       default:
         sprite = null;

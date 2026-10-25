@@ -1,3 +1,4 @@
+import type { DayName, Daylight } from '../../shared/br/daytime';
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
   CLAWS,
@@ -47,6 +48,8 @@ export interface HudFrame {
   mapOpen: boolean;
   fps: number;
   target: { x: number; y: number };
+  daylight: Daylight;
+  dayToast: { name: DayName; at: number } | null;
 }
 
 export const PIX = '"Press Start 2P", monospace';
@@ -185,6 +188,8 @@ export class Hud {
   private reloadSlot = -1;
   private reloadFrac = 0;
   private curGame: ClientBR | null = null;
+  /** Donde quedo el panel de la ola, para pegarle el reloj del cielo. */
+  private zoneBox = { x: 0, y: 0, w: 0, h: 30 };
 
   constructor(private readonly assets: Assets) {}
 
@@ -216,6 +221,7 @@ export class Hud {
     if (g.input.mode === 'keyboard') g.input.hotbarRects = [];
     const touch = g.input.mode === 'touch';
     this.drawZoneInfo(f);
+    this.drawSky(f);
     this.drawMinimap(f, touch);
     this.drawFeed(f, touch);
     if (g.alive) {
@@ -229,6 +235,7 @@ export class Hud {
     this.drawEmoteBar(f, touch);
     this.drawWarnings(f);
     this.drawBanner(f);
+    this.drawDayToast(f);
     this.drawIntro(f);
     this.drawSplash(f);
     if (!g.connected) this.drawOffline(f);
@@ -469,10 +476,101 @@ export class Hud {
     const pw = tw + 96;
     const x = Math.round(w / 2 - pw / 2);
     const y = safe.t + 8;
+    this.zoneBox = { x, y, w: pw, h: 30 };
     panel(ctx, x, y, pw, 30);
     sprite(ctx, this.assets.paw, x + 16, y + 15, 18);
     text(ctx, String(alive), x + 32, y + 16, 22, C.yellow, 'left');
     text(ctx, msg, x + 72 + tw / 2 - 4, y + 16, 20, color, 'center', VT, null);
+  }
+
+  // ------------------------------------------------------------------ hora del dia
+
+  /** Reloj del cielo: el sol baja, se pone y sale la luna mientras avanza la partida. */
+  private drawSky(f: HudFrame): void {
+    const { ctx, daylight: l } = f;
+    const z = this.zoneBox;
+    if (z.w === 0) return;
+    const w = 58;
+    const h = 30;
+    const x = z.x + z.w + 10;
+    const y = z.y;
+    panel(ctx, x, y, w, h);
+    // cielo: del azul del dia al violeta y al azul oscuro de la noche
+    const sky = l.night > 0.5 ? '#1d2a5c' : l.dusk > 0.3 ? '#b8527a' : '#5fb4f0';
+    const ix = x + 4;
+    const iy = y + 4;
+    const iw = w - 8;
+    const ih = h - 8;
+    ctx.fillStyle = sky;
+    ctx.fillRect(ix, iy, iw, ih);
+    if (l.night > 0.5) {
+      ctx.fillStyle = '#f4f4f4';
+      for (const [sx, sy] of [
+        [6, 3],
+        [19, 6],
+        [31, 2],
+        [40, 8],
+      ] as const)
+        ctx.fillRect(ix + sx, iy + sy, 1, 1);
+    }
+    // el astro sube y baja segun la hora
+    const moon = l.p >= 0.72;
+    const t = moon ? (l.p - 0.72) / 0.28 : l.p / 0.72;
+    const cx = Math.round(ix + 8 + t * (iw - 16));
+    const lift = Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
+    const cy = Math.round(iy + ih - 5 - lift * (ih - 9));
+    if (moon) {
+      ctx.fillStyle = '#f4f4f4';
+      ctx.fillRect(cx - 2, cy - 3, 5, 7);
+      ctx.fillRect(cx - 3, cy - 2, 7, 5);
+      ctx.fillStyle = sky;
+      ctx.fillRect(cx, cy - 3, 4, 5);
+      ctx.fillRect(cx + 1, cy - 4, 3, 7);
+    } else {
+      ctx.fillStyle = l.dusk > 0.3 ? '#ef7d57' : '#ffcd75';
+      ctx.fillRect(cx - 2, cy - 3, 5, 7);
+      ctx.fillRect(cx - 3, cy - 2, 7, 5);
+      ctx.fillStyle = '#ffe9a8';
+      ctx.fillRect(cx - 1, cy - 2, 2, 2);
+    }
+    // suelo
+    ctx.fillStyle = '#1a1c2c';
+    ctx.fillRect(ix, iy + ih - 3, iw, 3);
+  }
+
+  /** Aviso corto cuando cambia la hora: "Atardece", "Anochece"... */
+  private drawDayToast(f: HudFrame): void {
+    const { ctx, dayToast: t, now, w, safe } = f;
+    if (!t) return;
+    const age = now - t.at;
+    const dur = 4200;
+    if (age > dur) return;
+    const text1: Record<DayName, string> = {
+      Día: '',
+      Tarde: 'La tarde cae sobre el barrio',
+      Atardecer: 'Atardece: el cielo se pone naranja',
+      Anochecer: 'Anochece: salen los murciélagos',
+      Noche: 'Noche cerrada: las luces de las casas guían',
+    };
+    const msg = text1[t.name];
+    if (!msg) return;
+    const k = Math.min(1, age / 260);
+    const alpha = age > dur - 700 ? Math.max(0, (dur - age) / 700) : 1;
+    ctx.font = `22px ${VT}`;
+    const tw = ctx.measureText(msg).width + 36;
+    const y = safe.t + 52 + Math.round((1 - k) * -10);
+    ctx.globalAlpha = alpha * k;
+    panel(ctx, Math.round(w / 2 - tw / 2), y, tw, 30, 'rgba(26,28,44,0.88)');
+    text(
+      ctx,
+      msg,
+      Math.round(w / 2),
+      y + 16,
+      22,
+      f.daylight.night > 0.5 ? C.cyan : C.yellow,
+      'center',
+    );
+    ctx.globalAlpha = 1;
   }
 
   // ------------------------------------------------------------------ minimapa

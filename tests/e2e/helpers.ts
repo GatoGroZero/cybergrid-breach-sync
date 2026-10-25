@@ -193,6 +193,8 @@ declare global {
       players: number;
       intro: number;
       drawMs: number;
+      daytime: number;
+      dayName: string;
     };
   }
 }
