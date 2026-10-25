@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { registerViaUi, uniqueName } from './helpers';
+import { closeOptions, openOptions, registerViaUi, uniqueName } from './helpers';
 
 type Sock = { __net: { socket: { emit(e: string, p?: unknown): void } } };
 
@@ -31,9 +31,11 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
     await registerViaUi(page, uniqueName('e2e_san'));
     await page.locator('[data-mode=aventura]').click();
     await expect(page.getByTestId('solo-help')).toContainText('bosque encantado');
+    await openOptions(page);
     await expect(page.getByTestId('room-bots')).toBeHidden();
     const maps = await page.getByTestId('room-map').locator('option').allTextContents();
     expect(maps).toEqual(['Mapa al azar', 'Bosque encantado']);
+    await closeOptions(page);
 
     await seedMeta(page, { essence: 70 });
     await expect(page.getByTestId('btn-shrine')).toBeVisible();

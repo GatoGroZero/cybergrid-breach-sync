@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { registerViaUi, uniqueName } from './helpers';
+import {
+  closeOptions,
+  createRoomUi,
+  openOptions,
+  openTab,
+  registerViaUi,
+  uniqueName,
+} from './helpers';
 
 test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
   test('el selector muestra los modos, recuerda el elegido y adapta la ayuda de jugar solo', async ({
@@ -7,7 +14,7 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
   }) => {
     await registerViaUi(page, uniqueName('e2e_modo'));
     const picker = page.getByTestId('mode-picker');
-    await expect(picker.locator('button')).toHaveCount(4);
+    await expect(picker.locator('.mode')).toHaveCount(4);
     await expect(page.locator('[data-mode=br]')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('solo-help')).toContainText('11 bots');
     await expect(page.locator('[data-mode=territorio]')).toBeEnabled();
@@ -16,6 +23,7 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await page.locator('[data-mode=techo]').click();
     await expect(page.locator('[data-mode=techo]')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('solo-help')).toContainText('tejado');
+    await openOptions(page);
     await expect(page.getByTestId('room-format')).toBeVisible();
     await expect(page.getByTestId('room-bots')).toBeHidden();
     // el mapa cambia a los tres techos
@@ -27,6 +35,7 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
       'Mansarda de pizarra',
     ]);
     await page.getByTestId('room-format').selectOption('2v2');
+    await closeOptions(page);
     await expect(page.getByTestId('solo-help')).toContainText('dos bots');
 
     await page.reload();
@@ -44,14 +53,13 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await registerViaUi(b, nameB);
 
     await a.locator('[data-mode=techo]').click();
-    await a.getByTestId('room-format').selectOption('2v2');
-    await a.getByTestId('room-name').fill('Techo E2E');
-    await a.getByTestId('btn-create').click();
+    await createRoomUi(a, { format: '2v2', name: 'Techo E2E' });
     await expect(a.getByTestId('room-view')).toBeVisible();
     await expect(a.getByTestId('room-meta')).toContainText('Pelea en el techo');
     await expect(a.getByTestId('room-meta')).toContainText('2 contra 2');
     await expect(a.getByTestId('team-board')).toBeVisible();
 
+    await openTab(b, 'salas');
     await expect(b.getByTestId('room-list').getByText('Techo E2E')).toBeVisible({ timeout: 8000 });
     await b.getByTestId('room-list').getByRole('button', { name: 'Entrar' }).first().click();
     await expect(b.getByTestId('team-board')).toBeVisible();
@@ -70,7 +78,9 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await expect(b.getByTestId('btn-team-0')).toHaveCount(0);
 
     // el anfitrion cambia a 1 contra 1: sobran personas en el mismo equipo y se reparten solas
+    await openOptions(a);
     await a.getByTestId('set-format').selectOption('1v1');
+    await closeOptions(a);
     await expect(a.getByTestId('team-0').getByTestId('member')).toHaveCount(1);
     await expect(a.getByTestId('team-1').getByTestId('member')).toHaveCount(1);
 
@@ -83,7 +93,9 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
   }) => {
     await registerViaUi(page, uniqueName('e2e_techo'), true);
     await page.locator('[data-mode=techo]').click();
+    await openOptions(page);
     await page.getByTestId('room-map').selectOption('tejado');
+    await closeOptions(page);
     await page.getByTestId('btn-solo').click();
     await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'pick', null, {
@@ -164,13 +176,15 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
   }) => {
     await registerViaUi(page, uniqueName('e2e_terr'), true);
     await page.locator('[data-mode=territorio]').click();
+    await openOptions(page);
     await expect(page.getByTestId('room-teamsize')).toBeVisible();
     await expect(page.getByTestId('room-format')).toBeHidden();
     const maps = await page.getByTestId('room-map').locator('option').allTextContents();
     expect(maps).toEqual(['Mapa al azar', 'Calle del barrio', 'Patios traseros']);
     await page.getByTestId('room-teamsize').selectOption('3');
-    await expect(page.getByTestId('solo-help')).toContainText('3');
     await page.getByTestId('room-map').selectOption('calle');
+    await closeOptions(page);
+    await expect(page.getByTestId('solo-help')).toContainText('3');
     await page.getByTestId('btn-solo').click();
     await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'pick', null, {
@@ -234,8 +248,10 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
   }) => {
     await registerViaUi(page, uniqueName('e2e_resp'), true);
     await page.locator('[data-mode=territorio]').click();
+    await openOptions(page);
     await page.getByTestId('room-teamsize').selectOption('1');
     await page.getByTestId('room-map').selectOption('calle');
+    await closeOptions(page);
     await page.getByTestId('btn-solo').click();
     await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
     await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'pick', null, {

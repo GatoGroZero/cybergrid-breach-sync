@@ -1,0 +1,911 @@
+/* ------------------------------------------------------------------ lobby tipo "casillero" */
+
+.screen.lobby {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.lb-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 8px
+    max(14px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(#262e58, #1a1c2c);
+  border-bottom: 4px solid var(--black);
+  flex: none;
+}
+
+.lb-top .logo {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.lb-tabs {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+  margin-left: 6px;
+}
+
+.lb-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-family: var(--font-title);
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+  transition:
+    transform 0.12s steps(3),
+    background-color 0.12s steps(3);
+}
+
+.lb-tab svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  shape-rendering: crispEdges;
+}
+
+.lb-tab:hover:not([aria-selected='true']) {
+  color: var(--text);
+  border-color: var(--cyan);
+  transform: translateY(-2px);
+}
+
+.lb-tab[aria-selected='true'] {
+  color: var(--black);
+  background: var(--yellow);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px var(--orange);
+}
+
+.btn.icon {
+  min-width: 36px;
+  padding-inline: 8px;
+}
+
+/* avisos de error del lobby: una franja bajo el encabezado, visible en cualquier pestana */
+.lb-error {
+  flex: none;
+  margin: 0;
+  padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px
+    max(14px, env(safe-area-inset-left, 0px));
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--text);
+  background: var(--red);
+  border-bottom: 4px solid var(--black);
+}
+
+.lb-error:empty {
+  display: none;
+}
+
+.lb-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px max(14px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+  animation: pane-in 0.22s steps(4);
+}
+
+.lb-pane[hidden] {
+  display: none;
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.jg-h {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--yellow);
+}
+
+/* ------------------------------------------------------------------ jugar */
+
+.jugar {
+  display: grid;
+  grid-template-columns: minmax(200px, 250px) minmax(0, 1fr) minmax(250px, 310px);
+  gap: 14px;
+  height: 100%;
+  max-width: 1380px;
+  margin: 0 auto;
+}
+
+.jg-modes,
+.jg-party {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.jg-party {
+  display: flex;
+  flex-direction: column;
+}
+
+.jg-stage {
+  min-height: 0;
+  min-width: 0;
+}
+
+.stage-frame {
+  position: relative;
+  height: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  background: #0e101c;
+  border: 4px solid var(--black);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.08),
+    0 0 0 3px var(--panel-3);
+}
+
+.stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+  image-rendering: pixelated;
+}
+
+.stage-title {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  right: 130px;
+  pointer-events: none;
+  text-shadow:
+    2px 2px 0 var(--black),
+    -1px -1px 0 var(--black);
+}
+
+.stage-title h2 {
+  margin: 0;
+  font-size: clamp(11px, 1.5vw, 18px);
+  color: var(--text);
+}
+
+.stage-sub {
+  margin: 4px 0 0;
+  font-size: 19px;
+  color: var(--yellow);
+}
+
+.stage-opt {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+}
+
+/* tarjetas de modo */
+
+.modes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.mode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--dim);
+  background: var(--black);
+  border: 4px solid var(--line);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 0.12s steps(3),
+    border-color 0.12s steps(3);
+}
+
+.mode:hover:not([aria-checked='true']):not([aria-disabled='true']) {
+  transform: translateY(-3px);
+  border-color: var(--cyan);
+}
+
+.mode:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.mode[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.mode .postal {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 160 / 88;
+  image-rendering: pixelated;
+  background: #0e101c;
+}
+
+.mode .m-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 7px;
+}
+
+.mode strong {
+  font-family: var(--font-title);
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.mode .m-sub {
+  font-size: 17px;
+  line-height: 1.05;
+}
+
+.mode[aria-checked='true'] {
+  border-color: var(--yellow);
+  box-shadow:
+    0 0 0 3px var(--orange),
+    0 0 16px rgba(255, 205, 117, 0.45);
+  animation: pick-glow 1.8s steps(6) infinite;
+}
+
+.mode[aria-checked='true'] .m-body {
+  background: var(--yellow);
+}
+
+.mode[aria-checked='true'] strong,
+.mode[aria-checked='true'] .m-sub {
+  color: var(--black);
+}
+
+@keyframes pick-glow {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--orange),
+      0 0 24px rgba(255, 205, 117, 0.75);
+  }
+}
+
+.mode .m-info {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-family: var(--font-title);
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(14, 16, 28, 0.85);
+  border: 3px solid var(--text);
+  cursor: pointer;
+}
+
+.mode .m-info:hover {
+  color: var(--black);
+  background: var(--cyan);
+}
+
+/* grupo */
+
+.party-idle,
+.room-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  background: var(--panel-2);
+  border: 4px solid var(--black);
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.25);
+}
+
+.party-idle > *,
+.room-card > * {
+  margin: 0;
+}
+
+.party-hint {
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.solo-help {
+  min-height: 2.2em;
+}
+
+.party-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.room-card .row.party-cta {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.room-card .row.party-cta .btn {
+  flex: 1 1 120px;
+}
+
+.btn.big {
+  animation: cta-pulse 2.2s steps(5) infinite;
+}
+
+@keyframes cta-pulse {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--orange),
+      0 0 14px rgba(239, 125, 87, 0.7);
+  }
+}
+
+.room-card .room-head {
+  display: block;
+}
+
+.room-card .room-head h2 {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.room-card .room-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.room-card .member-list {
+  margin-bottom: 6px;
+  gap: 5px;
+}
+
+/* en la sala la lista es de consulta (el escenario ya muestra a cada gato): filas compactas */
+.room-card .member-list li {
+  gap: 6px;
+  padding: 3px 8px;
+  flex-wrap: wrap;
+}
+
+.room-card .member-list canvas {
+  width: 30px;
+  height: 29px;
+}
+
+.room-card .member-list .who {
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.room-card .badge {
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: 14px;
+}
+
+.room-card .team-board {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+
+.room-card .team {
+  padding: 6px 8px;
+}
+
+.room-card .team-head {
+  margin-bottom: 5px;
+}
+
+.room-card .bots-line {
+  margin: 0;
+}
+
+/* opciones */
+
+.opt-card {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.info-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(460px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+
+.info-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* el texto se desplaza solo: el boton de cerrar siempre queda a la vista */
+.info-text {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.info-text > h2 {
+  margin-top: 0;
+}
+
+@media (orientation: landscape) and (min-width: 600px) and (max-height: 760px) {
+  .info-card {
+    flex-direction: row;
+    width: min(780px, 100%);
+  }
+
+  .info-card .info-pic {
+    flex: 0 0 40%;
+    width: 40%;
+    align-self: flex-start;
+  }
+}
+
+.info-pic {
+  display: block;
+  width: 100%;
+  height: auto;
+  flex: none;
+  aspect-ratio: 160 / 88;
+  image-rendering: pixelated;
+  border: 4px solid var(--black);
+}
+
+.info-lead {
+  color: var(--text);
+  font-size: 21px;
+  line-height: 1.1;
+}
+
+/* ------------------------------------------------------------------ salas */
+
+.salas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr);
+  gap: 14px;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+/* ------------------------------------------------------------------ mi gato */
+
+.gato {
+  display: grid;
+  grid-template-columns: minmax(250px, 440px) minmax(0, 1fr);
+  gap: 14px;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.gato-canvas {
+  position: sticky;
+  top: 0;
+}
+
+.gato .paint-stage {
+  margin-bottom: 0;
+}
+
+.gato #paint-canvas {
+  width: 100%;
+  height: auto;
+  max-height: calc(100dvh - 120px);
+  object-fit: contain;
+}
+
+.gato-sub {
+  margin-bottom: 12px;
+}
+
+.gato-sub .sub {
+  flex: 1;
+  min-height: 44px;
+  font-family: var(--font-title);
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+}
+
+.gato-sub .sub[aria-selected='true'] {
+  color: var(--black);
+  background: var(--yellow);
+  border-color: var(--text);
+}
+
+.sub-pane[hidden] {
+  display: none;
+}
+
+.gato .outfits {
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+}
+
+.gato .outfit canvas {
+  width: 62px;
+  height: 60px;
+}
+
+/* ------------------------------------------------------------------ pantallas bajas (laptop) */
+
+/* con menos de 900px de alto las cuatro tarjetas no caben apiladas: foto a la izquierda, texto a la derecha */
+@media (min-height: 521px) and (max-height: 899px) and (min-width: 701px) {
+  .modes {
+    gap: 8px;
+  }
+
+  .mode {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .mode .postal {
+    flex: 0 0 46%;
+    width: 46%;
+    height: auto;
+    align-self: center;
+  }
+
+  .mode .m-body {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    padding: 4px 8px;
+  }
+
+  .mode .m-sub {
+    font-size: 15px;
+  }
+
+  .mode .m-info {
+    right: auto;
+    left: 4px;
+    top: 4px;
+    width: 24px;
+    height: 24px;
+    font-size: 9px;
+  }
+}
+
+/* ------------------------------------------------------------------ pantallas angostas */
+
+@media (max-width: 980px) {
+  .jugar {
+    grid-template-columns: minmax(190px, 230px) minmax(0, 1fr) minmax(220px, 280px);
+    gap: 10px;
+  }
+
+  .lb-tab span {
+    display: none;
+  }
+
+  .lb-tab {
+    padding: 8px 12px;
+  }
+}
+
+/* encabezado compacto de celular: el estado de conexion es un puntito de color y todo cabe en una fila */
+@media (max-height: 520px) and (orientation: landscape), (max-width: 700px) {
+  .lb-top .topbar-right {
+    flex-wrap: nowrap;
+    gap: 5px;
+  }
+
+  .lb-top #lobby-net {
+    width: 16px;
+    min-height: 16px;
+    height: 16px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+    background: var(--red, #b13e53);
+    border-color: var(--black);
+  }
+
+  .lb-top #lobby-net[data-state='online'] {
+    background: var(--lime);
+  }
+
+  .lb-top .chip.user {
+    min-height: 30px;
+    max-width: 24vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+
+  .lb-top .btn.small {
+    min-height: 30px;
+    padding: 2px 8px;
+    font-size: 9px;
+  }
+}
+
+/* celular en horizontal: todo mas compacto, las tarjetas de modo en dos columnas */
+@media (max-height: 520px) and (orientation: landscape) {
+  .lb-top {
+    padding-top: max(4px, env(safe-area-inset-top, 0px));
+    padding-bottom: 4px;
+    gap: 8px;
+  }
+
+  .lb-top .logo {
+    font-size: 14px;
+  }
+
+  .lb-tab {
+    min-height: 36px;
+    padding: 4px 10px;
+  }
+
+  .lb-tab span {
+    display: inline;
+    font-size: 9px;
+  }
+
+  .lb-pane {
+    padding-top: 8px;
+  }
+
+  .jugar {
+    grid-template-columns: minmax(180px, 230px) minmax(0, 1fr) minmax(190px, 250px);
+    gap: 8px;
+  }
+
+  .modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mode .m-body {
+    padding: 3px 5px 4px;
+  }
+
+  .mode strong {
+    font-size: 8px;
+  }
+
+  .mode .m-sub {
+    display: none;
+  }
+
+  .mode .m-info {
+    width: 24px;
+    height: 24px;
+    font-size: 9px;
+  }
+
+  .stage-sub {
+    font-size: 16px;
+  }
+
+  .party-idle,
+  .room-card {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .party-hint {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .solo-help {
+    min-height: 0;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .party-cta {
+    margin-top: 0;
+    gap: 6px;
+  }
+
+  .jg-h {
+    margin-bottom: 4px;
+  }
+
+  .gato {
+    grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  }
+
+  .gato #paint-canvas {
+    max-height: calc(100dvh - 70px);
+  }
+}
+
+/* celular en vertical: una columna; el escenario arriba, los modos corren de lado */
+@media (max-width: 700px) and (orientation: portrait) {
+  .lb-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .lb-top .logo {
+    font-size: 16px;
+  }
+
+  .topbar-right {
+    margin-left: auto;
+  }
+
+  .lb-tabs {
+    order: 3;
+    flex: 1 0 100%;
+    margin: 0;
+  }
+
+  .lb-tab {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .lb-tab span {
+    display: inline;
+  }
+
+  .jugar {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: 10px;
+  }
+
+  .jg-stage {
+    order: 1;
+  }
+
+  .stage-frame {
+    height: 27vh;
+    min-height: 170px;
+  }
+
+  .jg-modes {
+    order: 2;
+    overflow: visible;
+  }
+
+  .jg-party {
+    order: 3;
+    overflow: visible;
+  }
+
+  /* dentro de una sala lo primero es el grupo (codigo, equipos, listo); los modos pasan abajo */
+  .jugar:has(#room-view:not([hidden])) .jg-party {
+    order: 2;
+  }
+
+  .jugar:has(#room-view:not([hidden])) .jg-modes {
+    order: 3;
+  }
+
+  .modes {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px 2px 8px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .mode {
+    flex: 0 0 132px;
+    scroll-snap-align: start;
+  }
+
+  .mode .m-sub {
+    font-size: 15px;
+  }
+
+  .lb-tab {
+    gap: 6px;
+    padding: 6px 4px;
+    font-size: 10px;
+  }
+
+  .lb-tab span {
+    white-space: nowrap;
+  }
+
+  .party-cta {
+    position: sticky;
+    bottom: 0;
+    padding: 8px 0 4px;
+    background: var(--panel-2);
+    box-shadow: 0 -4px 0 var(--black);
+  }
+
+  .room-card .team-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .salas,
+  .gato {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gato-canvas {
+    position: static;
+  }
+
+  .gato #paint-canvas {
+    max-height: 38vh;
+    width: auto;
+    margin: 0 auto;
+  }
+
+  .gato .paint-stage {
+    display: flex;
+    justify-content: center;
+  }
+
+  .lb-pane {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-pane,
+  .mode,
+  .mode[aria-checked='true'],
+  .btn.big {
+    animation: none;
+  }
+
+  .lb-tab,
+  .mode {
+    transition: none;
+  }
+}

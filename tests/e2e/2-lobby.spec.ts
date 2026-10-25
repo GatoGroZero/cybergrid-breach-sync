@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { registerViaUi, uniqueName } from './helpers';
+import {
+  closeOptions,
+  createRoomUi,
+  openOptions,
+  openTab,
+  registerViaUi,
+  uniqueName,
+} from './helpers';
 
 test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
   test('crear sala, ver al otro jugador, marcar Listo y arrancar la partida', async ({
@@ -14,13 +21,13 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await registerViaUi(a, nameA);
     await registerViaUi(b, nameB);
 
-    await a.getByTestId('room-name').fill('Sala E2E');
-    await a.getByTestId('btn-create').click();
+    await createRoomUi(a, { name: 'Sala E2E' });
     await expect(a.getByTestId('room-view')).toBeVisible();
     const code = (await a.getByTestId('room-code').textContent()) ?? '';
     expect(code).toMatch(/^[A-HJ-NP-Z2-9]{5}$/);
 
     // B ve la sala publica en la lista (actualizada por socket) y entra.
+    await openTab(b, 'salas');
     await expect(b.getByTestId('room-list').getByText('Sala E2E')).toBeVisible({ timeout: 8000 });
     await b.getByTestId('room-list').getByRole('button', { name: 'Entrar' }).first().click();
     await expect(b.getByTestId('room-view')).toBeVisible();
@@ -52,13 +59,12 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await registerViaUi(a, uniqueName('e2e_priv'));
     await registerViaUi(b, uniqueName('e2e_intr'));
 
-    await a.getByTestId('room-name').fill('Privada E2E');
-    await a.getByTestId('room-private').check();
-    await a.getByTestId('btn-create').click();
+    await createRoomUi(a, { name: 'Privada E2E', private: true });
     await expect(a.getByTestId('room-view')).toBeVisible();
     await expect(a.getByTestId('room-code')).toHaveText(/^[A-HJ-NP-Z2-9]{5}$/);
     const code = (await a.getByTestId('room-code').textContent()) ?? '';
 
+    await openTab(b, 'salas');
     await b.waitForTimeout(3500);
     await expect(b.getByTestId('room-list').getByText('Privada E2E')).toHaveCount(0);
 
@@ -86,14 +92,13 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await registerViaUi(a, nameA, true);
     await registerViaUi(b, nameB, true);
 
-    await a.getByTestId('room-name').fill('Con bots');
-    await a.getByTestId('room-bots').selectOption('3');
-    await a.getByTestId('btn-create').click();
+    await createRoomUi(a, { name: 'Con bots', bots: '3' });
     await expect(a.getByTestId('room-view')).toBeVisible();
     await expect(a.getByTestId('room-meta')).toContainText('3 bots');
     const code = (await a.getByTestId('room-code').textContent()) ?? '';
 
     // B ve la sala en la lista con el anfitrion y los bots, sin recargar nada.
+    await openTab(b, 'salas');
     const row = b.locator(`[data-testid="public-room"][data-code="${code}"]`);
     await expect(row).toContainText(nameA, { timeout: 8000 });
     await expect(row).toContainText('3 bots');
@@ -104,18 +109,22 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
     await expect(b).not.toHaveURL(/sala=/);
     await expect(a.getByTestId('member')).toHaveCount(2);
 
-    // Solo el anfitrion ve los ajustes y el boton de iniciar.
-    await expect(a.getByTestId('room-settings')).toBeVisible();
+    // Solo el anfitrion ve el boton de iniciar y puede abrir los ajustes de la sala.
     await expect(a.getByTestId('btn-start')).toBeVisible();
-    await expect(b.getByTestId('room-settings')).toBeHidden();
     await expect(b.getByTestId('btn-start')).toBeHidden();
+    await b.getByTestId('btn-options').click();
+    await expect(b.getByTestId('options')).toBeHidden();
+    await expect(b.getByTestId('toast')).toContainText('anfitrión');
 
     // Cambiar los bots se refleja en los dos y quita el Listo.
     await b.getByTestId('btn-ready').click();
     await expect(
       a.locator(`[data-testid="member"][data-name="${nameB}"] [data-testid="member-state"]`),
     ).toHaveText('Listo');
+    await openOptions(a);
+    await expect(a.getByTestId('room-settings')).toBeVisible();
     await a.getByTestId('set-bots').selectOption('4');
+    await closeOptions(a);
     await expect(b.getByTestId('room-meta')).toContainText('4 bots');
     await expect(
       a.locator(`[data-testid="member"][data-name="${nameB}"] [data-testid="member-state"]`),
@@ -138,9 +147,7 @@ test.describe('Flujo 2: lobbies, estado Listo y sockets', () => {
 
   test('sin bots no se puede empezar con una sola persona', async ({ page }) => {
     await registerViaUi(page, uniqueName('e2e_solo0'));
-    await page.getByTestId('room-bots').selectOption('0');
-    await page.getByTestId('room-private').check();
-    await page.getByTestId('btn-create').click();
+    await createRoomUi(page, { bots: '0', private: true });
     await expect(page.getByTestId('room-view')).toBeVisible();
     await expect(page.getByTestId('room-status')).toContainText('Faltan jugadores');
     await expect(page.getByTestId('btn-start')).toBeDisabled();

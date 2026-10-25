@@ -1,0 +1,126 @@
+/* ------------------------------------------------------------------ portada: atardecer animado detras del acceso */
+
+#screen-auth {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.portada {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* el cuadro de acceso: cristal de ciruela que entra de abajo y flota */
+#screen-auth .auth-card {
+  background: rgba(30, 18, 54, 0.86);
+  border-color: #120a22;
+  box-shadow:
+    inset 0 4px 0 rgba(255, 205, 117, 0.22),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.4),
+    inset 0 0 0 3px rgba(239, 125, 87, 0.28);
+  animation:
+    card-in 0.7s steps(7) both,
+    card-float 5.2s ease-in-out 0.8s infinite;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(46px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-float {
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+#screen-auth .logo {
+  text-shadow:
+    0 4px 0 #120a22,
+    3px 3px 0 #b13e53;
+}
+
+#screen-auth .logo span {
+  animation: logo-shimmer 3.2s steps(8) infinite;
+}
+
+@keyframes logo-shimmer {
+  0%,
+  100% {
+    color: #ffcd75;
+  }
+  35% {
+    color: #ffe9a8;
+  }
+  70% {
+    color: #ef8b57;
+  }
+}
+
+#screen-auth .tagline {
+  color: #ffd98a;
+  animation: tag-in 1s steps(10) 0.5s both;
+}
+
+@keyframes tag-in {
+  from {
+    opacity: 0;
+    letter-spacing: 6px;
+  }
+  to {
+    opacity: 1;
+    letter-spacing: 0;
+  }
+}
+
+#screen-auth .auth-cat {
+  animation: cat-hop 2.6s steps(6) infinite;
+}
+
+@keyframes cat-hop {
+  0%,
+  86%,
+  100% {
+    transform: none;
+  }
+  92% {
+    transform: translateY(-8px);
+  }
+}
+
+#screen-auth #btn-guest {
+  background: #ffcd75;
+  color: #120a22;
+  animation: guest-pulse 2.2s steps(5) 1s infinite;
+}
+
+@keyframes guest-pulse {
+  50% {
+    box-shadow:
+      inset 0 4px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.32),
+      0 0 0 3px #ef7d57;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #screen-auth .auth-card,
+  #screen-auth .logo span,
+  #screen-auth .tagline,
+  #screen-auth .auth-cat,
+  #screen-auth #btn-guest {
+    animation: none;
+  }
+}

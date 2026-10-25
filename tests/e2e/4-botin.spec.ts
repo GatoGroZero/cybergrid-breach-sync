@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { nearestChest, registerViaUi, startSoloGame, uniqueName, walkTo } from './helpers';
+import { nearestChest, openTab, registerViaUi, startSoloGame, uniqueName, walkTo } from './helpers';
 
 test.describe('Flujo 4: cofres, inventario y pelaje', () => {
   test('caminar hasta un cofre, abrirlo con E y pasar lo que tiene al inventario', async ({
@@ -60,6 +60,8 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     page,
   }) => {
     await registerViaUi(page, uniqueName('e2e_pin'));
+    await openTab(page, 'gato');
+    await page.getByTestId('sub-pintura').click();
     const canvas = page.locator('#paint-canvas');
     await expect(canvas).toBeVisible();
     await page.locator('#palette button').nth(8).click();
@@ -82,6 +84,7 @@ test.describe('Flujo 4: cofres, inventario y pelaje', () => {
     );
     expect(saved.paint).toHaveLength(384);
     expect(saved.paint).not.toBe('0'.repeat(384));
+    await page.getByTestId('sub-pelaje').click();
     await page.locator('#coats button').nth(2).click();
     await page.reload();
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
@@ -199,8 +202,11 @@ test.describe('Flujo 4d: mezclador de volumen', () => {
     await registerViaUi(page, uniqueName('e2e_vol'));
     await page.getByTestId('btn-settings').click();
     await page.locator('#set-tab-sound').click();
-    await expect(page.getByTestId('volume-list').locator('input[type=range]')).toHaveCount(6);
+    await expect(page.getByTestId('volume-list').locator('input[type=range]')).toHaveCount(7);
 
+    // la musica de fondo trae su propio control y arranca mas baja que los efectos
+    await expect(page.getByTestId('volume-music')).toHaveValue('50');
+    await page.getByTestId('volume-music').fill('80');
     const ambient = page.getByTestId('volume-ambient');
     await expect(ambient).toHaveValue('100');
     await ambient.fill('35');
@@ -211,6 +217,7 @@ test.describe('Flujo 4d: mezclador de volumen', () => {
     expect(saved.ambient).toBeCloseTo(0.35, 2);
     expect(saved.damage).toBeCloseTo(0.6, 2);
     expect(saved.master).toBe(1);
+    expect(saved.music).toBeCloseTo(0.8, 2);
 
     await page.reload();
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
@@ -218,8 +225,10 @@ test.describe('Flujo 4d: mezclador de volumen', () => {
     await page.locator('#set-tab-sound').click();
     await expect(page.getByTestId('volume-ambient')).toHaveValue('35');
     await expect(page.getByTestId('volume-damage')).toHaveValue('60');
+    await expect(page.getByTestId('volume-music')).toHaveValue('80');
 
     await page.getByTestId('volume-reset').click();
+    await expect(page.getByTestId('volume-music')).toHaveValue('50');
     await expect(page.getByTestId('volume-ambient')).toHaveValue('100');
     await expect(page.getByTestId('volume-damage')).toHaveValue('100');
   });

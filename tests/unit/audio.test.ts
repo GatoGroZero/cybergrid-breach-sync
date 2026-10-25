@@ -68,10 +68,11 @@ describe('sonido espacial', () => {
 });
 
 describe('mezclador de volumen', () => {
-  it('sin nada guardado todo suena al maximo', () => {
+  it('sin nada guardado todo suena al maximo, menos la musica que va mas baja', () => {
     expect(parseVolumes(null)).toEqual(DEFAULT_VOLUMES);
     expect(parseVolumes('basura')).toEqual(DEFAULT_VOLUMES);
     expect(parseVolumes({})).toEqual(DEFAULT_VOLUMES);
+    expect(DEFAULT_VOLUMES.music).toBeLessThan(DEFAULT_VOLUMES.weapons);
   });
 
   it('conserva lo valido y limita lo demas entre 0 y 1', () => {
@@ -85,7 +86,7 @@ describe('mezclador de volumen', () => {
   });
 
   it('hay un control por familia de sonidos y la curva es creciente', () => {
-    expect(CHANNELS).toEqual(['ambient', 'weapons', 'damage', 'steps', 'ui']);
+    expect(CHANNELS).toEqual(['music', 'ambient', 'weapons', 'damage', 'steps', 'ui']);
     expect(gainOf(0)).toBe(0);
     expect(gainOf(1)).toBe(1);
     expect(gainOf(0.5)).toBeLessThan(0.5);

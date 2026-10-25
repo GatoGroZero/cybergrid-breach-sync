@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { registerViaUi, uniqueName } from './helpers';
+import { createRoomUi, registerViaUi, uniqueName } from './helpers';
 
 test.describe('Flujo 6: acceso con Google, correo e invitado', () => {
   test('la pantalla ofrece Google, correo e invitado y no enseña la cuenta demo', async ({
@@ -133,8 +133,7 @@ test.describe('Flujo 6: acceso con Google, correo e invitado', () => {
     const a = await ctxA.newPage();
     const b = await ctxB.newPage();
     await registerViaUi(a, uniqueName('e2e_anf'));
-    await a.getByTestId('room-private').check();
-    await a.getByTestId('btn-create').click();
+    await createRoomUi(a, { private: true });
     await expect(a.getByTestId('room-view')).toBeVisible();
     const code = (await a.getByTestId('room-code').textContent()) ?? '';
 

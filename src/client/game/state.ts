@@ -356,6 +356,10 @@ export class ClientBR {
   /** Aventura: carteles al cambiar de sala y sonidos de sala superada y de reliquia nueva. */
   private trackAdv(adv: AdvState): void {
     const now = performance.now();
+    // la musica sube de tono cuando hay un jefe peleando
+    const bossFight =
+      (adv.roomKind === 'minijefe' || adv.roomKind === 'jefe') && adv.states[adv.room] === 1;
+    this.sfx.setMusic(bossFight ? 'jefe' : 'aventura');
     if (adv.room !== this.lastAdvRoom) {
       const first = this.lastAdvRoom < 0;
       this.lastAdvRoom = adv.room;
