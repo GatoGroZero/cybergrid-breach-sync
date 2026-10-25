@@ -473,7 +473,11 @@ function renderRoomList(rooms: PublicRoom[]): void {
       el('strong', '', r.name),
       el('div', 'muted', `Anfitrión: ${r.host}`),
       el('div', 'muted', `${MODES[r.mode ?? 'br'].name} · ${mapName}`),
-      el('div', 'muted', `${r.players}/${r.maxPlayers} personas · ${botsLabel(r.bots)}`),
+      el(
+        'div',
+        'muted',
+        `${r.players}/${r.maxPlayers} personas${r.mode === 'aventura' ? '' : ` · ${botsLabel(r.bots)}`}`,
+      ),
     );
     const join = el('button', 'btn small', !joinable ? 'En curso' : full ? 'Llena' : 'Entrar');
     join.type = 'button';
