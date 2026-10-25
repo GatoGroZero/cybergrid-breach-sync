@@ -132,6 +132,7 @@ test.describe('Móvil: controles táctiles', () => {
     );
     type Debug = {
       ammo: number[];
+      inv: ({ mag?: number } | null)[];
       select(slot: number): void;
       latest: { walls: unknown[] } | null;
       input: { aimPad: { aiming: boolean } };
@@ -165,20 +166,21 @@ test.describe('Móvil: controles táctiles', () => {
     await touch('touchStart', pad.x, pad.y);
     await touch('touchEnd');
     await page.waitForTimeout(300);
-    expect(await dbg((g) => g.ammo[4])).toBe(90);
+    const mag = (): Promise<number> => dbg((g) => g.inv[0]?.mag ?? 30);
+    expect(await mag()).toBe(30);
 
     // Arrastrando se ve la linea y el fusil dispara solo.
     await touch('touchStart', pad.x, pad.y);
     await touch('touchMove', pad.x - pad.r * 0.8, pad.y - pad.r * 0.2);
     await page.waitForTimeout(700);
     expect(await dbg((g) => g.input.aimPad.aiming)).toBe(true);
-    const during = await dbg((g) => g.ammo[4]);
-    expect(during).toBeLessThan(90);
+    const during = await mag();
+    expect(during).toBeLessThan(30);
     await touch('touchEnd');
     await page.waitForTimeout(400);
-    const after = await dbg((g) => g.ammo[4]);
+    const after = await mag();
     await page.waitForTimeout(500);
-    expect(await dbg((g) => g.ammo[4])).toBe(after);
+    expect(await mag()).toBe(after);
     expect(await dbg((g) => g.input.aimPad.aiming)).toBe(false);
 
     // Muro: arrastrar muestra donde caera y se coloca al soltar.

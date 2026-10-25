@@ -173,5 +173,35 @@ export function segmentCircleHit(
   return t >= 0 && t <= 1 ? t : -1;
 }
 
+/**
+ * Dice si un disparo lanzado desde (x, y) hacia `angle` y hasta `range` pixeles toca algo que vale
+ * la pena: un gato (de `targets`) o un muro colocado (casilla marcada con 2), antes de chocar con
+ * cualquier otra cosa solida (arbol, pared de casa, cofre...). Lo usa el modo de mira "solo con
+ * objetivo" del movil.
+ */
+export function aimTouchesTarget(
+  m: BRMap,
+  x: number,
+  y: number,
+  angle: number,
+  range: number,
+  targets: readonly { x: number; y: number }[],
+  radius = 9,
+): boolean {
+  const x1 = x + Math.cos(angle) * range;
+  const y1 = y + Math.sin(angle) * range;
+  const solid = segmentSolidHit(m, x, y, x1, y1);
+  let tEnd = 1;
+  if (solid.hit) {
+    if (m.solid[solid.ty * m.w + solid.tx] === 2) return true;
+    tEnd = solid.t;
+  }
+  for (const c of targets) {
+    const t = segmentCircleHit(x, y, x1, y1, c.x, c.y, radius);
+    if (t >= 0 && t <= tEnd) return true;
+  }
+  return false;
+}
+
 export const dist = (ax: number, ay: number, bx: number, by: number): number =>
   Math.hypot(ax - bx, ay - by);

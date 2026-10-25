@@ -6,6 +6,7 @@ import {
   DEFAULT_TOUCH,
   TOUCH_LABELS,
   keyLabel,
+  saveFireMode,
   saveKeys,
   saveTouchLayout,
   touchCircles,
@@ -52,6 +53,14 @@ export class Settings {
     const sound = $<HTMLInputElement>('sound-toggle');
     sound.checked = !sfx.muted;
     sound.addEventListener('change', () => this.sfx.setMuted(!sound.checked));
+    this.syncFireMode();
+    for (const btn of document.querySelectorAll<HTMLButtonElement>('#fire-mode button')) {
+      btn.addEventListener('click', () => {
+        this.input.fireMode = btn.dataset.mode === 'target' ? 'target' : 'aim';
+        saveFireMode(this.input.fireMode);
+        this.syncFireMode();
+      });
+    }
     $('touch-edit').addEventListener('click', () => this.openEditor());
     $('touch-reset').addEventListener('click', () => {
       this.input.touchLayout = structuredClone(DEFAULT_TOUCH);
@@ -90,6 +99,17 @@ export class Settings {
     this.root.hidden = true;
     this.returnTo?.focus?.({ preventScroll: true });
     this.onClose();
+  }
+
+  /** Marca el modo de disparo elegido y explica que hace. */
+  private syncFireMode(): void {
+    const mode = this.input.fireMode;
+    for (const btn of document.querySelectorAll<HTMLButtonElement>('#fire-mode button'))
+      btn.setAttribute('aria-checked', String(btn.dataset.mode === mode));
+    $('fire-mode-help').textContent =
+      mode === 'target'
+        ? 'La línea de mira te sigue, pero el arma solo dispara cuando la línea toca a un gato o a un muro colocado. Mientras no toque nada, no gastas balas.'
+        : 'El arma dispara sola mientras la línea de mira está a la vista.';
   }
 
   private showTab(tab: Tab): void {

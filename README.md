@@ -83,13 +83,17 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Cofres:** son la única fuente de armas, balas, botiquines, escudos y mini muros. Los cofres dorados traen más y mejor. Al caer un gato deja una lápida con huella que se puede saquear.
 - **Armas** (el daño es por rareza: gris, verde, morada con aura):
 
-  | Arma     | Daño (gris / verde / morada) | Cómo dispara                               |
-  | -------- | ---------------------------- | ------------------------------------------ |
-  | Pistola  | 5 / 10 / 15                  | 1 bala por clic                            |
-  | Escopeta | 10 / 20 / 30 por perdigón    | 2 cartuchos por disparo, varios perdigones |
-  | Fusil    | 10 / 15 / 20                 | Ráfaga automática                          |
-  | Sniper   | 40 / 70 / 80                 | 1 bala por clic, muy larga distancia       |
-  | Bazuca   | 40 / 70 / 90                 | Misil con explosión en área                |
+  | Arma     | Daño (gris / verde / morada) | Cómo dispara |
+  | -------- | ---------------------------- | ------------ |
+  | Arma     | Daño (gris / verde / morada) | Cargador     | Alcance | Cómo dispara                               |
+  | -------- | ---------------------------- | --------     | ------- | ------------------------------------------ |
+  | Pistola  | 5 / 10 / 15                  | 30           | 260 px  | 1 bala por clic                            |
+  | Escopeta | 10 / 20 / 30 por perdigón    | 5            | 130 px  | 2 cartuchos por disparo, varios perdigones |
+  | Fusil    | 10 / 15 / 20                 | 30           | 320 px  | Ráfaga automática                          |
+  | Sniper   | 40 / 70 / 80                 | 3            | 520 px  | 1 bala por clic, muy larga distancia       |
+  | Bazuca   | 40 / 70 / 90                 | 1            | 360 px  | Misil con explosión en área                |
+
+  Cada arma tiene su propio proyectil (bala dorada, trazadora verde, perdigones, rayo cian, misil con llama) y las raras llevan un halo verde o morado.
 
   Las pistolas son las más comunes; el fusil y la escopeta son raros; la sniper y la bazuca son lo más raro. Lo morado es difícil de encontrar.
 
@@ -102,8 +106,11 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Pelaje:** en el lobby pintas a tu gato (colores, pincel de 1 a 3, rayas, manchas) y así te ven los demás.
 - **PC:** WASD o flechas para moverte, **Shift para correr**, ratón para apuntar, clic o espacio para disparar, E abre cofres, 1 a 5 eligen objeto, I inventario, M mapa, Esc menú. Todas las teclas se pueden cambiar en **Ajustes**.
 - **Correr:** el gato galopa un 55 % más rápido y gasta la barra de estamina, que es un pez: se acaba en 5 segundos corriendo y se llena en 4 si estás quieto o caminando. Mientras corres no se recupera; si empiezas a correr a media recuperación, esta se detiene ahí. Sin aire no puedes correr hasta recuperar un poco.
+- **Recarga:** cada arma lleva su cargador (mira los números en su casilla: disparos cargados y balas de repuesto). Se recarga con **R** o con el botón de recarga del móvil, tarda unos 2 segundos y se cancela si cambias de objeto. Al vaciarse el cargador recarga sola si quedan balas; si no quedan, solo se oye un clic. Las armas de los cofres vienen con el cargador lleno.
 - **Balas:** no ocupan los 5 espacios; viven en su propio compartimento (hasta 120 de cada arma) y se ven como "Balas de pistola", "Balas de fusil", etc. Arrástralas fuera del inventario para tirarlas.
-- **Móvil:** se juega en horizontal (en vertical pide girar el teléfono). Joystick izquierdo para moverte (empújalo hasta el aro punteado para correr). **Joystick derecho para la mira:** al arrastrarlo aparece la línea de disparo y el arma dispara sola mientras la ves; al soltarlo deja de disparar. No hay auto apuntado. Con un muro en la mano la mira muestra en qué casilla caerá y se coloca al soltar (si lo regresas al centro se cancela); un toque corto usa botiquines y escudos. En **Ajustes** se puede mover y cambiar el tamaño de cada botón. Para jugar a pantalla completa en iPhone: Compartir, _Añadir a pantalla de inicio_; en Android se activa sola.
+- **Móvil:** se juega en horizontal (en vertical pide girar el teléfono). Joystick izquierdo para moverte (empújalo hasta el aro punteado para correr). **Joystick derecho para la mira:** al arrastrarlo aparece la línea de disparo y el arma dispara sola mientras la ves; al soltarlo deja de disparar. No hay auto apuntado. En **Ajustes, Táctil** puedes elegir "Solo con objetivo": la línea te sigue igual, pero el arma solo dispara cuando la línea toca a un gato o a un muro colocado (la cruz se pone roja). Con un muro en la mano la mira muestra en qué casilla caerá y se coloca al soltar (si lo regresas al centro se cancela); un toque corto usa botiquines y escudos. En **Ajustes** se puede mover y cambiar el tamaño de cada botón. Para jugar a pantalla completa en iPhone: Compartir, _Añadir a pantalla de inicio_; en Android se activa sola.
+- **Inicio:** antes de cada partida hay una cuenta regresiva de 5 segundos con todos quietos y, al llegar a 0, el cartel "¡A JUGAR!".
+- **Sonido:** todo se sintetiza con Web Audio. Hay ambiente de cada mapa, pisadas distintas según el piso (pasto, tierra, madera, tarima, alfombra, piedra y agua), golpes que das y recibes, golpes de otros según la distancia y de qué lado vienen, recargas propias de cada arma y la cuenta regresiva.
 - **Ganar:** el último gato en pie se lleva una corona y la partida celebra con fuegos artificiales antes de mostrar los puestos.
 - **Solo:** tú más 11 bots.
 - **Emotes:** la tecla T (o el botón de la carita en el móvil) abre una barra con risa, llanto, enojo, bandera blanca y paz. Sale un globo sobre tu gato que ven los que están cerca. Hay un respiro de 1.5 segundos entre uno y otro, y con la barra abierta los números 1 a 5 eligen el emote.
@@ -197,7 +204,7 @@ npm start            # http://localhost:3000 (entra como invitado, o con demo1 /
 
 Para desarrollar con recarga: `npm run dev:server` y, en otra terminal, `npm run dev:client` (http://localhost:5173). `npm run verify` corre revisión de texto, tipos, lint, pruebas y compilación. `npx tsx scripts/sim-br.ts 8 todos` simula partidas completas de bots para revisar el balance.
 
-Variables de entorno: `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `PASSWORD_AUTH`, `GUEST_LOGIN`, `SESSION_DAYS`, `PUBLIC_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_PROVIDER` (`resend`, `brevo` o `console` solo fuera de producción), `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit` y `dev:finish`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
+Variables de entorno: `INTRO_SECONDS` (cuenta regresiva del inicio, 5 por defecto; 0 la quita), `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `PASSWORD_AUTH`, `GUEST_LOGIN`, `SESSION_DAYS`, `PUBLIC_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_PROVIDER` (`resend`, `brevo` o `console` solo fuera de producción), `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit` y `dev:finish`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
 
 ## Estructura
 

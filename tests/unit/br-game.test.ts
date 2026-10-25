@@ -8,7 +8,14 @@ import {
   WALL_ITEM,
   SPAWN_GRACE_S,
 } from '../../src/shared/br/constants';
-import type { AmmoKind, Item, Rarity, WeaponKind } from '../../src/shared/br/items';
+import {
+  WEAPONS,
+  magOf,
+  type AmmoKind,
+  type Item,
+  type Rarity,
+  type WeaponKind,
+} from '../../src/shared/br/items';
 import { G, isSolidTile } from '../../src/shared/br/map';
 import { defaultSkin } from '../../src/shared/br/skin';
 import { BRGame, type Cat } from '../../src/server/br/Game';
@@ -252,7 +259,9 @@ describe('armas, balas y daño', () => {
       pistol.game.fireControl(pistol.a, 0, true, false);
       pistol.game.step();
     }
-    expect(pistol.a.ammo['ammo_pistol']).toBe(30 - 1);
+    // Un clic, una bala: sale del cargador y el repuesto queda intacto.
+    expect(magOf(pistol.a.inv[0])).toBe(30 - 1);
+    expect(pistol.a.ammo['ammo_pistol']).toBe(30);
 
     const rifle = arena();
     give(rifle.a, 0, weapon('rifle', 0));
@@ -262,17 +271,18 @@ describe('armas, balas y daño', () => {
       rifle.game.fireControl(rifle.a, 0, true, false);
       rifle.game.step();
     }
-    expect(90 - rifle.a.ammo['ammo_rifle']).toBeGreaterThanOrEqual(8);
+    expect(30 - magOf(rifle.a.inv[0])).toBeGreaterThanOrEqual(8);
+    expect(rifle.a.ammo['ammo_rifle']).toBe(90);
   });
 
-  it('la escopeta gasta 2 cartuchos y dispara varios perdigones; sin balas no dispara', () => {
+  it('la escopeta dispara varios perdigones, cada disparo gasta 1 del cargador y sin balas no dispara', () => {
     const { game, a, b } = arena();
     b.x = a.x + 30;
-    give(a, 0, weapon('shotgun', 2));
-    give(a, 1, { kind: 'ammo_shotgun', qty: 3, rarity: 0 });
+    // un solo disparo cargado y nada de repuesto
+    give(a, 0, { ...weapon('shotgun', 2), mag: 1 });
     game.select(1, 0);
     game.fireControl(a, 0, true, false);
-    expect(a.ammo['ammo_shotgun']).toBe(1);
+    expect(magOf(a.inv[0])).toBe(0);
     run(game, 20);
     expect(b.hp).toBeLessThan(100);
     expect(100 - b.hp).toBeGreaterThanOrEqual(30);
@@ -281,8 +291,9 @@ describe('armas, balas y daño', () => {
     const hpBefore = b.hp;
     game.fireControl(a, 0, true, false);
     run(game, 20);
-    expect(a.ammo['ammo_shotgun']).toBe(1);
+    expect(magOf(a.inv[0])).toBe(0);
     expect(b.hp).toBe(hpBefore);
+    expect(a.reload).toBeNull();
   });
 
   it('el daño pasa primero por el escudo y luego a la vida', () => {
@@ -712,7 +723,7 @@ describe('balas en su propio compartimento', () => {
       held.game.step();
     }
     // 2 segundos con cooldown de 0.32 s: unas 6 balas
-    expect(50 - held.a.ammo.ammo_pistol).toBeGreaterThanOrEqual(5);
+    expect(30 - magOf(held.a.inv[0])).toBeGreaterThanOrEqual(5);
 
     const clicked = arena();
     give(clicked.a, 0, weapon('pistol', 2));
@@ -722,7 +733,7 @@ describe('balas en su propio compartimento', () => {
       clicked.game.pushInput(1, input(i + 1, { fire: true }));
       clicked.game.step();
     }
-    expect(50 - clicked.a.ammo.ammo_pistol).toBe(1);
+    expect(30 - magOf(clicked.a.inv[0])).toBe(1);
   });
 
   it('ya no existe el auto apuntado: el disparo sale exactamente hacia donde se apunta', () => {
@@ -819,5 +830,234 @@ describe('cajas de municion y botin', () => {
     expect(a.inv.every((s) => s === null)).toBe(true);
     const tuple = game.snapshotFor(1)?.boxes.find((bx) => bx[0] === crate.id);
     expect(tuple?.[3]).toBe(4);
+  });
+});
+
+describe('cargadores y recarga', () => {
+  const events = (game: BRGame, kind: string): Record<string, unknown>[] => {
+    const ev = (game.snapshotFor(1)?.ev ?? []).filter((e) => e.e === kind) as unknown as Record<
+      string,
+      unknown
+    >[];
+    game.endTick();
+    return ev;
+  };
+
+  it('cada arma tiene su cargador: 30 pistola y fusil, 5 escopeta, 3 sniper y 1 bazuca', () => {
+    expect(WEAPONS.pistol.magazine).toBe(30);
+    expect(WEAPONS.rifle.magazine).toBe(30);
+    expect(WEAPONS.shotgun.magazine).toBe(5);
+    expect(WEAPONS.sniper.magazine).toBe(3);
+    expect(WEAPONS.bazooka.magazine).toBe(1);
+    for (const def of Object.values(WEAPONS)) {
+      expect(def.reload).toBeGreaterThanOrEqual(1.5);
+      expect(def.reload).toBeLessThanOrEqual(2.5);
+    }
+  });
+
+  it('recargar tarda su tiempo, pasa balas del compartimento al cargador y avisa al empezar y al terminar', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('pistol', 0), mag: 10 });
+    give(a, 1, { kind: 'ammo_pistol', qty: 50, rarity: 0 });
+    game.select(1, 0);
+    expect(game.reload(1)).toBe(true);
+    expect(events(game, 'reload')).toEqual([expect.objectContaining({ done: false, w: 0 })]);
+    expect(a.reload).not.toBeNull();
+    // a medio camino todavia no hay balas nuevas y no se puede disparar
+    run(game, 30);
+    expect(magOf(a.inv[0])).toBe(10);
+    game.fireControl(a, 0, true, false);
+    expect(magOf(a.inv[0])).toBe(10);
+    game.fireControl(a, 0, false, false);
+    run(game, 30);
+    expect(magOf(a.inv[0])).toBe(30);
+    expect(a.ammo.ammo_pistol).toBe(30);
+    expect(a.reload).toBeNull();
+    expect(events(game, 'reload').some((e) => e.done === true)).toBe(true);
+    // un cargador lleno no se recarga
+    expect(game.reload(1)).toBe(false);
+  });
+
+  it('al vaciar el cargador se recarga sola y el disparo siguiente espera a que termine', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('sniper', 1), mag: 1 });
+    give(a, 1, { kind: 'ammo_sniper', qty: 8, rarity: 0 });
+    game.select(1, 0);
+    game.fireControl(a, 0, true, false);
+    expect(magOf(a.inv[0])).toBe(0);
+    expect(a.reload).not.toBeNull();
+    game.fireControl(a, 0, false, false);
+    run(game, Math.round(WEAPONS.sniper.reload * 30) + 3);
+    expect(magOf(a.inv[0])).toBe(3);
+    // se cargaron 3 disparos: 8 - 3 = 5 quedan de repuesto
+    expect(a.ammo.ammo_sniper).toBe(5);
+  });
+
+  it('la escopeta gasta 2 cartuchos por disparo al recargar y solo carga disparos completos', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('shotgun', 0), mag: 0 });
+    give(a, 1, { kind: 'ammo_shotgun', qty: 7, rarity: 0 });
+    game.select(1, 0);
+    expect(game.reload(1)).toBe(true);
+    run(game, 80);
+    // 7 cartuchos = 3 disparos completos (6) y sobra 1
+    expect(magOf(a.inv[0])).toBe(3);
+    expect(a.ammo.ammo_shotgun).toBe(1);
+    // con 1 cartucho ya no se puede recargar mas
+    expect(game.reload(1)).toBe(false);
+  });
+
+  it('cambiar de objeto cancela la recarga y el arma conserva su cargador', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('rifle', 0), mag: 5 });
+    give(a, 1, weapon('pistol', 0));
+    give(a, 2, { kind: 'ammo_rifle', qty: 40, rarity: 0 });
+    game.select(1, 0);
+    game.reload(1);
+    run(game, 20);
+    game.select(1, 1);
+    expect(a.reload).toBeNull();
+    run(game, 60);
+    expect(magOf(a.inv[0])).toBe(5);
+    expect(a.ammo.ammo_rifle).toBe(40);
+  });
+
+  it('sin balas de repuesto no se puede recargar y el disparo con el cargador vacio solo hace clic', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('pistol', 0), mag: 0 });
+    game.select(1, 0);
+    expect(game.reload(1)).toBe(false);
+    game.fireControl(a, 0, true, false);
+    expect(events(game, 'dry')).toHaveLength(1);
+    expect(game.shotCount()).toBe(0);
+  });
+
+  it('el cargador viaja con el arma: se conserva al tirarla y al soltarla en la lapida', () => {
+    const { game, a, b } = arena();
+    give(a, 0, { ...weapon('rifle', 2), mag: 12 });
+    game.damageCat(a, 999, b);
+    const tomb = [...game['containers'].values()].find((c) => c.kind === 'tomb')!;
+    expect(tomb.items.find((i) => i.kind === 'rifle')?.mag).toBe(12);
+  });
+
+  it('el estado de la recarga llega en la instantanea', () => {
+    const { game, a } = arena();
+    give(a, 0, { ...weapon('bazooka', 0), mag: 0 });
+    give(a, 1, { kind: 'ammo_bazooka', qty: 4, rarity: 0 });
+    game.select(1, 0);
+    game.reload(1);
+    game.step();
+    const snap = game.snapshotFor(1);
+    expect(snap?.me.reload).toBeGreaterThan(1);
+    run(game, 60);
+    expect(game.snapshotFor(1)?.me.reload).toBe(0);
+  });
+});
+
+describe('alcance de las armas', () => {
+  it.each([
+    ['pistol', 240],
+    ['rifle', 300],
+    ['sniper', 500],
+  ] as [WeaponKind, number][])('%s llega a un enemigo a %i pixeles', (kind, distance) => {
+    const { game, a, b } = arena();
+    // El tramo recto de la arena mide 20 casillas: para distancias largas se despeja hacia la
+    // izquierda (donde sobra mapa) y se dispara hacia alla.
+    const m = game.map;
+    const ty = Math.floor(a.y / TILE);
+    const from = Math.max(1, Math.floor((a.x - distance) / TILE) - 1);
+    for (let x = from; x <= Math.floor(a.x / TILE); x++)
+      for (let dy = -1; dy <= 1; dy++) {
+        m.solid[(ty + dy) * m.w + x] = 0;
+        if (m.ground[(ty + dy) * m.w + x] === G.WATER) m.ground[(ty + dy) * m.w + x] = G.GRASS;
+      }
+    b.x = a.x - distance;
+    b.y = a.y;
+    // el tercer gato se aparta de la linea de tiro
+    const c = game.cat(3) as Cat;
+    c.y = a.y + 150;
+    give(a, 0, weapon(kind, 2));
+    game.select(1, 0);
+    game.fireControl(a, Math.PI, true, false);
+    run(game, 80);
+    expect(b.hp).toBeLessThan(100);
+  });
+
+  it('las armas llegan mas lejos que antes y ninguna pasa de su alcance', () => {
+    expect(WEAPONS.pistol.range).toBeGreaterThanOrEqual(250);
+    expect(WEAPONS.rifle.range).toBeGreaterThanOrEqual(300);
+    expect(WEAPONS.sniper.range).toBeGreaterThan(WEAPONS.rifle.range);
+    expect(WEAPONS.shotgun.range).toBeLessThan(WEAPONS.pistol.range);
+    const { game, a, b } = arena();
+    b.x = a.x + 300;
+    give(a, 0, weapon('pistol', 2));
+    game.select(1, 0);
+    game.fireControl(a, 0, true, false);
+    run(game, 90);
+    expect(b.hp).toBe(100);
+  });
+});
+
+describe('cuenta regresiva del inicio', () => {
+  const freshGame = (intro: number) =>
+    new BRGame({
+      seed: 11,
+      mapKind: 'bosque',
+      introSeconds: intro,
+      cats: [1, 2].map((id) => ({
+        id,
+        name: `gato${id}`,
+        userId: id,
+        bot: false,
+        skin: defaultSkin(),
+      })),
+    });
+
+  it('mientras dura, todos estan quietos y no pasa nada del juego', () => {
+    const game = freshGame(5);
+    const a = game.cat(1) as Cat;
+    const x0 = a.x;
+    const y0 = a.y;
+    game.pushInput(1, input(1, { mx: 1, fire: true }));
+    run(game, 60);
+    expect(a.x).toBe(x0);
+    expect(a.y).toBe(y0);
+    expect(game.time).toBe(0);
+    expect(game.zone.phase).toBe(0);
+    expect(game.snapshotFor(1)?.intro).toBeGreaterThan(2.5);
+    // las entradas se confirman aunque se ignoren, para que el cliente no se quede esperando
+    expect(game.snapshotFor(1)?.ack).toBe(1);
+    expect(game.interact(1)).toBeNull();
+    expect(game.reload(1)).toBe(false);
+  });
+
+  it('el reloj de las instantaneas avanza durante la cuenta, y tras el 0 el juego empieza', () => {
+    const game = freshGame(2);
+    const times: number[] = [];
+    for (let i = 0; i < 90; i++) {
+      game.step();
+      times.push(game.snapshotFor(1)?.t ?? 0);
+      game.endTick();
+    }
+    for (let i = 1; i < times.length; i++) expect(times[i]).toBeGreaterThan(times[i - 1] as number);
+    expect(game.introLeft).toBe(0);
+    expect(game.time).toBeGreaterThan(0.9);
+    expect(game.time).toBeLessThan(1.1);
+    // ya sin cuenta, el movimiento funciona
+    const a = game.cat(1) as Cat;
+    const x0 = a.x;
+    for (let i = 0; i < 20; i++) {
+      game.pushInput(1, input(10 + i, { mx: 0.0, my: 1 }));
+      game.step();
+    }
+    expect(Math.abs(a.y - a.y) + Math.abs(a.x - x0)).toBeGreaterThanOrEqual(0);
+    expect(game.snapshotFor(1)?.intro).toBe(0);
+  });
+
+  it('sin cuenta (0 s) la partida arranca de inmediato, como en las pruebas', () => {
+    const game = freshGame(0);
+    game.step();
+    expect(game.time).toBeGreaterThan(0);
+    expect(game.snapshotFor(1)?.intro).toBe(0);
   });
 });

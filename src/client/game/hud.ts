@@ -7,6 +7,7 @@ import {
   RARITY_NAMES,
   WEAPONS,
   isWeapon,
+  magOf,
   type Item,
 } from '../../shared/br/items';
 import { G, isWaterAtPx, type BRMap } from '../../shared/br/map';
@@ -180,6 +181,10 @@ export class Hud {
   /** Objeto en mano cuyo aviso se esta mostrando y desde cuando (el aviso se difumina solo). */
   private infoKey = '';
   private infoAt = 0;
+  /** Recarga en curso: casilla del arma y cuanto lleva (0 a 1). */
+  private reloadSlot = -1;
+  private reloadFrac = 0;
+  private curGame: ClientBR | null = null;
 
   constructor(private readonly assets: Assets) {}
 
@@ -192,6 +197,17 @@ export class Hud {
     const { ctx, g } = f;
     ctx.imageSmoothingEnabled = false;
     ctx.globalAlpha = 1;
+    this.curGame = g;
+    this.reloadSlot = -1;
+    this.reloadFrac = 0;
+    const me = g.me;
+    if (me && me.reload > 0) {
+      const held = g.inv[me.sel];
+      if (held && isWeapon(held.kind)) {
+        this.reloadSlot = me.sel;
+        this.reloadFrac = Math.min(1, Math.max(0, 1 - me.reload / WEAPONS[held.kind].reload));
+      }
+    }
     this.drawLabels(f);
     this.drawFloaters(f);
     this.drawPrompt(f);
@@ -212,6 +228,8 @@ export class Hud {
     this.drawEmoteBar(f, touch);
     this.drawWarnings(f);
     this.drawBanner(f);
+    this.drawIntro(f);
+    this.drawSplash(f);
     if (!g.connected) this.drawOffline(f);
     if (f.mapOpen) this.drawBigMap(f);
     if (!touch && g.alive && !g.result) this.drawCrosshair(f);
@@ -575,7 +593,7 @@ export class Hud {
       title = `${def.name.toUpperCase()} ${RARITY_NAMES[item.rarity].toUpperCase()}`;
       color = RARITY_COLORS[item.rarity] as string;
       const ammo = g.ammoOf(def.ammo);
-      detail = `${def.damage[item.rarity]} dmg${def.pellets > 1 ? ' x' + def.pellets : ''}   ${ITEM_NAMES[def.ammo]}: ${ammo}`;
+      detail = `${def.damage[item.rarity]} dmg${def.pellets > 1 ? ' x' + def.pellets : ''}   cargador ${magOf(item)}/${def.magazine}   ${ITEM_NAMES[def.ammo]}: ${ammo}`;
     } else {
       title = ITEM_NAMES[item.kind].toUpperCase();
       const use = touch ? 'toca FUEGO' : 'clic';
@@ -629,6 +647,19 @@ export class Hud {
       );
     } else {
       this.healMax = 0;
+      if (this.reloadSlot === me.sel && this.reloadFrac > 0) {
+        // Barra de recarga sobre el cuadro del objeto en mano.
+        const bw = 150;
+        const bx = Math.round(w / 2 - bw / 2);
+        const by = y - 22;
+        ctx.fillStyle = C.black;
+        ctx.fillRect(bx - 2, by - 2, bw + 4, 14);
+        ctx.fillStyle = '#333c57';
+        ctx.fillRect(bx, by, bw, 10);
+        ctx.fillStyle = C.cyan;
+        ctx.fillRect(bx, by, Math.round(bw * this.reloadFrac), 10);
+        text(ctx, 'RECARGANDO', w / 2, by - 8, 16, C.white, 'center');
+      }
     }
   }
 
@@ -740,6 +771,56 @@ export class Hud {
     }
     if (item) {
       sprite(ctx, this.assets.icon[item.kind], cx, cy, size * (shape === 'circle' ? 0.74 : 0.78));
+      if (weapon) {
+        // Disparos que quedan en el cargador (y las balas de repuesto en el arma que llevas).
+        const def = WEAPONS[item.kind as keyof typeof WEAPONS];
+        const m = magOf(item);
+        const low = m <= Math.max(1, Math.floor(def.magazine * 0.2));
+        const color = m === 0 ? C.red : low && Math.floor(now / 250) % 2 === 0 ? C.orange : C.white;
+        const fs = Math.max(14, size * 0.34);
+        text(
+          ctx,
+          String(m),
+          Math.round(cx + half - 4),
+          Math.round(cy + half - 8),
+          fs,
+          color,
+          'right',
+        );
+        if (selected && this.curGame) {
+          const reserve = this.curGame.ammoOf(def.ammo);
+          text(
+            ctx,
+            `+${reserve}`,
+            Math.round(cx - half + 4),
+            Math.round(cy + half - 8),
+            Math.max(12, size * 0.26),
+            reserve === 0 ? C.red : C.yellow,
+            'left',
+          );
+        }
+        if (index === this.reloadSlot) {
+          // Anillo o barra de la recarga sobre la casilla del arma.
+          if (shape === 'circle') {
+            ctx.beginPath();
+            ctx.arc(cx, cy, half + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.reloadFrac);
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = C.cyan;
+            ctx.stroke();
+          } else {
+            const bw = size;
+            ctx.fillStyle = C.black;
+            ctx.fillRect(Math.round(cx - half), Math.round(cy - half) - 12, bw, 6);
+            ctx.fillStyle = C.cyan;
+            ctx.fillRect(
+              Math.round(cx - half) + 1,
+              Math.round(cy - half) - 11,
+              Math.round((bw - 2) * this.reloadFrac),
+              4,
+            );
+          }
+        }
+      }
       if (item.qty > 1) {
         text(
           ctx,
@@ -795,6 +876,7 @@ export class Hud {
       bagIcon: this.assets.can,
       emoteIcon: this.assets.emote.face[0],
       emoteOpen: input.emoteOpen,
+      reloadFrac: this.reloadFrac,
       drawSlot: (c: Circle, i: number) => {
         this.drawItemCell(
           ctx,
@@ -862,6 +944,179 @@ export class Hud {
     const y = Math.round(h * (g.input.mode === 'touch' ? 0.34 : 0.24));
     panel(ctx, Math.round(w / 2 - tw / 2), y - 20, tw, 40, 'rgba(26,28,44,0.88)', C.black);
     text(ctx, b.text, w / 2, y + 1, 15, color, 'center', PIX, null);
+    ctx.globalAlpha = 1;
+  }
+
+  // ------------------------------------------------------------------ inicio de la partida
+
+  /** Cuenta regresiva con todos quietos: oscurece el mapa, pulsa cada segundo y da consejos. */
+  private drawIntro(f: HudFrame): void {
+    const { ctx, g, w, h, now } = f;
+    const left = g.intro;
+    if (left <= 0) return;
+    const n = Math.max(1, Math.ceil(left - 0.001));
+    const frac = Math.min(1, Math.max(0, n - left));
+    const cx = w / 2;
+    // El numero va arriba para que se vea al gato y a los demas esperando en el centro.
+    const cy = h * 0.27;
+    const unit = Math.min(w, h);
+
+    ctx.fillStyle = 'rgba(10,12,24,0.3)';
+    ctx.fillRect(0, 0, w, h);
+    const vignette = ctx.createRadialGradient(
+      cx,
+      h * 0.5,
+      unit * 0.25,
+      cx,
+      h * 0.5,
+      Math.hypot(w, h) * 0.55,
+    );
+    vignette.addColorStop(0, 'rgba(10,12,24,0)');
+    vignette.addColorStop(1, 'rgba(10,12,24,0.72)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    const color = n >= 4 ? C.white : n === 3 ? C.yellow : n === 2 ? C.orange : C.red;
+    // onda que se abre desde el numero cada segundo
+    ctx.globalAlpha = (1 - frac) * 0.7;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, unit * (0.1 + frac * 0.36), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    const pop = 1 + Math.max(0, 0.5 - frac * 1.5);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(pop, pop);
+    text(ctx, String(n), 0, 0, Math.round(unit * 0.22), color, 'center', PIX, C.black);
+    ctx.restore();
+
+    text(
+      ctx,
+      '¡A PREPARARSE!',
+      cx,
+      h * 0.07,
+      Math.round(Math.min(34, Math.max(16, w * 0.035))),
+      C.yellow,
+      'center',
+      PIX,
+    );
+    const tips = [
+      'Sé el último gato en cuatro patas',
+      'Busca cofres y cajas de munición',
+      g.input.mode === 'touch'
+        ? 'Recarga con el botón de recarga'
+        : `Recarga con ${keyLabel(g.input.keys.reload).toUpperCase()}`,
+      'A los 30 segundos la ola empieza a cerrarse',
+      'Corre al círculo seguro cuando avise la ola',
+    ];
+    const tip = tips[(5 - n + Math.floor(now / 5000)) % tips.length] as string;
+    text(
+      ctx,
+      tip,
+      cx,
+      h * 0.74,
+      Math.round(Math.min(30, Math.max(20, w * 0.03))),
+      C.white,
+      'center',
+      VT,
+    );
+  }
+
+  /** Cartel grande de "A jugar" al terminar la cuenta: entra con un golpe, cambia de color y se va. */
+  private drawSplash(f: HudFrame): void {
+    const { ctx, g, w, h, now } = f;
+    const sp = g.splash;
+    if (!sp) return;
+    const age = now - sp.at;
+    const dur = 3800;
+    if (age > dur) {
+      g.splash = null;
+      return;
+    }
+    const k = Math.min(1, age / 240);
+    const ease = 1 - (1 - k) ** 3;
+    const alpha = age > dur - 600 ? Math.max(0, (dur - age) / 600) : 1;
+    const unit = Math.min(w, h);
+    const cx = w / 2;
+    const cy = h * 0.2;
+
+    // destello blanco al arrancar
+    if (age < 320) {
+      ctx.globalAlpha = (1 - age / 320) * 0.5;
+      ctx.fillStyle = C.white;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.globalAlpha = alpha;
+    // franja con rayas de colores detras del titulo
+    const band = Math.round(unit * 0.27);
+    const palette = [C.yellow, C.orange, C.pink, C.cyan];
+    ctx.fillStyle = 'rgba(26,28,44,0.88)';
+    ctx.fillRect(0, Math.round(cy - band / 2), w, band);
+    const stripe = palette[Math.floor(now / 140) % palette.length] as string;
+    ctx.fillStyle = stripe;
+    ctx.fillRect(0, Math.round(cy - band / 2) - 4, w, 4);
+    ctx.fillRect(0, Math.round(cy + band / 2), w, 4);
+
+    const size = Math.round(Math.min(78, Math.max(28, w * 0.075)));
+    const scale = 1 + (1 - ease) * 2.4;
+    ctx.save();
+    ctx.translate(
+      cx + (age < 400 ? Math.sin(age / 18) * (1 - age / 400) * 6 : 0),
+      cy - band * 0.12,
+    );
+    ctx.scale(scale, scale);
+    text(ctx, '¡A JUGAR!', 4, 5, size, C.black, 'center', PIX, null);
+    text(
+      ctx,
+      '¡A JUGAR!',
+      0,
+      0,
+      size,
+      palette[Math.floor(now / 110) % palette.length] as string,
+      'center',
+      PIX,
+      C.black,
+    );
+    ctx.restore();
+
+    const sub = Math.round(Math.min(26, Math.max(15, w * 0.02)));
+    text(
+      ctx,
+      'Abre cofres y cajas de munición',
+      cx,
+      cy + band * 0.2,
+      sub,
+      C.white,
+      'center',
+      PIX,
+      C.black,
+    );
+    text(
+      ctx,
+      'y sé el último gato en cuatro patas',
+      cx,
+      cy + band * 0.2 + sub * 1.7,
+      sub,
+      C.lime,
+      'center',
+      PIX,
+      C.black,
+    );
+
+    // chispas girando alrededor del titulo
+    for (let i = 0; i < 10; i++) {
+      const a = now / 600 + (i / 10) * Math.PI * 2;
+      const rx = Math.min(w * 0.36, 360);
+      const x = cx + Math.cos(a) * rx * (0.8 + 0.2 * Math.sin(now / 300 + i));
+      const y = cy + Math.sin(a * 1.3) * band * 0.55;
+      ctx.fillStyle = palette[i % palette.length] as string;
+      const r = 3 + ((now / 120 + i) % 3);
+      ctx.fillRect(Math.round(x - r), Math.round(y - 1), r * 2, 2);
+      ctx.fillRect(Math.round(x - 1), Math.round(y - r), 2, r * 2);
+    }
     ctx.globalAlpha = 1;
   }
 

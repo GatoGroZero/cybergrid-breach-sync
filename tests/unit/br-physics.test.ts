@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CAT, TILE, TICK_DT } from '../../src/shared/br/constants';
 import { generateMap } from '../../src/shared/br/map';
 import {
+  aimTouchesTarget,
   moveBox,
   normalizeMove,
   segmentCircleHit,
@@ -10,6 +11,7 @@ import {
 } from '../../src/shared/br/physics';
 import { defaultSkin, isValidSkin, randomSkin } from '../../src/shared/br/skin';
 import { createRng } from '../../src/shared/rng';
+import { openMap } from './helpers';
 import { SKIN_CELLS } from '../../src/shared/br/constants';
 
 const map = generateMap('bosque', 42);
@@ -88,5 +90,42 @@ describe('pelaje del gato', () => {
   it('los pelajes aleatorios de los bots siempre son válidos', () => {
     const rng = createRng(3);
     for (let i = 0; i < 200; i++) expect(isValidSkin(randomSkin(rng))).toBe(true);
+  });
+});
+
+describe('mira "solo con objetivo" (movil)', () => {
+  const open = (): ReturnType<typeof openMap> => openMap(40, 20);
+
+  it('toca a un gato en la linea, pero no si apunta a un lado o esta mas lejos que el alcance', () => {
+    const m = open();
+    const cat = { x: 200, y: 160 };
+    expect(aimTouchesTarget(m, 100, 160, 0, 260, [cat])).toBe(true);
+    // apuntando 20 grados arriba pasa de largo
+    expect(aimTouchesTarget(m, 100, 160, -0.35, 260, [cat])).toBe(false);
+    // el gato esta a 100 px y el alcance es de 60
+    expect(aimTouchesTarget(m, 100, 160, 0, 60, [cat])).toBe(false);
+    // sin gatos no hay objetivo
+    expect(aimTouchesTarget(m, 100, 160, 0, 260, [])).toBe(false);
+  });
+
+  it('un muro colocado cuenta como objetivo, pero un arbol o una pared no', () => {
+    const m = open();
+    // casilla (8, 10) = pared de un arbol (1); casilla (12, 10) = muro colocado (2)
+    m.solid[10 * m.w + 8] = 1;
+    expect(aimTouchesTarget(m, 100, 168, 0, 300, [])).toBe(false);
+    m.solid[10 * m.w + 8] = 0;
+    m.solid[10 * m.w + 12] = 2;
+    expect(aimTouchesTarget(m, 100, 168, 0, 300, [])).toBe(true);
+    // el muro queda fuera del alcance
+    expect(aimTouchesTarget(m, 100, 168, 0, 40, [])).toBe(false);
+  });
+
+  it('un gato escondido detras de un arbol no cuenta, y detras de un muro colocado el muro es el objetivo', () => {
+    const m = open();
+    const cat = { x: 260, y: 168 };
+    m.solid[10 * m.w + 12] = 1;
+    expect(aimTouchesTarget(m, 100, 168, 0, 300, [cat])).toBe(false);
+    m.solid[10 * m.w + 12] = 2;
+    expect(aimTouchesTarget(m, 100, 168, 0, 300, [cat])).toBe(true);
   });
 });

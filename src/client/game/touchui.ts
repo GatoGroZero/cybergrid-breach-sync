@@ -39,6 +39,8 @@ export interface TouchDrawState {
   emoteIcon?: HTMLCanvasElement;
   /** La barra de emotes esta abierta (el boton se resalta). */
   emoteOpen?: boolean;
+  /** Recarga en curso (0 a 1): el boton de recargar se llena. */
+  reloadFrac?: number;
 }
 
 /** Joystick, fuego, interactuar, inventario, menu, mapa y la barra de objetos, en pixeles CSS. */
@@ -168,6 +170,28 @@ export function drawTouchControls(
     );
   }
 
+  // recargar
+  const rl = circles.reload;
+  const reloading = (st.reloadFrac ?? 0) > 0;
+  ring(
+    ctx,
+    rl,
+    glow('reload') ? C.yellow : reloading ? C.cyan : 'rgba(148,176,194,0.8)',
+    reloading ? 'rgba(115,239,247,0.22)' : 'rgba(26,28,44,0.55)',
+  );
+  if (reloading) {
+    ctx.beginPath();
+    ctx.arc(rl.x, rl.y, rl.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (st.reloadFrac ?? 0));
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = C.cyan;
+    ctx.stroke();
+  }
+  ctx.fillStyle = C.white;
+  ctx.font = `${Math.max(9, rl.r * 0.8)}px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('R', rl.x, rl.y + 1);
+
   // menu y mapa
   for (const id of ['menu', 'map'] as const) {
     const c = circles[id];
@@ -205,7 +229,7 @@ export function drawTouchControls(
       ctx.textAlign = align;
       ctx.fillText(label, cx, y);
     };
-    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote'] as const) {
+    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote', 'reload'] as const) {
       const c = circles[id];
       put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }
