@@ -1,9 +1,10 @@
-import { G } from '../shared/br/map';
+import { G, type MapKind } from '../shared/br/map';
 
 type AudioCtor = typeof AudioContext;
 
-export type Surface = 'grass' | 'path' | 'wood' | 'deck' | 'carpet' | 'stone' | 'water';
-export type AmbientKind = 'bosque' | 'casa' | 'piscina';
+export type Surface =
+  'grass' | 'path' | 'wood' | 'deck' | 'carpet' | 'stone' | 'water' | 'roof' | 'metal';
+export type AmbientKind = MapKind;
 
 /** Que suena bajo las patas segun el terreno. */
 export function surfaceFor(ground: number): Surface {
@@ -28,6 +29,17 @@ export function surfaceFor(ground: number): Surface {
       return 'stone';
     case G.WATER:
       return 'water';
+    case G.TEJA:
+    case G.TEJA2:
+    case G.PIZARRA:
+    case G.PIZARRA2:
+    case G.ALQUITRAN:
+    case G.ALQUITRAN2:
+    case G.CUMBRERA:
+      return 'roof';
+    case G.CANALON:
+    case G.PARAPETO:
+      return 'metal';
     default:
       return 'grass';
   }
@@ -190,6 +202,15 @@ export class Sfx {
   /** El render avisa la hora en cada cuadro; los sonidos de ambiente la leen cuando les toca sonar. */
   setDaytime(p: number): void {
     this.dayP = Math.max(0, Math.min(1, p));
+  }
+
+  /** Trueno lejano: un retumbo grave que llega unos instantes despues del relampago. */
+  thunder(delay = 0.5, loud = 1): void {
+    this.ch = 'ambient';
+    this.noise(1.8, 0.16 * loud, 260, rand(-0.5, 0.5), 'lowpass', 0.7, delay);
+    this.tone(62, 1.5, 'sine', 0.13 * loud, 38, 0, delay);
+    this.tone(48, 1.9, 'sawtooth', 0.045 * loud, 30, 0, delay + 0.1);
+    this.noise(0.4, 0.1 * loud, 1400, 0, 'bandpass', 0.7, delay);
   }
 
   /** Aviso suave cuando cambia la hora del dia. */
@@ -470,6 +491,16 @@ export class Sfx {
         this.noise(0.14, 0.07 * k, 1700, pan, 'bandpass', 0.8);
         this.tone(520 * wobble, 0.09, 'sine', 0.035 * k, 980, pan);
         break;
+      case 'roof':
+        // tejas mojadas: un chasquido de barro con un chapoteo
+        this.tone(740 * wobble, 0.03, 'square', 0.035 * k, 420, pan);
+        this.noise(0.05, 0.05 * k, 3400, pan, 'bandpass', 1.6);
+        this.noise(0.05, 0.03 * k, 1500, pan, 'bandpass', 1, 0.03);
+        break;
+      case 'metal':
+        this.tone(1250 * wobble, 0.06, 'triangle', 0.04 * k, 900, pan);
+        this.noise(0.04, 0.03 * k, 4200, pan, 'highpass');
+        break;
       default:
         this.noise(0.07, 0.05 * k, 1000 * wobble, pan, 'bandpass', 0.6);
         this.noise(0.04, 0.018 * k, 3600, pan, 'highpass', 0.7, 0.01);
@@ -729,6 +760,16 @@ export class Sfx {
         const p = pan();
         for (let i = 0; i < 4; i++) this.tone(4300, 0.04, 'square', 0.012, 4100, p, i * 0.06);
       });
+    } else if (kind === 'tejado' || kind === 'azotea' || kind === 'mansarda') {
+      // tormenta sobre el tejado: lluvia constante, gotas del canalon y truenos de vez en cuando
+      layer('highpass', 2600, 0.05, 0.02, 0.19, 0.5);
+      layer('bandpass', 1300, 0.07, 0.03, 0.13, 0.5);
+      layer('lowpass', 240, 0.1, 0.04, 0.06);
+      later(0.6, 1.8, () => {
+        const p = pan();
+        this.tone(rand(1800, 2700), 0.035, 'sine', 0.018, rand(900, 1300), p);
+      });
+      later(12, 26, () => this.thunder(rand(0.2, 1.4), 0.8));
     } else if (kind === 'casa') {
       layer('lowpass', 210, 0.12, 0.04, 0.07);
       layer('bandpass', 700, 0.012, 0.008, 0.17, 0.8);
@@ -766,15 +807,16 @@ export class Sfx {
 
     // Noche: coro de grillos, buho, maullido lejano y rafagas de viento.
     const outdoors = kind === 'casa' ? 0.4 : 1;
+    const roof = kind === 'tejado' || kind === 'azotea' || kind === 'mansarda';
     later(0.7, 1.9, () => {
-      if (Math.random() > night()) return;
+      if (roof || Math.random() > night()) return;
       const p = pan();
       const base = rand(4200, 5100);
       for (let i = 0; i < 3; i++)
         this.tone(base, 0.035, 'square', 0.011 * outdoors, base * 0.96, p, i * 0.055);
     });
     later(13, 27, () => {
-      if (kind === 'casa' || night() < 0.6) return;
+      if (roof || kind === 'casa' || night() < 0.6) return;
       const p = pan();
       [0, 0.34, 0.78].forEach((d, i) =>
         this.tone(

@@ -45,6 +45,8 @@ export interface Config {
   countdownSeconds: number;
   /** Segundos de cuenta regresiva con todos quietos antes de que empiece la partida. */
   introSeconds: number;
+  /** Segundos para elegir kit al empezar cada ronda (modos por equipos). */
+  pickSeconds: number;
   /** Acelera la ola (solo pruebas): 1 es el ritmo real. */
   zoneTimeScale: number;
   /** Segundos de celebracion (fuegos artificiales) antes de la tabla de resultados. */
@@ -155,6 +157,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     celebrationSeconds: Math.min(20, Math.max(0, int(process.env.CELEBRATION_SECONDS, 7))),
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     introSeconds: Math.min(15, Math.max(0, int(process.env.INTRO_SECONDS, 5))),
+    pickSeconds: Math.min(40, Math.max(2, int(process.env.PICK_SECONDS, 14))),
     version: '2.3.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),

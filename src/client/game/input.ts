@@ -302,6 +302,8 @@ export interface InputCallbacks {
   onReload: () => void;
   /** Mando el emote `kind` (0 a 4). */
   onEmote: (kind: number) => void;
+  /** Elegi el kit numero `index` (0 a 3) en la pantalla de eleccion de la ronda. */
+  onKit: (index: number) => void;
   onFirstGesture: () => void;
   onModeChange: (mode: ControlMode) => void;
 }
@@ -331,6 +333,8 @@ export class InputController {
   /** La barra de emotes esta abierta; el renderizador pone aqui sus botones mientras lo este. */
   emoteOpen = false;
   emoteRects: { x: number; y: number; w: number; h: number }[] = [];
+  /** Tarjetas de la eleccion de kit (solo mientras se elige). */
+  kitRects: { x: number; y: number; w: number; h: number }[] = [];
   mouse: { x: number; y: number } | null = null;
   stick = { x: 0, y: 0, active: false };
   aimPad: AimPad = { active: false, x: 0, y: 0, aiming: false };
@@ -440,6 +444,16 @@ export class InputController {
     if (kind >= 0 && kind < this.emoteRects.length) this.cb.onEmote(kind);
   }
 
+  /** Si se esta eligiendo kit, el toque o clic sobre una tarjeta lo elige. */
+  private kitPress(x: number, y: number): boolean {
+    if (this.kitRects.length === 0) return false;
+    const i = this.kitRects.findIndex(
+      (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h,
+    );
+    if (i >= 0) this.cb.onKit(i);
+    return true;
+  }
+
   /** Si hay una barra de emotes abierta, atiende el toque. Devuelve true si lo uso. */
   private emotePress(x: number, y: number): boolean {
     if (!this.emoteOpen) return false;
@@ -474,6 +488,7 @@ export class InputController {
     this.setMode('keyboard');
     this.mouse = p;
     if (e.button !== 0) return;
+    if (this.kitPress(p.x, p.y)) return;
     if (this.emotePress(p.x, p.y)) return;
     const slot = this.hotbarRects.findIndex(
       (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h,
@@ -488,6 +503,7 @@ export class InputController {
 
   private touchDown(id: number, x: number, y: number): void {
     const { w, h } = this.screen;
+    if (this.kitPress(x, y)) return;
     if (this.emotePress(x, y)) return;
     const circles = touchCircles(this.touchLayout, w, h);
     for (let i = 0; i < 5; i++) {

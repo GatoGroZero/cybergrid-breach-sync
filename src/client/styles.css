@@ -601,7 +601,7 @@ input::placeholder {
 
 .member-list canvas {
   width: 52px;
-  height: 36px;
+  height: 50px;
   flex: none;
 }
 
@@ -1489,5 +1489,100 @@ input::placeholder {
   .btn,
   .toast {
     transition: none;
+  }
+}
+
+/* ------------------------------------------------------------ modos de juego */
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  min-height: 74px;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  color: var(--dim);
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+}
+
+.mode strong {
+  font-family: var(--font-title);
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.mode span {
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.mode[aria-checked='true'] {
+  color: var(--black);
+  background: var(--yellow);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px var(--orange);
+}
+
+.mode[aria-checked='true'] strong {
+  color: var(--black);
+}
+
+.mode:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode:hover:not(:disabled):not([aria-checked='true']) {
+  border-color: var(--cyan);
+}
+
+.team-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.team {
+  padding: 10px;
+  background: var(--black);
+  border: 3px solid var(--team, var(--line));
+}
+
+.team-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--team, var(--text));
+}
+
+.team .member-list {
+  margin: 0 0 8px;
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
+.team .team-open {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+@media (max-width: 640px) {
+  .team-board {
+    grid-template-columns: 1fr;
   }
 }

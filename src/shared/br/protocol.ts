@@ -8,6 +8,16 @@ import {
 } from './constants';
 import { AMMO_KINDS } from './items';
 import { OUTFIT_COUNT } from './outfits';
+import {
+  DUEL_FORMATS,
+  GAME_MODES,
+  KIT_IDS,
+  TERRITORY_MAX_TEAM,
+  TERRITORY_MIN_TEAM,
+  type DuelFormat,
+  type GameMode,
+} from './modes';
+import { ALL_MAP_KINDS } from './mapcore';
 import { BASE_COATS } from './skin';
 import { BOTS_FILL, type BotsSetting } from './rooms';
 import type { Item } from './items';
@@ -79,7 +89,10 @@ export const skinSchema = z.object({
 });
 
 const roomName = z.string().trim().min(1).max(24);
-const roomMap = z.enum(['bosque', 'casa', 'piscina', 'azar']);
+const roomMap = z.enum([...ALL_MAP_KINDS, 'azar'] as unknown as [string, ...string[]]);
+const roomMode = z.enum(GAME_MODES as unknown as [GameMode, ...GameMode[]]);
+const roomFormat = z.enum(DUEL_FORMATS as unknown as [DuelFormat, ...DuelFormat[]]);
+const roomTeamSize = z.number().int().min(TERRITORY_MIN_TEAM).max(TERRITORY_MAX_TEAM);
 /** `'llenar'` completa la partida con bots; un numero (0 a 9) es la cantidad exacta. */
 export const botsSchema = z.union([
   z.literal(BOTS_FILL),
@@ -95,6 +108,12 @@ export const createRoomSchema = z.object({
   isPrivate: z.boolean().default(false),
   map: roomMap.default('azar'),
   bots: botsSchema.default(BOTS_FILL),
+  /** Modo de juego (por omision Battle Royale). */
+  mode: roomMode.default('br'),
+  /** Pelea en el techo: 1 contra 1 o 2 contra 2. */
+  format: roomFormat.default('1v1'),
+  /** Territorio: gatos por equipo (1 a 5). */
+  teamSize: roomTeamSize.default(TERRITORY_MAX_TEAM),
 });
 
 /** El anfitrion cambia lo que quiera de la sala mientras nadie ha empezado. */
@@ -103,7 +122,15 @@ export const roomSettingsSchema = z.object({
   isPrivate: z.boolean().optional(),
   map: roomMap.optional(),
   bots: botsSchema.optional(),
+  mode: roomMode.optional(),
+  format: roomFormat.optional(),
+  teamSize: roomTeamSize.optional(),
 });
+
+/** Cambiarse de equipo antes de que empiece la ronda. */
+export const teamSchema = z.object({ team: z.union([z.literal(0), z.literal(1)]) });
+/** Elegir kit al empezar cada ronda. */
+export const kitSchema = z.object({ kit: z.enum(KIT_IDS as unknown as [string, ...string[]]) });
 
 const roomCodePattern = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
 export const joinRoomSchema = z.object({
@@ -129,6 +156,8 @@ export interface RoomMember {
   connected: boolean;
   host: boolean;
   skin: { base: number; paint: string; outfit?: number };
+  /** Equipo (0 o 1) en los modos por equipos. */
+  team?: number;
 }
 
 export type RoomPhase = 'lobby' | 'countdown' | 'playing' | 'ended';
@@ -149,6 +178,10 @@ export interface RoomState {
   botCount: number;
   /** Hay gatos suficientes para empezar (al menos 2 contando bots). */
   canStart: boolean;
+  mode: GameMode;
+  format: DuelFormat;
+  /** Gatos por equipo en los modos por equipos (0 si no hay equipos). */
+  teamSize: number;
   members: RoomMember[];
   countdown: number;
 }
@@ -165,6 +198,7 @@ export interface PublicRoom {
   bots: number;
   phase: RoomPhase;
   map: string;
+  mode: GameMode;
 }
 
 export interface CatInfo {
@@ -172,11 +206,17 @@ export interface CatInfo {
   name: string;
   bot: boolean;
   skin: { base: number; paint: string; outfit?: number };
+  /** Equipo (0 o 1) en los modos por equipos. */
+  team?: number;
 }
 
 export interface GameStartPayload {
   seed: number;
   map: string;
+  /** Modo de juego (si falta es Battle Royale). */
+  mode?: GameMode;
+  /** Gatos por equipo en los modos por equipos. */
+  teamSize?: number;
   you: number;
   cats: CatInfo[];
   tickHz: number;
@@ -185,6 +225,9 @@ export interface GameStartPayload {
 export interface WinPayload {
   winnerId: number | null;
   winnerName: string | null;
+  /** Modos por equipos: equipo ganador (0 o 1) y marcador de rondas. */
+  winnerTeam?: number | null;
+  score?: [number, number];
 }
 
 export interface PlacementRow {
@@ -195,6 +238,7 @@ export interface PlacementRow {
   kills: number;
   survivalS: number;
   damageDealt: number;
+  team?: number;
 }
 
 export interface GameEndPayload {
@@ -203,6 +247,10 @@ export interface GameEndPayload {
   humanWon: boolean;
   durationS: number;
   rows: PlacementRow[];
+  /** Modos por equipos: equipo ganador y marcador de rondas. */
+  winnerTeam?: number | null;
+  score?: [number, number];
+  mode?: GameMode;
 }
 
 export interface DiedPayload {

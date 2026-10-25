@@ -195,6 +195,9 @@ declare global {
       drawMs: number;
       daytime: number;
       dayName: string;
+      pvpPhase: string;
+      round: number;
+      wins: string;
     };
   }
 }

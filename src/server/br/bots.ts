@@ -1,4 +1,4 @@
-import { AMMO_MAX, CAT, SPAWN_GRACE_S, TILE } from '../../shared/br/constants';
+import { AMMO_MAX, CAT, TILE } from '../../shared/br/constants';
 import {
   WEAPONS,
   isAmmo,
@@ -158,7 +158,8 @@ export class BotBrain {
     this.sight = rng.range(170, 250);
     this.sprinty = rng.range(0.3, 1);
     this.startDelay = rng.range(0.4, 2.5);
-    this.peaceUntil = rng.range(40, 90) - this.aggression * 15;
+    // por equipos nadie espera: la pelea empieza apenas termina la cuenta
+    this.peaceUntil = game.teamMode ? 0 : rng.range(40, 90) - this.aggression * 15;
     this.progressPos = { x: cat.x, y: cat.y };
   }
 
@@ -255,7 +256,7 @@ export class BotBrain {
     let best: Cat | null = null;
     let bestD = this.sight;
     for (const o of g.cats) {
-      if (!o.alive || o.id === c.id) continue;
+      if (!g.isFoe(c, o)) continue;
       const d = dist(c.x, c.y, o.x, o.y);
       const keep = this.target && this.target.id === o.id ? this.sight * 1.3 : this.sight;
       if (d > keep) continue;
@@ -538,8 +539,13 @@ export class BotBrain {
       }
       return 'ignore';
     }
-    if (now < SPAWN_GRACE_S) return 'ignore';
+    if (now < g.graceS) return 'ignore';
     if (now < this.fightUntil) return 'fight';
+    // por equipos solo hay enemigos delante: se pelea siempre que se les ve
+    if (g.teamMode) {
+      this.fightUntil = now + this.rng.range(2.5, 5);
+      return 'fight';
+    }
     if (now < this.peaceUntil && !provoked && d > 18) return 'ignore';
     const phase = g.zone.phase;
     const pressure = phase >= 3 ? 0.35 : phase === 2 ? 0.2 : phase === 1 ? 0.08 : 0;
@@ -565,7 +571,7 @@ export class BotBrain {
       let f = 1;
       if (def.kind === 'shotgun') f = distance < 75 ? 1.6 : distance < 110 ? 0.6 : 0.2;
       else if (def.kind === 'sniper') f = distance > 120 ? 1.5 : distance > 70 ? 0.9 : 0.3;
-      else if (def.kind === 'bazooka') f = distance > 55 && distance < 220 ? 1.3 : 0.1;
+      else if (def.kind === 'bazooka') f = distance > 55 && distance < 220 ? 1.9 : 0.1;
       else if (def.kind === 'rifle') f = distance < 190 ? 1.2 : 0.7;
       if (distance > def.range) f *= 0.2;
       return dps * f;
@@ -574,7 +580,10 @@ export class BotBrain {
     let bestScore = -1;
     for (const o of options) {
       // Un arma con el cargador vacio hay que recargarla antes: vale menos en plena pelea.
-      const sc = fit(o.def) * (1 + o.item.rarity * 0.35) * (magOf(o.item) > 0 ? 1 : 0.3);
+      // Las armas de pocos disparos (sniper, bazuca) quedan vacias a proposito tras cada tiro: no se
+      // castigan tanto como un fusil sin balas.
+      const emptyK = o.def.magazine <= 3 ? 0.8 : 0.3;
+      const sc = fit(o.def) * (1 + o.item.rarity * 0.35) * (magOf(o.item) > 0 ? 1 : emptyK);
       if (sc > bestScore) {
         bestScore = sc;
         best = o.slot;
@@ -584,7 +593,9 @@ export class BotBrain {
       if (c.sel !== best) {
         const cur = options.find((o) => o.slot === c.sel);
         const curScore = cur
-          ? fit(cur.def) * (1 + cur.item.rarity * 0.35) * (magOf(cur.item) > 0 ? 1 : 0.3)
+          ? fit(cur.def) *
+            (1 + cur.item.rarity * 0.35) *
+            (magOf(cur.item) > 0 ? 1 : cur.def.magazine <= 3 ? 0.8 : 0.3)
           : 0;
         if (!cur || bestScore > curScore * 1.25 || force) {
           g.select(c.id, best);
@@ -777,7 +788,7 @@ export class BotBrain {
   private investigate(now: number): boolean {
     const g = this.game;
     const c = this.cat;
-    if (!this.armed() || now < SPAWN_GRACE_S) return false;
+    if (!this.armed() || now < g.graceS) return false;
     // un disparo reciente de otro gato, cerca
     if (now - this.lastHeard > 1) {
       this.lastHeard = now;
@@ -963,6 +974,13 @@ export class BotBrain {
 
   private pickRoamGoal(): { x: number; y: number } {
     const g = this.game;
+    const mode = g.botGoal(this.cat);
+    if (mode) {
+      const x = Math.min(g.map.w * TILE - 40, Math.max(40, mode.x + this.rng.range(-26, 26)));
+      const y = Math.min(g.map.h * TILE - 40, Math.max(40, mode.y + this.rng.range(-26, 26)));
+      if (!isSolidTile(g.map, Math.floor(x / TILE), Math.floor(y / TILE))) return { x, y };
+      return mode;
+    }
     const mapW = g.map.w * TILE;
     const mapH = g.map.h * TILE;
     const z = g.zone;

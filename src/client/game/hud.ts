@@ -1,4 +1,5 @@
 import type { DayName, Daylight } from '../../shared/br/daytime';
+import { drawPvpHud } from './hudpvp';
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
   CLAWS,
@@ -76,6 +77,15 @@ const GROUND_COLOR: Record<number, string> = {
   [G.POOLEDGE]: '#f4f4f4',
   [G.HOUSEWALL]: '#6d4530',
   [G.BEDSHADE]: '#7a5539',
+  [G.TEJA]: '#c2563b',
+  [G.TEJA2]: '#a9462f',
+  [G.PIZARRA]: '#5d6e8e',
+  [G.PIZARRA2]: '#4b5b7b',
+  [G.ALQUITRAN]: '#3b404c',
+  [G.ALQUITRAN2]: '#454b59',
+  [G.CANALON]: '#8a98ad',
+  [G.PARAPETO]: '#8c6a5c',
+  [G.CUMBRERA]: '#a8402b',
 };
 const ROOF_COLOR = ['#b13e53', '#3b5dc9', '#38b764', '#ef7d57'];
 
@@ -236,6 +246,7 @@ export class Hud {
     this.drawWarnings(f);
     this.drawBanner(f);
     this.drawDayToast(f);
+    drawPvpHud(f, this.assets, f.safe.t + 66);
     this.drawIntro(f);
     this.drawSplash(f);
     if (!g.connected) this.drawOffline(f);
@@ -455,20 +466,22 @@ export class Hud {
     const alive = g.latest?.alive ?? 0;
     let msg = '';
     let color: string = C.white;
+    // el mismo aviso con el nombre de lo que cierra el mapa en cada modo
+    const what = g.mode === 'techo' ? 'TORMENTA' : g.mode === 'territorio' ? 'INUNDACIÓN' : 'OLA';
     if (z) {
       if (z.phase >= 4) {
-        msg = '¡LA OLA LO CUBRE TODO!';
+        msg = `¡LA ${what} LO CUBRE TODO!`;
         color = C.red;
       } else if (z.shrinking) {
-        msg = `¡LA OLA AVANZA!  -${z.dps}/s`;
+        msg = `¡LA ${what} AVANZA!  -${z.dps}/s`;
         color = Math.floor(f.now / 350) % 2 === 0 ? C.orange : C.yellow;
       } else if (z.phase === 0) {
-        msg = `LA OLA LLEGA EN ${fmtTime(z.nextIn)}`;
+        msg = `LA ${what} LLEGA EN ${fmtTime(z.nextIn)}`;
       } else if (z.phase === 3) {
-        msg = `¡ÚLTIMA OLA EN ${Math.max(0, z.nextIn)}!`;
+        msg = `¡ÚLTIMA ${what} EN ${Math.max(0, z.nextIn)}!`;
         color = Math.floor(f.now / 300) % 2 === 0 ? C.red : C.orange;
       } else {
-        msg = `SEGUNDA OLA EN ${fmtTime(z.nextIn)}`;
+        msg = `SEGUNDA ${what} EN ${fmtTime(z.nextIn)}`;
       }
     }
     ctx.font = `20px ${VT}`;
@@ -1184,10 +1197,11 @@ export class Hud {
       cy - band * 0.12,
     );
     ctx.scale(scale, scale);
-    text(ctx, '¡A JUGAR!', 4, 5, size, C.black, 'center', PIX, null);
+    const headline = g.splashText || '¡A JUGAR!';
+    text(ctx, headline, 4, 5, size, C.black, 'center', PIX, null);
     text(
       ctx,
-      '¡A JUGAR!',
+      headline,
       0,
       0,
       size,
@@ -1199,9 +1213,10 @@ export class Hud {
     ctx.restore();
 
     const sub = Math.round(Math.min(26, Math.max(15, w * 0.02)));
+    const teamMode = g.pvp !== null;
     text(
       ctx,
-      'Abre cofres y cajas de munición',
+      teamMode ? 'Quien junte dos rondas' : 'Abre cofres y cajas de munición',
       cx,
       cy + band * 0.2,
       sub,
@@ -1212,7 +1227,7 @@ export class Hud {
     );
     text(
       ctx,
-      'y sé el último gato en cuatro patas',
+      teamMode ? 'gana la partida' : 'y sé el último gato en cuatro patas',
       cx,
       cy + band * 0.2 + sub * 1.7,
       sub,

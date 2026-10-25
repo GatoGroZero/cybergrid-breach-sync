@@ -22,12 +22,14 @@ import type { BREvent, ZoneView } from '../../shared/br/types';
 import { spatial, surfaceFor, type Sfx } from '../audio';
 import { C, ell, flipH, hash, make, px, rect } from '../pixel/draw';
 import { buildAssets, roofSprite, type Assets } from '../pixel/art';
-import { dayPhase, type DayName, type Daylight } from '../../shared/br/daytime';
+import { DAY_SPAN_BY_MODE, dayPhase, type DayName, type Daylight } from '../../shared/br/daytime';
+import { TEAM_COLORS } from '../../shared/br/modes';
 import { outfitInfo } from '../../shared/br/outfits';
 import { CAT_PAD, catSprites } from '../pixel/cat';
 import { paintWorld } from '../pixel/world';
 import { DaylightFx, staticLights, type LightSrc } from './daylight';
 import { Fx } from './fx';
+import { RainFx } from './weather';
 import { Hud, type Label } from './hud';
 import type { ClientBR, CatView } from './state';
 
@@ -145,6 +147,10 @@ export class BRRenderer {
   private celebrated = false;
   private confettiUntil = 0;
   private readonly sky = new DaylightFx();
+  private readonly rain = new RainFx();
+  /** Sobre un tejado: llueve y la zona es una tormenta. */
+  private storm = false;
+  private readonly stormWave: HTMLCanvasElement;
   private skyLights: LightSrc[] = [];
   /** Solo para pruebas y capturas: fija la hora del dia (0 a 1). */
   dayOverride: number | null = null;
@@ -165,6 +171,8 @@ export class BRRenderer {
     this.buf = buf;
     this.bctx = bctx;
     this.wave = this.makeWave();
+    this.stormWave = this.makeStorm();
+    this.rain.onThunder = (d, l) => this.sfx.thunder(d, l);
     this.hud = new Hud(this.assets);
     window.addEventListener('resize', this.resize);
     window.addEventListener('orientationchange', this.resize);
@@ -240,6 +248,8 @@ export class BRRenderer {
 
   private setMap(map: BRMap): void {
     this.map = map;
+    this.storm = map.kind === 'tejado' || map.kind === 'azotea' || map.kind === 'mansarda';
+    this.rain.reset();
     this.skyLights = staticLights(map);
     this.ground = this.bakeGround(map);
     this.hud.setMap(map);
@@ -253,7 +263,8 @@ export class BRRenderer {
         sprite,
         x: Math.round(p.x * T + (p.w * T - sprite.width) / 2),
         y: (p.y + p.h) * T - sprite.height + 2,
-        sortY: (p.y + p.h) * T,
+        // lo que va pegado al piso (tragaluces) siempre queda debajo de los gatos
+        sortY: p.kind === 'skylight' ? p.y * T - 1 : (p.y + p.h) * T,
         kind: p.kind,
         fade: 1,
       });
@@ -317,6 +328,29 @@ export class BRRenderer {
     }
     // Tablones, azulejos, muros con volumen, alfombras y detalles del suelo.
     paintWorld(c, map);
+    return cv;
+  }
+
+  /** Patron de la tormenta: nubarron oscuro con rayas de lluvia. */
+  private makeStorm(): HTMLCanvasElement {
+    const [cv, c] = make(32, 32);
+    rect(c, 0, 0, 32, 32, 'rgba(24,32,66,0.6)');
+    for (const [x, y, l] of [
+      [3, 2, 9],
+      [12, 10, 8],
+      [21, 4, 10],
+      [28, 17, 7],
+      [7, 20, 9],
+      [17, 24, 8],
+    ] as const) {
+      for (let k = 0; k < l; k++) px(c, (x + (k >> 1)) % 32, (y + k) % 32, 'rgba(170,196,255,0.5)');
+    }
+    for (const [x, y] of [
+      [5, 14],
+      [24, 28],
+      [14, 3],
+    ] as const)
+      px(c, x, y, 'rgba(244,248,255,0.7)');
     return cv;
   }
 
@@ -764,7 +798,9 @@ export class BRRenderer {
     this.shake = Math.max(0, this.shake - dt * 10);
     // Hora del dia: sale de la semilla y del reloj de la partida, igual para todos.
     const clockS = g.latest ? Math.max(0, g.serverNow / 1000) : 0;
-    const dl = this.sky.setPhase(this.dayOverride ?? dayPhase(g.seed, clockS));
+    const dl = this.sky.setPhase(
+      this.dayOverride ?? dayPhase(g.seed, clockS, DAY_SPAN_BY_MODE[g.mode]),
+    );
     this.sfx.setDaytime(dl.p);
     if (dl.name !== this.lastDayName) {
       if (this.lastDayName !== null) {
@@ -841,6 +877,10 @@ export class BRRenderer {
       this.veilLights(g, cats, target, flashes),
     );
     if (g.zone) this.drawZone(b, g.zone, camX, camY, now);
+    if (this.storm) {
+      this.rain.update(dt, now, this.viewW, this.viewH);
+      this.rain.draw(b, this.viewW, this.viewH, g.zone, camX, camY);
+    }
 
     // buffer -> pantalla
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1430,7 +1470,10 @@ export class BRRenderer {
     const icon =
       kind && (WEAPON_KINDS as readonly string[]).includes(kind) ? this.assets.icon[kind] : null;
     const dim = (flags & FLAG.disconnected) !== 0;
-    const winner = g.win !== null && g.win.winnerId === id;
+    const winTeam = g.win?.winnerTeam;
+    const winner =
+      g.win !== null &&
+      (winTeam !== undefined && winTeam !== null ? info?.team === winTeam : g.win.winnerId === id);
     const hop = winner ? -Math.round(Math.abs(Math.sin(now / 170)) * 5) : 0;
     if (winner && Math.random() < dt * 8)
       this.fx.star(x + (Math.random() - 0.5) * 18, y - 18, C.yellow, 0.6, -12);
@@ -1440,6 +1483,13 @@ export class BRRenderer {
       draw: () => {
         b.globalAlpha = 1;
         if (!wet) {
+          const team = info?.team;
+          if (team !== undefined) {
+            // el aro del equipo: naranja o azul, siempre se sabe quien es quien
+            b.globalAlpha = 0.85;
+            ell(b, sx, sy + 6, 11, 4, TEAM_COLORS[team as 0 | 1] as string);
+            b.globalAlpha = 1;
+          }
           b.globalAlpha = 0.3;
           ell(b, sx, sy + 6, 9, 2.8, C.black);
           b.globalAlpha = 1;
@@ -1503,7 +1553,12 @@ export class BRRenderer {
         x,
         y: y - 16 - lift,
         text: info.name,
-        color: info.bot ? C.lgray : C.white,
+        color:
+          info.team !== undefined
+            ? (TEAM_COLORS[info.team as 0 | 1] as string)
+            : info.bot
+              ? C.lgray
+              : C.white,
         kind: 'name',
       });
     }
@@ -1803,7 +1858,8 @@ export class BRRenderer {
 
   /** La ola: todo lo que queda fuera del circulo seguro se cubre de agua con espuma en el borde. */
   private drawZone(b: Ctx, z: ZoneView, camX: number, camY: number, now: number): void {
-    if (!this.wavePattern) this.wavePattern = b.createPattern(this.wave, 'repeat');
+    if (!this.wavePattern)
+      this.wavePattern = b.createPattern(this.storm ? this.stormWave : this.wave, 'repeat');
     const pattern = this.wavePattern;
     const cx = z.cx - camX;
     const cy = z.cy - camY;
@@ -1812,8 +1868,11 @@ export class BRRenderer {
     const h = this.viewH;
     if (pattern) {
       const t = now / 1000;
+      // la lluvia de la tormenta cae rapido; la ola del agua se arrastra despacio
       pattern.setTransform(
-        new DOMMatrix().translate(Math.round(-camX + t * 9), Math.round(-camY + t * 5)),
+        this.storm
+          ? new DOMMatrix().translate(Math.round(-camX - t * 14), Math.round(-camY + t * 70))
+          : new DOMMatrix().translate(Math.round(-camX + t * 9), Math.round(-camY + t * 5)),
       );
       b.fillStyle = pattern;
     } else {
@@ -1851,7 +1910,13 @@ export class BRRenderer {
     const wob = Math.floor(now / 140);
     for (const [y, x, fw] of foam) {
       const off = ((y + wob) & 3) === 0 ? 1 : 0;
-      b.fillStyle = (y + wob) % 5 === 0 ? 'rgba(115,239,247,0.9)' : 'rgba(244,244,244,0.88)';
+      b.fillStyle = this.storm
+        ? (y + wob) % 4 === 0
+          ? 'rgba(160,190,255,0.95)'
+          : 'rgba(225,236,255,0.9)'
+        : (y + wob) % 5 === 0
+          ? 'rgba(115,239,247,0.9)'
+          : 'rgba(244,244,244,0.88)';
       if (fw > 0) b.fillRect(x - fw + off, y, fw, 1);
       else b.fillRect(x - off, y, -fw, 1);
     }

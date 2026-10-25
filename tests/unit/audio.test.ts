@@ -27,13 +27,25 @@ describe('pisadas segun el piso', () => {
     expect(surfaceFor(G.TILE)).toBe('stone');
     expect(surfaceFor(G.POOLEDGE)).toBe('stone');
     expect(surfaceFor(G.WATER)).toBe('water');
+    expect(surfaceFor(G.TEJA)).toBe('roof');
+    expect(surfaceFor(G.PIZARRA2)).toBe('roof');
+    expect(surfaceFor(G.ALQUITRAN)).toBe('roof');
+    expect(surfaceFor(G.CANALON)).toBe('metal');
   });
 
   it('todos los terrenos conocidos tienen un sonido', () => {
     for (const id of Object.values(G))
-      expect(['grass', 'path', 'wood', 'deck', 'carpet', 'stone', 'water']).toContain(
-        surfaceFor(id),
-      );
+      expect([
+        'grass',
+        'path',
+        'wood',
+        'deck',
+        'carpet',
+        'stone',
+        'water',
+        'roof',
+        'metal',
+      ]).toContain(surfaceFor(id));
   });
 });
 

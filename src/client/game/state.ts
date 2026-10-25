@@ -10,6 +10,7 @@ import {
   type Item,
 } from '../../shared/br/items';
 import { generateMap, type BRMap, type MapKind } from '../../shared/br/map';
+import type { GameMode } from '../../shared/br/modes';
 import { aimTouchesTarget, stepCat } from '../../shared/br/physics';
 import { STAMINA, fullStamina, stepStamina, type StaminaState } from '../../shared/br/stamina';
 import type {
@@ -21,7 +22,14 @@ import type {
   LootContents,
   WinPayload,
 } from '../../shared/br/protocol';
-import type { BREvent, BRSnapshot, ContainerTuple, MeState, ZoneView } from '../../shared/br/types';
+import type {
+  BREvent,
+  BRSnapshot,
+  ContainerTuple,
+  MeState,
+  PvpState,
+  ZoneView,
+} from '../../shared/br/types';
 import { FixedStepper } from '../../shared/timing';
 import type { Sfx } from '../audio';
 import type { Net } from '../net';
@@ -68,6 +76,16 @@ export class ClientBR {
   readonly map: BRMap;
   readonly mapKind: MapKind;
   readonly seed: number;
+  /** Modo de la partida (Battle Royale si el servidor no dice otra cosa). */
+  readonly mode: GameMode;
+  /** Gatos por equipo en los modos por equipos (0 si no hay equipos). */
+  readonly teamSize: number;
+  /** Estado de la ronda en los modos por equipos. */
+  pvp: PvpState | null = null;
+  private lastPvpPhase: PvpState['phase'] | null = null;
+  private lastPvpTick = -1;
+  /** El rotulo del cartel grande ("A JUGAR", "A PELEAR"...). */
+  splashText = '';
   readonly you: number;
   readonly cats = new Map<number, CatInfo>();
 
@@ -144,6 +162,8 @@ export class ClientBR {
   ) {
     this.mapKind = start.map as MapKind;
     this.seed = start.seed;
+    this.mode = start.mode ?? 'br';
+    this.teamSize = start.teamSize ?? 0;
     this.map = generateMap(this.mapKind, start.seed);
     this.you = start.you;
     start.cats.forEach((c) => this.cats.set(c.id, c));
@@ -198,6 +218,7 @@ export class ClientBR {
     this.latest = snap;
     this.me = snap.me;
     this.trackIntro(snap.intro ?? 0);
+    this.trackPvp(snap.pvp ?? null);
     this.zone = snap.zone;
     this.boxes = snap.boxes;
     if (snap.inv) {
@@ -235,7 +256,7 @@ export class ClientBR {
     this.syncWalls(snap);
     for (const ev of snap.ev) this.eventQueue.push({ t: snap.t, ev });
     for (const f of snap.feed ?? []) {
-      const text = f.k ? `${f.k} eliminó a ${f.v}` : `${f.v} cayó a la ola`;
+      const text = f.m ?? (f.k ? `${f.k} eliminó a ${f.v}` : `${f.v} cayó a la ola`);
       this.feed.push({ text, until: now + 6000 });
       if (this.feed.length > 5) this.feed.shift();
     }
@@ -356,7 +377,7 @@ export class ClientBR {
       return;
     }
     // Durante la cuenta regresiva del inicio todos estan quietos y sin disparar.
-    const frozen = this.intro > 0;
+    const frozen = this.frozen;
     if (frozen) {
       sample.mx = 0;
       sample.my = 0;
@@ -434,6 +455,51 @@ export class ClientBR {
     if (this.eventQueue.length > 400) this.eventQueue.splice(0, this.eventQueue.length - 400);
   }
 
+  /** Todos quietos: cuenta regresiva del inicio, o fases de eleccion y pausa de una ronda. */
+  get frozen(): boolean {
+    return this.intro > 0 || (this.pvp !== null && this.pvp.phase !== 'fight');
+  }
+
+  /** Equipo de un gato (0 o 1) o -1 si no juega por equipos. */
+  teamOf(id: number): number {
+    return this.cats.get(id)?.team ?? -1;
+  }
+
+  /** Elige el kit de la ronda (solo se acepta mientras dura la eleccion). */
+  sendKit(kit: string): void {
+    if (!this.net.connected || this.pvp?.phase !== 'pick') return;
+    this.net.socket.emit('game:kit', { kit });
+    this.sfx.click();
+  }
+
+  /** Sonidos y carteles al cambiar de fase en las partidas por rondas. */
+  private trackPvp(pvp: PvpState | null): void {
+    const prev = this.lastPvpPhase;
+    this.pvp = pvp;
+    if (!pvp) return;
+    this.lastPvpPhase = pvp.phase;
+    if (pvp.phase === 'ready' && pvp.left > 0 && pvp.left !== this.lastPvpTick) {
+      this.lastPvpTick = pvp.left;
+      this.sfx.introTick(Math.min(5, pvp.left));
+    }
+    if (pvp.phase !== prev) {
+      if (pvp.phase === 'pick') this.sfx.node();
+      if (pvp.phase === 'fight' && prev === 'ready') {
+        this.splash = { at: performance.now() };
+        this.splashText = '¡A PELEAR!';
+        this.sfx.introGo();
+      }
+      if (pvp.phase === 'between' || pvp.phase === 'over') {
+        const mine = pvp.roundWinner === pvp.team;
+        if (pvp.roundWinner !== null && pvp.roundWinner >= 0) {
+          if (mine) this.sfx.win();
+          else this.sfx.lose();
+        }
+      }
+      this.lastPvpTick = -1;
+    }
+  }
+
   /** Cuenta regresiva del inicio: un tic por segundo y, al llegar a 0, el cartel de a jugar. */
   private trackIntro(left: number): void {
     const before = this.intro;
@@ -452,7 +518,7 @@ export class ClientBR {
 
   /** Pide recargar el arma en mano (tecla R o boton). */
   sendReload(): void {
-    if (!this.alive || !this.net.connected || this.intro > 0) return;
+    if (!this.alive || !this.net.connected || this.frozen) return;
     this.net.socket.emit('game:reload');
   }
 
