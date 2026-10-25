@@ -25,12 +25,19 @@ export const HEAL = {
 
 export type HealKind = keyof typeof HEAL;
 
+/** Maximos de vida y escudo (la aventura los cambia con reliquias y armadura). */
+export interface Caps {
+  hp: number;
+  shield: number;
+}
+export const DEFAULT_CAPS: Caps = { hp: CAT.maxHp, shield: CAT.maxShield };
+
 const current = (kind: HealKind, v: Vitals): number => (kind === 'medkit' ? v.hp : v.shield);
-const capOf = (kind: HealKind): number => (kind === 'medkit' ? CAT.maxHp : CAT.maxShield);
+const capOf = (kind: HealKind, caps: Caps): number => (kind === 'medkit' ? caps.hp : caps.shield);
 
 /** Cuanto puede curar todavia un objeto nuevo. Si es 0 no tiene sentido empezar a usarlo. */
-export function healMissing(kind: HealKind, v: Vitals): number {
-  return Math.min(capOf(kind) - current(kind, v), HEAL[kind].total);
+export function healMissing(kind: HealKind, v: Vitals, caps: Caps = DEFAULT_CAPS): number {
+  return Math.min(capOf(kind, caps) - current(kind, v), HEAL[kind].total);
 }
 
 /** Un segundo de curacion. `left` es lo que le queda al objeto en uso. */
@@ -38,28 +45,34 @@ export function healStep(
   kind: HealKind,
   v: Vitals,
   left: number = HEAL[kind].total,
+  caps: Caps = DEFAULT_CAPS,
 ): Vitals & { done: boolean; left: number } {
   const rule = HEAL[kind];
-  const give = Math.max(0, Math.min(rule.perSecond, left, capOf(kind) - current(kind, v)));
+  const give = Math.max(0, Math.min(rule.perSecond, left, capOf(kind, caps) - current(kind, v)));
   const next = current(kind, v) + give;
   const rest = left - give;
   return {
     hp: kind === 'medkit' ? next : v.hp,
     shield: kind === 'shield' ? next : v.shield,
-    done: next >= capOf(kind) || rest <= 0,
+    done: next >= capOf(kind, caps) || rest <= 0,
     left: rest,
   };
 }
 
 /** Segundos que faltan para terminar el uso, util para la barra y los avisos. */
-export function healSecondsLeft(kind: HealKind, v: Vitals, left: number): number {
-  const missing = Math.min(capOf(kind) - current(kind, v), left);
+export function healSecondsLeft(
+  kind: HealKind,
+  v: Vitals,
+  left: number,
+  caps: Caps = DEFAULT_CAPS,
+): number {
+  const missing = Math.min(capOf(kind, caps) - current(kind, v), left);
   return missing <= 0 ? 0 : Math.ceil(missing / HEAL[kind].perSecond);
 }
 
 /** Segundos que tardara en completarse el uso de un objeto nuevo. */
-export function healDuration(kind: HealKind, v: Vitals): number {
-  return healSecondsLeft(kind, v, HEAL[kind].total);
+export function healDuration(kind: HealKind, v: Vitals, caps: Caps = DEFAULT_CAPS): number {
+  return healSecondsLeft(kind, v, HEAL[kind].total, caps);
 }
 
 /** Daño de una explosion: completo en el centro y baja linealmente hasta 40 % en el borde. */

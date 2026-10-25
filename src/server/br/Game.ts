@@ -1,6 +1,8 @@
 import {
+  DEFAULT_CAPS,
   HEAL,
   applyDamage,
+  type Caps,
   healMissing,
   healSecondsLeft,
   healStep,
@@ -171,7 +173,7 @@ export interface Cat {
   spectate: number | null;
 }
 
-interface Shot {
+export interface Shot {
   id: number;
   x: number;
   y: number;
@@ -247,6 +249,8 @@ export class BRGame {
   readonly graceS: number;
   /** Si al caer un gato deja una lapida con sus cosas (en los kits fijos no). */
   protected dropLoot = true;
+  /** Si al caer un gato conserva su inventario (aventura: se levanta con sus cosas). */
+  protected keepOnDeath = false;
   protected readonly zoneScale: number;
 
   tick = 0;
@@ -385,6 +389,72 @@ export class BRGame {
     return false;
   }
 
+  /** Direccion y velocidad con que se mueve un gato en este tick (la voltereta y las mejoras la cambian). */
+  protected adjustMove(
+    _cat: Cat,
+    input: InputPayload,
+    mul: number,
+  ): { mx: number; my: number; mul: number } {
+    return { mx: input.mx, my: input.my, mul };
+  }
+
+  /** Vida y escudo maximos de un gato. */
+  protected capsOf(_cat: Cat): Caps {
+    return DEFAULT_CAPS;
+  }
+
+  /** Dano de una bala disparada por `cat` (mejoras y pociones lo cambian). */
+  protected shotDamage(_cat: Cat, base: number): number {
+    return base;
+  }
+
+  /** Tiempo de recarga del arma de `cat`. */
+  protected reloadTime(_cat: Cat, base: number): number {
+    return base;
+  }
+
+  /** Alcance de las balas de `cat`. */
+  protected shotRange(_cat: Cat, base: number): number {
+    return base;
+  }
+
+  /** Si un disparo gasta bala (algunas mejoras a veces la ahorran). */
+  protected spendsAmmo(_cat: Cat): boolean {
+    return true;
+  }
+
+  /** Objetos que se usan en vez de disparar (pociones). */
+  protected useItem(_cat: Cat, _item: Item): void {
+    // nada en el Battle Royale
+  }
+
+  /** Pieza de armadura u otro objeto que se equipa en vez de ir al inventario. */
+  protected equipItem(_cat: Cat, _item: Item): boolean {
+    return false;
+  }
+
+  /** Aventura: golpes contra los enemigos. */
+  protected shotMobHit(
+    _s: Shot,
+    _nx: number,
+    _ny: number,
+    _tMax: number,
+  ): { t: number; mob: unknown } | null {
+    return null;
+  }
+
+  protected shotHitsMob(_s: Shot, _mob: unknown, _x: number, _y: number): void {
+    // nada en el Battle Royale
+  }
+
+  protected explodeMobs(_s: Shot, _x: number, _y: number): void {
+    // nada en el Battle Royale
+  }
+
+  protected clawMobs(_cat: Cat, _aim: number): void {
+    // nada en el Battle Royale
+  }
+
   /** Despues de simular un tick de combate (antes de revisar si termino). */
   protected afterSim(_dt: number): void {
     // nada en el Battle Royale
@@ -453,6 +523,11 @@ export class BRGame {
     return [...this.walls.values()];
   }
 
+  /** Las balas en vuelo, para los bots y las pruebas. */
+  shotList(): readonly Shot[] {
+    return this.shots;
+  }
+
   shotCount(): number {
     return this.shots.length;
   }
@@ -502,13 +577,8 @@ export class BRGame {
     const before = { x: cat.x, y: cat.y };
     const len = Math.min(1, Math.hypot(input.mx, input.my));
     cat.running = stepStamina(cat.stamina, input.run === true, len, TICK_DT);
-    stepCat(
-      this.map,
-      cat,
-      { mx: input.mx, my: input.my },
-      TICK_DT,
-      cat.running ? STAMINA.runMultiplier : 1,
-    );
+    const move = this.adjustMove(cat, input, cat.running ? STAMINA.runMultiplier : 1);
+    stepCat(this.map, cat, { mx: move.mx, my: move.my }, TICK_DT, move.mul);
     cat.moving = Math.hypot(cat.x - before.x, cat.y - before.y) > 0.05;
     this.fireControl(cat, input.aim, input.fire, input.hold === true);
   }
@@ -529,6 +599,8 @@ export class BRGame {
       this.shoot(cat, item, def, aim);
     } else if (item && (item.kind === 'medkit' || item.kind === 'shield')) {
       if (edge) this.startHeal(cat, item.kind);
+    } else if (item && (item.kind === 'potion_catnip' || item.kind === 'potion_valerian')) {
+      if (edge) this.useItem(cat, item);
     } else if (item && item.kind === 'wall') {
       if (edge) this.placeWall(cat, aim);
     } else if (!item && this.time >= cat.cooldownUntil) {
@@ -559,13 +631,13 @@ export class BRGame {
       if (!this.startReload(cat)) this.emitDry(cat, def);
       return;
     }
-    item.mag = magOf(item) - 1;
+    if (this.spendsAmmo(cat)) item.mag = magOf(item) - 1;
     cat.invDirty = true;
     cat.cooldownUntil = this.time + def.cooldown;
     cat.heal = null;
     this.shotLog.push({ x: cat.x, y: cat.y, t: this.time, owner: cat.id });
     if (this.shotLog.length > 24) this.shotLog.shift();
-    const dmg = def.damage[item.rarity] as number;
+    const dmg = this.shotDamage(cat, def.damage[item.rarity] as number);
     for (let p = 0; p < def.pellets; p++) {
       const jitter =
         def.pellets > 1
@@ -581,7 +653,7 @@ export class BRGame {
         speed: def.speed,
         dmg,
         owner: cat.id,
-        left: def.range,
+        left: this.shotRange(cat, def.range),
         weapon: def.kind,
         rarity: item.rarity,
         // tipo de arma en los 3 primeros bits y la rareza arriba (para el halo del proyectil)
@@ -611,7 +683,7 @@ export class BRGame {
     const def = WEAPONS[item.kind];
     if (magOf(item) >= def.magazine) return false;
     if (cat.ammo[def.ammo] < def.ammoPerShot) return false;
-    cat.reload = { slot: cat.sel, until: this.time + def.reload };
+    cat.reload = { slot: cat.sel, until: this.time + this.reloadTime(cat, def.reload) };
     this.emit({
       e: 'reload',
       x: q1(cat.x),
@@ -692,6 +764,7 @@ export class BRGame {
       }
     }
     if (target) this.damageWall(target, CLAWS.wallDamage);
+    this.clawMobs(cat, aim);
   }
 
   /** Un emote sobre la cabeza del gato, visible para quien lo tenga cerca. */
@@ -710,7 +783,7 @@ export class BRGame {
   /** El objeto se gasta al empezar. Si cancelas, lo que faltaba por curar se pierde. */
   protected startHeal(cat: Cat, kind: HealKind): void {
     if (cat.heal) return;
-    if (healMissing(kind, cat) <= 0) return;
+    if (healMissing(kind, cat, this.capsOf(cat)) <= 0) return;
     const slot = cat.sel;
     takeOne(cat.inv, slot);
     cat.invDirty = true;
@@ -724,7 +797,7 @@ export class BRGame {
     // Pequeña tolerancia: 30 ticks de 1/30 s suman 0.99999... y deben contar como un segundo.
     while (heal.elapsed >= 1 - 1e-6) {
       heal.elapsed -= 1;
-      const r = healStep(heal.kind, cat, heal.left);
+      const r = healStep(heal.kind, cat, heal.left, this.capsOf(cat));
       heal.left = r.left;
       cat.hp = r.hp;
       cat.shield = r.shield;
@@ -820,10 +893,12 @@ export class BRGame {
     for (const kind of AMMO_KINDS) {
       if (target.ammo[kind] > 0) items.push({ kind, qty: target.ammo[kind], rarity: 0 });
     }
-    target.inv = emptyInventory();
-    target.ammo = emptyAmmo();
-    target.invDirty = true;
-    if (this.dropLoot) {
+    if (!this.keepOnDeath) {
+      target.inv = emptyInventory();
+      target.ammo = emptyAmmo();
+      target.invDirty = true;
+    }
+    if (this.dropLoot && !this.keepOnDeath) {
       this.containers.set(this.nextId, {
         id: this.nextId++,
         kind: 'tomb',
@@ -934,7 +1009,10 @@ export class BRGame {
     const item = c.items[index];
     if (!item) return this.contentsOf(c);
     let left: Item | null;
-    if (isAmmo(item.kind)) {
+    if (this.equipItem(cat, item)) {
+      // la armadura se pone sola: no ocupa espacio del inventario
+      left = null;
+    } else if (isAmmo(item.kind)) {
       left = giveItem(cat.inv, cat.ammo, cloneItem(item));
     } else if (slot !== undefined && slot >= 0 && slot < INVENTORY_SLOTS) {
       left = placeInSlot(cat.inv, slot, cloneItem(item));
@@ -1126,6 +1204,16 @@ export class BRGame {
         }
       }
 
+      let hitMob: unknown = null;
+      if (s.owner > 0) {
+        const m = this.shotMobHit(s, nx, ny, tHit);
+        if (m && m.t < tHit) {
+          tHit = m.t;
+          hitCat = null;
+          hitMob = m.mob;
+        }
+      }
+
       s.left -= step;
       if (tHit > 1) {
         s.x = nx;
@@ -1140,7 +1228,10 @@ export class BRGame {
       const hx = s.x + (nx - s.x) * tHit;
       const hy = s.y + (ny - s.y) * tHit;
       const owner = this.cat(s.owner) ?? null;
-      if (hitCat) {
+      if (hitMob) {
+        this.shotHitsMob(s, hitMob, hx, hy);
+        if (s.splash > 0) this.explode(s, hx, hy, null);
+      } else if (hitCat) {
         if (s.splash > 0) this.explode(s, hx, hy, hitCat);
         else this.damageCat(hitCat, s.dmg, owner);
       } else {
@@ -1170,6 +1261,7 @@ export class BRGame {
       const dmg = splashDamage(s.dmg, d, s.splash + TILE / 2);
       if (dmg > 0) this.damageWall(wall, dmg);
     }
+    this.explodeMobs(s, x, y);
   }
 
   /** La ola de la zona y el agua de la alberca danan primero al escudo. */
@@ -1368,7 +1460,7 @@ export class BRGame {
       sel: cat.sel,
       alive: cat.alive,
       kills: cat.kills,
-      healLeft: cat.heal ? healSecondsLeft(cat.heal.kind, cat, cat.heal.left) : 0,
+      healLeft: cat.heal ? healSecondsLeft(cat.heal.kind, cat, cat.heal.left, this.capsOf(cat)) : 0,
       healKind: cat.heal ? cat.heal.kind : null,
       cooldown: Math.max(0, q1(cat.cooldownUntil - this.time)),
       reload: cat.reload ? Math.max(0.1, q1(cat.reload.until - this.time)) : 0,

@@ -10,6 +10,13 @@ export type WallTuple = [number, number, number, number];
 /** [id, x, y, tipo (0 cofre, 1 cofre dorado, 2 lapida, 3 objeto tirado), abierto 0/1, objeto tirado (indice de ITEM_KINDS * 3 + rareza) o -1] */
 export type ContainerTuple = [number, number, number, number, number, number];
 
+/** [id, x, y, tipo de enemigo, vida %, banderas (MOB_FLAG), apuntado en grados] */
+export type MobTuple = [number, number, number, number, number, number, number];
+/** [id, x, y, radio, tipo (HAZARD), avance 0 a 100 de su vida o su aviso] */
+export type HazardTuple = [number, number, number, number, number, number];
+/** [id, x, y, tipo: 0 corazon, 1 balas, 2 pocion, 3 armadura] */
+export type PickupTuple = [number, number, number, number];
+
 export type BREvent =
   | { e: 'shot'; x: number; y: number; a: number; w: number }
   | { e: 'hit'; x: number; y: number; v: number; kill: boolean; by: number; to: number }
@@ -26,7 +33,26 @@ export type BREvent =
   | { e: 'heal'; x: number; y: number; kind: 'hp' | 'shield' }
   | { e: 'zone'; phase: number; shrinking: boolean }
   | { e: 'claw'; x: number; y: number; a: number }
-  | { e: 'capture'; x: number; y: number; team: number; i: number };
+  | { e: 'capture'; x: number; y: number; team: number; i: number }
+  // Aventura
+  | {
+      e: 'tele';
+      x: number;
+      y: number;
+      r: number;
+      t: number;
+      shape: 0 | 1;
+      a?: number;
+      len?: number;
+    }
+  | { e: 'mobdie'; x: number; y: number; kind: number; boss: boolean }
+  | { e: 'boss'; kind: number; phase: number }
+  | { e: 'gate'; x: number; y: number; open: boolean }
+  | { e: 'pickup'; x: number; y: number; kind: number }
+  | { e: 'heal2'; x: number; y: number }
+  | { e: 'revive'; x: number; y: number; id: number }
+  | { e: 'dash'; x: number; y: number; a: number }
+  | { e: 'relic'; x: number; y: number };
 
 export interface MeState {
   x: number;
@@ -47,6 +73,12 @@ export interface MeState {
   stamina: number;
   /** Se quedo sin aire: no corre hasta recuperar un poco. */
   tired: boolean;
+  /** Aventura: segundos hasta poder hacer otra voltereta. */
+  dash?: number;
+  /** Aventura: vida y escudo maximos, y multiplicador de velocidad (reliquias, armadura, pociones). */
+  maxHp?: number;
+  maxShield?: number;
+  spd?: number;
 }
 
 export interface ZoneView {
@@ -89,7 +121,39 @@ export interface PvpState {
   hold?: [number, number];
 }
 
+/** Estado de la aventura para quien recibe la instantanea. */
+export interface AdvState {
+  /** Sala donde esta el grupo, total de salas y estado de cada una (0 dormida, 1 activa, 2 superada). */
+  room: number;
+  rooms: number;
+  states: number[];
+  roomName: string;
+  roomKind: string;
+  wave: number;
+  waves: number;
+  /** Jefe en pantalla: tipo, vida % y fase (1 a 3). */
+  boss: { kind: number; hp: number; phase: number } | null;
+  lives: number;
+  kills: number;
+  time: number;
+  relics: number[];
+  /** Armadura puesta: pieza (0 a 2) por casilla o -1. */
+  equip: [number, number, number];
+  /** Reliquias entre las que debes elegir (si hay una eleccion pendiente). */
+  choice: number[] | null;
+  /** Segundos que faltan para que te levantes (0 si estas de pie o ya no quedan vidas). */
+  fallen: number;
+  /** Segundos que quedan de la hierba gatera y de la valeriana. */
+  buffs: [number, number];
+  /** El grupo gano o perdio. */
+  over?: 'victory' | 'defeat';
+}
+
 export interface BRSnapshot {
+  mobs?: MobTuple[];
+  haz?: HazardTuple[];
+  pk?: PickupTuple[];
+  adv?: AdvState;
   /** Modo de la partida (solo se manda si no es Battle Royale). */
   mode?: GameMode;
   pvp?: PvpState;

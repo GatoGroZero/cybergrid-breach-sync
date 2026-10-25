@@ -53,6 +53,8 @@ export const inputSchema = z.object({
   hold: z.boolean().optional(),
   /** Quiere correr (Shift o joystick al maximo). El servidor decide si hay aire. */
   run: z.boolean().optional(),
+  /** Aventura: voltereta (el servidor decide si ya se recupero). */
+  dash: z.boolean().optional(),
 });
 
 const slot = z
@@ -125,6 +127,19 @@ export const roomSettingsSchema = z.object({
   mode: roomMode.optional(),
   format: roomFormat.optional(),
   teamSize: roomTeamSize.optional(),
+});
+
+/** Aventura: elegir una de las reliquias que se ofrecen (0 a 2). */
+export const relicSchema = z.object({ i: z.number().int().min(0).max(2) });
+/** Aventura: mejoras permanentes que trae cada gato (se guardan en su navegador). */
+export const metaSchema = z.object({
+  vida: z.number().int().min(0).max(5).default(0),
+  garras: z.number().int().min(0).max(5).default(0),
+  municion: z.number().int().min(0).max(3).default(0),
+  botiquin: z.number().int().min(0).max(3).default(0),
+  esencia: z.number().int().min(0).max(3).default(0),
+  vidas: z.number().int().min(0).max(3).default(0),
+  reliquia: z.number().int().min(0).max(2).default(0),
 });
 
 /** Cambiarse de equipo antes de que empiece la ronda. */
@@ -251,6 +266,16 @@ export interface GameEndPayload {
   winnerTeam?: number | null;
   score?: [number, number];
   mode?: GameMode;
+  /** Aventura: resumen de la partida y la esencia lunar que se gano. */
+  adv?: {
+    victory: boolean;
+    rooms: number;
+    totalRooms: number;
+    bosses: number;
+    kills: number;
+    relics: number[];
+    essence: Record<number, number>;
+  };
 }
 
 export interface DiedPayload {

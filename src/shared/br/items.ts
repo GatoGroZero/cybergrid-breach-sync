@@ -7,11 +7,26 @@ export type WeaponKind = (typeof WEAPON_KINDS)[number];
 export type AmmoKind = `ammo_${WeaponKind}`;
 export const AMMO_KINDS: readonly AmmoKind[] = WEAPON_KINDS.map((w) => `ammo_${w}` as AmmoKind);
 
-export const UTILITY_KINDS = ['medkit', 'shield', 'wall'] as const;
+export const UTILITY_KINDS = [
+  'medkit',
+  'shield',
+  'wall',
+  'potion_catnip',
+  'potion_valerian',
+] as const;
 export type UtilityKind = (typeof UTILITY_KINDS)[number];
 
-export type ItemKind = WeaponKind | AmmoKind | UtilityKind;
-export const ITEM_KINDS: readonly ItemKind[] = [...WEAPON_KINDS, ...AMMO_KINDS, ...UTILITY_KINDS];
+/** Armadura (Aventura): se equipa sola en su casilla, no ocupa un espacio del inventario. */
+export const ARMOR_KINDS = ['armor_head', 'armor_body', 'armor_paws'] as const;
+export type ArmorKind = (typeof ARMOR_KINDS)[number];
+
+export type ItemKind = WeaponKind | AmmoKind | UtilityKind | ArmorKind;
+export const ITEM_KINDS: readonly ItemKind[] = [
+  ...WEAPON_KINDS,
+  ...AMMO_KINDS,
+  ...UTILITY_KINDS,
+  ...ARMOR_KINDS,
+];
 
 /** 0 comun (gris), 1 normal (verde), 2 epica (morada). */
 export type Rarity = 0 | 1 | 2;
@@ -30,6 +45,8 @@ export const isWeapon = (kind: ItemKind): kind is WeaponKind =>
   (WEAPON_KINDS as readonly string[]).includes(kind);
 export const isAmmo = (kind: ItemKind): kind is AmmoKind => kind.startsWith('ammo_');
 export const isConsumable = (kind: ItemKind): boolean => kind === 'medkit' || kind === 'shield';
+export const isPotion = (kind: ItemKind): boolean => kind.startsWith('potion_');
+export const isArmor = (kind: ItemKind): kind is ArmorKind => kind.startsWith('armor_');
 
 export interface WeaponDef {
   kind: WeaponKind;
@@ -152,6 +169,11 @@ export const ITEM_NAMES: Record<ItemKind, string> = {
   medkit: 'Botiquín',
   shield: 'Escudo',
   wall: 'Mini muro',
+  potion_catnip: 'Hierba gatera',
+  potion_valerian: 'Valeriana',
+  armor_head: 'Capucha',
+  armor_body: 'Chaleco',
+  armor_paws: 'Botitas',
 };
 
 export const STACK_MAX: Record<ItemKind, number> = {
@@ -168,6 +190,11 @@ export const STACK_MAX: Record<ItemKind, number> = {
   medkit: 3,
   shield: 4,
   wall: 5,
+  potion_catnip: 3,
+  potion_valerian: 3,
+  armor_head: 1,
+  armor_body: 1,
+  armor_paws: 1,
 };
 
 /** Disparos cargados de un arma (sin dato se cuenta como cargador lleno); 0 si no es un arma. */

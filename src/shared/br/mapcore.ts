@@ -86,6 +86,8 @@ export const G = {
   HONGOS: 39,
   CHARCO: 40,
   NIEBLA: 41,
+  /** Zarzal: la espesura que cierra el bosque encantado (solido). */
+  ZARZAL: 42,
 } as const;
 
 export type PropKind =
@@ -201,16 +203,25 @@ export interface BRMap {
   rooms?: AdventureRoom[];
 }
 
+export type AdventureRoomKind = 'inicio' | 'combate' | 'tesoro' | 'descanso' | 'minijefe' | 'jefe';
+
 export interface AdventureRoom {
   id: number;
+  /** Rectangulo del claro, en casillas. */
   x: number;
   y: number;
   w: number;
   h: number;
-  /** 'inicio', 'combate', 'tesoro', 'descanso', 'minijefe' o 'jefe'. */
-  kind: 'inicio' | 'combate' | 'tesoro' | 'descanso' | 'minijefe' | 'jefe';
+  kind: AdventureRoomKind;
+  name: string;
+  /** Acto (0 a 5): cuantos jefes se vencieron antes de llegar. */
+  act: number;
   /** Indices de las salas conectadas. */
   links: number[];
+  /** Casillas de las puertas de enredadera que cierran esta sala. */
+  gates: { x: number; y: number }[];
+  /** Tipo de jefe (MOB) en las salas de jefe. */
+  boss?: number;
 }
 
 export const mapWidthPx = (m: BRMap): number => m.w * TILE;

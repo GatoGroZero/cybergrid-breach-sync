@@ -23,6 +23,7 @@ import {
   type Vec,
 } from './mapcore';
 
+import { adventureProblem, buildEncantado } from './mapadv';
 import {
   buildAzotea,
   buildCalle,
@@ -365,6 +366,8 @@ function buildKind(kind: MapKind, rng: Rng, s: number): BRMap {
       return buildCalle(rng, s);
     case 'patios':
       return buildPatios(rng, s);
+    case 'encantado':
+      return buildEncantado(rng, s);
     default:
       throw new Error(`el mapa ${kind} todavia no existe`);
   }
@@ -387,7 +390,9 @@ export function generateMapReport(
     const m = buildKind(kind, rng, s);
     const problem = (MAP_KINDS as readonly MapKind[]).includes(kind)
       ? mapProblem(m)
-      : pvpProblem(m);
+      : kind === 'encantado'
+        ? adventureProblem(m)
+        : pvpProblem(m);
     if (!problem) {
       m.seed = seed;
       decorate(m);
