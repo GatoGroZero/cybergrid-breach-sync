@@ -391,7 +391,7 @@ async function auditOnce(round) {
           await page.keyboard.up(go);
           const b = await pos();
           there = Math.hypot(b.x - a.x, b.y - a.y);
-          if (there < 50) continue;
+          if (there < 80) continue;
           await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
           await sleep(700);
           await page.keyboard.down(ret);
@@ -404,7 +404,7 @@ async function auditOnce(round) {
         }
         const ratio = back / Math.max(1, there);
         return {
-          ok: there >= 50 && ratio > 0.8 && ratio < 1.2,
+          ok: there >= 80 && ratio > 0.8 && ratio < 1.2,
           detail: `${Math.round(there)} px a ${fpsFast} FPS y ${Math.round(back)} px a ${fpsSlow} FPS (razon ${ratio.toFixed(2)})`,
         };
       } finally {
