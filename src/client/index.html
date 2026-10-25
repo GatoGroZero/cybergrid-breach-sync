@@ -395,65 +395,67 @@
         >
           <div class="card modal opt-card">
             <h2 id="options-title">Opciones de la partida</h2>
-            <div id="create-fields">
-              <label class="field">
-                <span>Nombre de la sala</span>
-                <input
-                  id="room-name"
-                  data-testid="room-name"
-                  maxlength="24"
-                  placeholder="Mi sala"
-                />
-              </label>
-              <label class="field">
-                <span>Mapa</span>
-                <select id="room-map" data-testid="room-map"></select>
-              </label>
-              <label class="field" id="room-bots-field">
-                <span>Bots</span>
-                <select id="room-bots" data-testid="room-bots"></select>
-              </label>
-              <label class="field" id="room-format-field" hidden>
-                <span>Formato</span>
-                <select id="room-format" data-testid="room-format"></select>
-              </label>
-              <label class="field" id="room-teamsize-field" hidden>
-                <span>Gatos por equipo</span>
-                <select id="room-teamsize" data-testid="room-teamsize"></select>
-              </label>
-              <label class="check">
-                <input id="room-private" data-testid="room-private" type="checkbox" />
-                <span>Privada (solo entra quien tenga el código)</span>
-              </label>
+            <div class="opt-body">
+              <div id="create-fields">
+                <label class="field">
+                  <span>Nombre de la sala</span>
+                  <input
+                    id="room-name"
+                    data-testid="room-name"
+                    maxlength="24"
+                    placeholder="Mi sala"
+                  />
+                </label>
+                <label class="field">
+                  <span>Mapa</span>
+                  <select id="room-map" data-testid="room-map"></select>
+                </label>
+                <label class="field" id="room-bots-field">
+                  <span>Bots</span>
+                  <select id="room-bots" data-testid="room-bots"></select>
+                </label>
+                <label class="field" id="room-format-field" hidden>
+                  <span>Formato</span>
+                  <select id="room-format" data-testid="room-format"></select>
+                </label>
+                <label class="field" id="room-teamsize-field" hidden>
+                  <span>Gatos por equipo</span>
+                  <select id="room-teamsize" data-testid="room-teamsize"></select>
+                </label>
+                <label class="check">
+                  <input id="room-private" data-testid="room-private" type="checkbox" />
+                  <span>Privada (solo entra quien tenga el código)</span>
+                </label>
+              </div>
+              <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
+                <legend>Ajustes de la sala</legend>
+                <label class="field">
+                  <span>Modo</span>
+                  <select id="set-mode" data-testid="set-mode"></select>
+                </label>
+                <label class="field">
+                  <span>Mapa</span>
+                  <select id="set-map" data-testid="set-map"></select>
+                </label>
+                <label class="field" id="set-bots-field">
+                  <span>Bots</span>
+                  <select id="set-bots" data-testid="set-bots"></select>
+                </label>
+                <label class="field" id="set-format-field" hidden>
+                  <span>Formato</span>
+                  <select id="set-format" data-testid="set-format"></select>
+                </label>
+                <label class="field" id="set-teamsize-field" hidden>
+                  <span>Gatos por equipo</span>
+                  <select id="set-teamsize" data-testid="set-teamsize"></select>
+                </label>
+                <label class="check">
+                  <input id="set-private" data-testid="set-private" type="checkbox" />
+                  <span>Privada (solo entra quien tenga el código)</span>
+                </label>
+                <p class="muted">Si cambias algo, todos tienen que volver a marcar Listo.</p>
+              </fieldset>
             </div>
-            <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
-              <legend>Ajustes de la sala</legend>
-              <label class="field">
-                <span>Modo</span>
-                <select id="set-mode" data-testid="set-mode"></select>
-              </label>
-              <label class="field">
-                <span>Mapa</span>
-                <select id="set-map" data-testid="set-map"></select>
-              </label>
-              <label class="field" id="set-bots-field">
-                <span>Bots</span>
-                <select id="set-bots" data-testid="set-bots"></select>
-              </label>
-              <label class="field" id="set-format-field" hidden>
-                <span>Formato</span>
-                <select id="set-format" data-testid="set-format"></select>
-              </label>
-              <label class="field" id="set-teamsize-field" hidden>
-                <span>Gatos por equipo</span>
-                <select id="set-teamsize" data-testid="set-teamsize"></select>
-              </label>
-              <label class="check">
-                <input id="set-private" data-testid="set-private" type="checkbox" />
-                <span>Privada (solo entra quien tenga el código)</span>
-              </label>
-              <p class="muted">Si cambias algo, todos tienen que volver a marcar Listo.</p>
-            </fieldset>
             <button
               id="options-close"
               class="btn primary wide"
@@ -646,33 +648,35 @@
         aria-labelledby="help-title"
         data-testid="help-modal"
       >
-        <div class="card modal wide-modal">
+        <div class="card modal wide-modal modal-scroll">
           <h2 id="help-title">Cómo se juega</h2>
-          <ul class="help">
-            <li>
-              <b>Battle Royale:</b> sé el último gato en pie. Los cofres tienen armas, balas,
-              botiquines y muros, y la ola de agua cierra el mapa en unos 2 minutos.
-            </li>
-            <li>
-              <b>Pelea en el techo y Territorio:</b> eliges un kit antes de cada ronda y gana quien
-              se lleve dos. En los patios, dominen los tres para ganar.
-            </li>
-            <li>
-              <b>Aventura:</b> cruza el bosque sala por sala. Las puertas de enredadera se cierran
-              mientras peleas, los jefes sueltan reliquias y habilidades, y la esencia lunar que
-              ganas compra mejoras en el Santuario.
-            </li>
-            <li>
-              <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre o usa, I
-              inventario, M mapa, T emotes, R recarga, Q voltereta y F, G, H las habilidades de la
-              Aventura.
-            </li>
-            <li>
-              <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a la
-              derecha: se dispara solo mientras ves la línea. Toca otra vez un objeto o pulsa USAR
-              para curarte. Todo se puede mover en Ajustes.
-            </li>
-          </ul>
+          <div class="modal-body">
+            <ul class="help">
+              <li>
+                <b>Battle Royale:</b> sé el último gato en pie. Los cofres tienen armas, balas,
+                botiquines y muros, y la ola de agua cierra el mapa en unos 2 minutos.
+              </li>
+              <li>
+                <b>Pelea en el techo y Territorio:</b> eliges un kit antes de cada ronda y gana
+                quien se lleve dos. En los patios, dominen los tres para ganar.
+              </li>
+              <li>
+                <b>Aventura:</b> cruza el bosque sala por sala. Las puertas de enredadera se cierran
+                mientras peleas, los jefes sueltan reliquias y habilidades, y la esencia lunar que
+                ganas compra mejoras en el Santuario.
+              </li>
+              <li>
+                <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre o usa, I
+                inventario, M mapa, T emotes, R recarga, Q voltereta y F, G, H las habilidades de la
+                Aventura.
+              </li>
+              <li>
+                <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a
+                la derecha: se dispara solo mientras ves la línea. Toca otra vez un objeto o pulsa
+                USAR para curarte. Todo se puede mover en Ajustes.
+              </li>
+            </ul>
+          </div>
           <button id="help-close" class="btn primary wide" type="button">Cerrar</button>
         </div>
       </div>
@@ -898,79 +902,81 @@
       aria-modal="true"
       aria-labelledby="settings-title"
     >
-      <section class="card modal wide-modal">
+      <section class="card modal wide-modal modal-scroll">
         <h2 id="settings-title">Ajustes</h2>
-        <div class="tabs" role="tablist" aria-label="Secciones de ajustes">
-          <button
-            id="set-tab-keys"
-            class="tab is-active"
-            role="tab"
-            aria-selected="true"
-            type="button"
-          >
-            Teclas
-          </button>
-          <button id="set-tab-touch" class="tab" role="tab" aria-selected="false" type="button">
-            Táctil
-          </button>
-          <button id="set-tab-sound" class="tab" role="tab" aria-selected="false" type="button">
-            Sonido
-          </button>
-        </div>
-        <div id="set-keys" class="set-pane">
-          <p class="muted">Pulsa una tecla y luego la que quieras usar. Escape cancela.</p>
-          <ul id="key-list" class="key-list" data-testid="key-list"></ul>
-          <button id="keys-reset" class="btn small ghost" type="button">Restaurar teclas</button>
-        </div>
-        <div id="set-touch" class="set-pane" hidden>
-          <p class="muted">
-            Mueve y cambia el tamaño de cada botón del teléfono: joystick, fuego, interactuar,
-            inventario, objetos, menú, mapa, emotes y recargar.
-          </p>
-          <p class="muted">Cómo dispara la mira del lado derecho:</p>
-          <div id="fire-mode" class="seg" role="radiogroup" aria-label="Cómo dispara la mira">
+        <div class="modal-body">
+          <div class="tabs" role="tablist" aria-label="Secciones de ajustes">
             <button
+              id="set-tab-keys"
+              class="tab is-active"
+              role="tab"
+              aria-selected="true"
               type="button"
-              role="radio"
-              data-mode="aim"
-              aria-checked="true"
-              data-testid="fire-mode-aim"
             >
-              Al apuntar
+              Teclas
             </button>
-            <button
-              type="button"
-              role="radio"
-              data-mode="target"
-              aria-checked="false"
-              data-testid="fire-mode-target"
-            >
-              Solo con objetivo
+            <button id="set-tab-touch" class="tab" role="tab" aria-selected="false" type="button">
+              Táctil
+            </button>
+            <button id="set-tab-sound" class="tab" role="tab" aria-selected="false" type="button">
+              Sonido
             </button>
           </div>
-          <p id="fire-mode-help" class="muted" data-testid="fire-mode-help"></p>
-          <button id="touch-edit" class="btn primary wide" type="button" data-testid="touch-edit">
-            Editar botones
-          </button>
-          <button id="touch-reset" class="btn small ghost" type="button">
-            Restaurar posiciones
-          </button>
-        </div>
-        <div id="set-sound" class="set-pane" hidden>
-          <label class="check">
-            <input id="sound-toggle" type="checkbox" checked />
-            <span>Sonido activado</span>
-          </label>
-          <p class="muted">Mueve cada control para dejar el sonido a tu gusto. Se guarda solo.</p>
-          <div id="volume-list" class="volumes" data-testid="volume-list"></div>
-          <button
-            id="volume-reset"
-            class="btn small ghost"
-            type="button"
-            data-testid="volume-reset"
-          >
-            Restaurar volúmenes
-          </button>
+          <div id="set-keys" class="set-pane">
+            <p class="muted">Pulsa una tecla y luego la que quieras usar. Escape cancela.</p>
+            <ul id="key-list" class="key-list" data-testid="key-list"></ul>
+            <button id="keys-reset" class="btn small ghost" type="button">Restaurar teclas</button>
+          </div>
+          <div id="set-touch" class="set-pane" hidden>
+            <p class="muted">
+              Mueve y cambia el tamaño de cada botón del teléfono: joystick, fuego, interactuar,
+              inventario, objetos, menú, mapa, emotes y recargar.
+            </p>
+            <p class="muted">Cómo dispara la mira del lado derecho:</p>
+            <div id="fire-mode" class="seg" role="radiogroup" aria-label="Cómo dispara la mira">
+              <button
+                type="button"
+                role="radio"
+                data-mode="aim"
+                aria-checked="true"
+                data-testid="fire-mode-aim"
+              >
+                Al apuntar
+              </button>
+              <button
+                type="button"
+                role="radio"
+                data-mode="target"
+                aria-checked="false"
+                data-testid="fire-mode-target"
+              >
+                Solo con objetivo
+              </button>
+            </div>
+            <p id="fire-mode-help" class="muted" data-testid="fire-mode-help"></p>
+            <button id="touch-edit" class="btn primary wide" type="button" data-testid="touch-edit">
+              Editar botones
+            </button>
+            <button id="touch-reset" class="btn small ghost" type="button">
+              Restaurar posiciones
+            </button>
+          </div>
+          <div id="set-sound" class="set-pane" hidden>
+            <label class="check">
+              <input id="sound-toggle" type="checkbox" checked />
+              <span>Sonido activado</span>
+            </label>
+            <p class="muted">Mueve cada control para dejar el sonido a tu gusto. Se guarda solo.</p>
+            <div id="volume-list" class="volumes" data-testid="volume-list"></div>
+            <button
+              id="volume-reset"
+              class="btn small ghost"
+              type="button"
+              data-testid="volume-reset"
+            >
+              Restaurar volúmenes
+            </button>
+          </div>
         </div>
         <button id="settings-close" class="btn wide" type="button">Cerrar</button>
       </section>

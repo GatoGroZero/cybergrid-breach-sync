@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml)
 
-Juego multijugador de gatos en pixeles, en tiempo real, con **cuatro modos**: un battle royale de hasta 12 gatos con una **ola de agua** que cierra el mapa, duelos por rondas sobre un tejado bajo la tormenta, equipos de hasta 5 contra 5 que se disputan los patios de un barrio y una **aventura roguelike** cooperativa por un bosque encantado con jefes. Todo con trajes de Halloween, día que cae hasta la noche y mezclador de sonido. Canvas 2D, WebSockets y servidor autoritativo.
+Juego multijugador de gatos en pixeles, en tiempo real, con **cuatro modos**: un battle royale de hasta 12 gatos con una **ola de agua** que cierra el mapa, duelos por rondas sobre un tejado bajo la tormenta, equipos de hasta 5 contra 5 que se disputan los patios de un barrio y una **aventura roguelike** cooperativa por un bosque encantado con jefes. Todo con un **menú de juego tipo casillero** (Jugar, Salas y Mi gato), trajes de Halloween, día que cae hasta la noche, **música de fondo distinta en cada modo** y mezclador de sonido. Canvas 2D, WebSockets y servidor autoritativo.
 
 |                      |                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------- |
@@ -11,7 +11,7 @@ Juego multijugador de gatos en pixeles, en tiempo real, con **cuatro modos**: un
 | **Cuenta de prueba** | `demo1`, `demo2`, `demo3`, `demo4` con la contraseña `CyberGrid26` (o crea la tuya, no pide correo) |
 | **Autor**            | GatoGroZero                                                                                         |
 
-> El servicio corre en el plan gratuito de Render. Si lleva 15 minutos sin tráfico se duerme y la primera petición tarda cerca de un minuto en despertarlo. Hay un monitor que lo mantiene despierto, pero si lo encuentras lento, vuelve a intentar a los pocos segundos.
+> El servicio corre en el plan gratuito de Render. Si lleva 15 minutos sin tráfico se duerme y la primera petición tarda cerca de un minuto en despertarlo. Un flujo de GitHub Actions (`mantener-activo.yml`) lo visita cada 10 minutos para que no se duerma; si aun así lo encuentras lento, vuelve a intentar a los pocos segundos.
 
 ## Cómo evaluarlo en 4 pasos
 
@@ -26,11 +26,13 @@ Es la lista de comprobación del PDF de lineamientos, con lo que hay que hacer e
 3. **Pipeline.** En la pestaña [Actions](https://github.com/GatoGroZero/cybergrid-breach-sync/actions) y en la lista de commits de `main` se ve la palomita verde de cada merge (calidad, pruebas unitarias, compilación y E2E). Cada cambio entró por Pull Request.
 4. **Móvil.** En Chrome: DevTools, _Toggle device toolbar_ (Ctrl+Shift+M), elige un teléfono en horizontal (por ejemplo Pixel 7) y recarga. Aparecen el joystick abajo a la izquierda y el botón FUEGO abajo a la derecha. En una PC con teclado esos controles se ocultan solos.
 
-También se puede repetir todo con un solo comando, que mide TLS, los endpoints, el ping/pong y abre un móvil emulado:
+También se puede repetir todo con un solo comando. La **auditoría estricta** califica de 0 a 100 los cinco módulos del PDF con sus pesos (red 25, canvas 25, endpoints 20, pruebas 15, despliegue 15), abre un navegador de escritorio y un celular emulado, y se puede repetir varias veces seguidas:
 
 ```bash
-node scripts/audit-prod.mjs https://cybergrid-breach-sync.onrender.com --browser
+node scripts/auditoria.mjs https://cybergrid-breach-sync.onrender.com --rondas 3
 ```
+
+La versión corta (`node scripts/audit-prod.mjs <url> --browser`) solo lista cada comprobación. En la auditoría estricta, los puntos de latencia (`ping`/`pong` y los tiempos de los endpoints) dependen de la distancia entre quien mide y el servidor.
 
 ## Cumplimiento de los lineamientos
 
@@ -118,6 +120,16 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Bots en la sala:** el anfitrión elige "Llenar con bots" (completa hasta 12 gatos) o una cantidad exacta de 0 a 11 (por ejemplo, 4 amigos y 8 bots). Con bots exactos se reserva su lugar: 8 bots dejan espacio para 4 personas. Sin bots hacen falta al menos 2 personas.
 - **Ajustes e inicio:** solo el anfitrión cambia mapa, privacidad y bots (cada cambio quita el Listo a todos) y puede pulsar "Iniciar ya" sin esperar a que todos marquen Listo.
 
+## El menú de juego
+
+Al entrar se llega a un menú tipo casillero con tres pestañas:
+
+- **Jugar:** a la izquierda los cuatro modos, cada uno con su foto, su nombre y un botón **i** que explica de qué trata sin elegirlo; en el centro el **escenario donde están los gatos**, que cambia con el modo y el mapa (el bosque, el tejado bajo la lluvia, la calle del barrio, el bosque encantado) y muestra a todos los de la sala con su nombre, equipo y si están listos, aunque sean 12; a la derecha el grupo (jugar solo, crear una sala con amigos o, dentro de una sala, el código, los equipos y los botones de listo e iniciar). Las opciones de la partida (mapa, bots, formato, equipos, privada) están en una ventana aparte.
+- **Salas:** las salas públicas y el campo para entrar con un código.
+- **Mi gato:** el pintor, separado en pelaje, traje y pintura para que todo quepa en el celular sin desplazarse.
+
+El menú se adapta a escritorio, celular horizontal y celular vertical (con los modos en una tira que se desliza). En la pantalla de acceso, un atardecer animado con estrellas, nubes, luciérnagas y gatos paseando; con "reducir movimiento" activado en el sistema, todo queda quieto.
+
 ## Modos de juego
 
 El lobby ofrece cuatro modos. Cada sala elige uno, y el anfitrión lo puede cambiar mientras nadie haya empezado. Todo lo que decide el resultado (daño, zonas, rondas, enemigos, vidas) se calcula en el servidor.
@@ -159,7 +171,9 @@ Un roguelike de 1 a 4 gatos por un **bosque encantado** de 23 claros unidos por 
 
 - **Trajes de Halloween:** 10 conjuntos (bruja, calabaza, fantasma, vampiro, momia, esqueleto, pirata, murciélago, diablillo y Frankenstein) que se eligen en el pintor, aparte del color y la pintura, y que ven todos en la partida. Las calabazas alumbran de noche.
 - **Día, atardecer y noche:** cada partida avanza sola de día a noche (el reloj del cielo está arriba), con velo de color, luces en casas, lámparas y calabazas, luciérnagas, murciélagos y rayos de sol, y sonidos que cambian de pájaros a grillos y búhos.
-- **Mezclador de sonido** en **Ajustes, Sonido**: volumen general, ambiente, armas y explosiones, golpes y daño, pasos y avisos y menús, cada uno aparte.
+- **Música de fondo:** cada modo tiene su canción (el menú, el Battle Royale, el tejado, el barrio y el bosque encantado) y la Aventura cambia a una versión de jefe cuando hay un minijefe peleando. Se sintetizan con Web Audio, sin archivos de audio.
+- **Mezclador de sonido** en **Ajustes, Sonido**: volumen general, música de fondo, ambiente, armas y explosiones, golpes y daño, pasos y avisos y menús, cada uno aparte.
+- **Movimiento con peso:** los enemigos caminan con pasos que los aplastan, los pesados hacen temblar el suelo, el hongo salta, el murciélago vuela; reaccionan a los golpes, se encogen al preparar un ataque, embisten o lanzan con polvo y aparecen creciendo desde la tierra. Curarse hace subir signos de más, los golpes aplastan un instante al gato y las habilidades con duración tienen su efecto (llamas, mirada dorada, estela espectral, notas del maullido). De día vuelan mariposas y en el bosque caen hojas.
 
 ## API de prueba
 
@@ -233,6 +247,7 @@ npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 | E2E 3: canvas, controles y coordenadas      | `tests/e2e/3-canvas.spec.ts`                                                                                                                               |
 | E2E extra: cofres, inventario y pintor      | `tests/e2e/4-botin.spec.ts`                                                                                                                                |
 | E2E móvil: joystick táctil y giro           | `tests/e2e/movil.spec.ts`                                                                                                                                  |
+| E2E menú de juego (pestañas, modos, sala)   | `tests/e2e/11-menu.spec.ts`                                                                                                                                |
 | E2E trajes, volumen y modos por rondas      | `tests/e2e/8-trajes.spec.ts`, `tests/e2e/9-modos.spec.ts`                                                                                                  |
 | E2E Aventura: Santuario, reliquias y final  | `tests/e2e/10-aventura.spec.ts`                                                                                                                            |
 | Aventura: enemigos, jefes, vidas, mejoras   | `tests/unit/br-aventura.test.ts`, `tests/unit/br-encantado.test.ts`                                                                                        |
@@ -259,7 +274,7 @@ src/shared   Lógica común y determinista: armas, botín, mapas, física, zonas
 src/server   Express, Socket.IO, simulación de la partida, bots, enemigos y jefes, SQLite, endpoints de prueba
 src/client   Canvas, arte en pixeles, sonido, entrada, predicción, HUD, inventario, pintor, Santuario
 tests        Unitarias e integración (Vitest) y E2E (Playwright)
-scripts      Auditoría de producción, simuladores de partidas (battle royale, kits y Aventura), revisión de texto
+scripts      Auditoría estricta y de producción, simuladores de partidas (battle royale, kits y Aventura), revisión de texto
 ```
 
 ## Notas de despliegue

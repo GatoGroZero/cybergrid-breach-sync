@@ -443,8 +443,27 @@
 /* opciones */
 
 .opt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+
+/* los campos se desplazan solos: el boton "Listo" siempre queda a la vista */
+.opt-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding-right: 4px;
+}
+
+.opt-card > h2 {
+  margin: 0;
+}
+
+.opt-card > .btn {
+  flex: none;
 }
 
 .info-card {
@@ -908,4 +927,28 @@
   .mode {
     transition: none;
   }
+}
+
+/* ventanas que no caben en un celular horizontal: el contenido se desplaza y el boton de cerrar queda a la vista */
+.modal-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+
+.modal-scroll > h2 {
+  margin: 0;
+}
+
+.modal-scroll > .btn {
+  flex: none;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }

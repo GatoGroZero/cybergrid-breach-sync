@@ -1,0 +1,26 @@
+name: Mantener activo
+
+# Render gratis duerme el servicio tras 15 minutos sin visitas y tarda cerca de un minuto en despertar.
+# Una visita cada 10 minutos lo mantiene listo para quien lo evalue. Solo corre con el repositorio
+# publico (en uno privado cada ejecucion gastaria minutos de la cuota mensual).
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  visita:
+    name: Visitar el servicio
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pedir /api/test/health
+        run: |
+          for intento in 1 2 3; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 https://cybergrid-breach-sync.onrender.com/api/test/health || true)
+            echo "intento $intento: HTTP $codigo"
+            if [ "$codigo" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          exit 1
