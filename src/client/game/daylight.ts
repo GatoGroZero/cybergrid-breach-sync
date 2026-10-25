@@ -305,6 +305,17 @@ export function staticLights(map: BRMap): LightSrc[] {
     }
   }
   for (const p of map.props) {
+    if (p.kind === 'lamp') {
+      out.push({
+        x: p.x * TILE + TILE / 2,
+        y: p.y * TILE - 6,
+        r: 40,
+        k: 0.85,
+        warm: '#ffe08a',
+        warmK: 0.4,
+      });
+      continue;
+    }
     if (p.kind !== 'pumpkin') continue;
     out.push({
       x: p.x * TILE + TILE / 2,

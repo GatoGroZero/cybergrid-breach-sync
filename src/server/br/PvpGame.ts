@@ -3,6 +3,7 @@ import { cloneItem, emptyAmmo, emptyInventory, giveItem } from '../../shared/br/
 import { AMMO_KINDS, rollAmmoCrate, type AmmoKind } from '../../shared/br/items';
 import {
   KITS,
+  HOLD_TO_WIN_S,
   KIT_IDS,
   MAX_ROUNDS,
   ROUNDS_TO_WIN,
@@ -32,8 +33,6 @@ export interface PvpOptions extends GameOptions {
 const ROUND_CAP_EXTRA_S = 12;
 /** Cuanto cuesta capturar un patio estando solo (segundos) y cuanto ayuda cada companero extra. */
 const CAPTURE_SECONDS = 6;
-/** Segundos seguidos dominando todos los patios para ganar la ronda. */
-export const HOLD_TO_WIN_S = 18;
 /** Curacion por segundo de quien esta dentro de un patio que es de su equipo. */
 const POINT_HEAL = 4;
 
@@ -400,6 +399,7 @@ export class PvpGame extends BRGame {
           st.prog = 100;
           const msg = `${TEAM_NAMES[team as 0 | 1]} toma ${def.name}`;
           this.feed.push({ k: null, v: msg, m: msg });
+          this.emit({ e: 'capture', x: def.x, y: def.y, team, i });
         }
       }
     }

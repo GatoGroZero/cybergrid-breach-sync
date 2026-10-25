@@ -23,7 +23,14 @@ import {
   type Vec,
 } from './mapcore';
 
-import { buildAzotea, buildMansarda, buildTejado, pvpProblem } from './mappvp';
+import {
+  buildAzotea,
+  buildCalle,
+  buildMansarda,
+  buildPatios,
+  buildTejado,
+  pvpProblem,
+} from './mappvp';
 
 export * from './mapcore';
 
@@ -354,6 +361,10 @@ function buildKind(kind: MapKind, rng: Rng, s: number): BRMap {
       return buildAzotea(rng, s);
     case 'mansarda':
       return buildMansarda(rng, s);
+    case 'calle':
+      return buildCalle(rng, s);
+    case 'patios':
+      return buildPatios(rng, s);
     default:
       throw new Error(`el mapa ${kind} todavia no existe`);
   }

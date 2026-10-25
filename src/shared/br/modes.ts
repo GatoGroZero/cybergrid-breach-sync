@@ -47,7 +47,7 @@ export const MODES: Record<GameMode, ModeInfo> = {
 };
 
 /** Modos que ya se pueden jugar (los demas salen en la lista pero estan por llegar). */
-export const ENABLED_MODES: readonly GameMode[] = ['br', 'techo'];
+export const ENABLED_MODES: readonly GameMode[] = ['br', 'techo', 'territorio'];
 
 export const isGameMode = (v: unknown): v is GameMode =>
   typeof v === 'string' && (GAME_MODES as readonly string[]).includes(v);
@@ -66,6 +66,9 @@ export const duelTeamSize = (f: DuelFormat): number => (f === '2v2' ? 2 : 1);
 /** Gatos por equipo en "Territorio": de 1 a 5. */
 export const TERRITORY_MIN_TEAM = 1;
 export const TERRITORY_MAX_TEAM = 5;
+
+/** Segundos seguidos dominando los tres patios para ganar la ronda de Territorio. */
+export const HOLD_TO_WIN_S = 18;
 
 /** Rondas que hay que ganar para llevarse la partida (mejor de 3). */
 export const ROUNDS_TO_WIN = 2;

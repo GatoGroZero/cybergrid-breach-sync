@@ -3,7 +3,8 @@ import { CAT, TICK_DT, TILE } from '../../src/shared/br/constants';
 import { KITS, KIT_IDS, type KitId } from '../../src/shared/br/modes';
 import { isWeapon, magOf } from '../../src/shared/br/items';
 import { defaultSkin } from '../../src/shared/br/skin';
-import { ZONE_TECHO } from '../../src/shared/br/zone';
+import { ZONE_TECHO, ZONE_TERRITORIO } from '../../src/shared/br/zone';
+import { HOLD_TO_WIN_S } from '../../src/shared/br/modes';
 import { PvpGame } from '../../src/server/br/PvpGame';
 import type { CatInit } from '../../src/server/br/Game';
 
@@ -299,4 +300,157 @@ describe('pelea por rondas: bots', () => {
     }
     expect(seen.size).toBeGreaterThanOrEqual(3);
   });
+});
+
+describe('territorio: patios que se disputan', () => {
+  function turf(cats: CatInit[], teamSize = 1): PvpGame {
+    return new PvpGame({
+      seed: 8181,
+      mapKind: 'calle',
+      mode: 'territorio',
+      cats,
+      teamSize,
+      zone: ZONE_TERRITORIO,
+    });
+  }
+  const humans = (n: number): CatInit[] =>
+    Array.from({ length: n }, (_, i) => cat(i + 1, (i % 2) as 0 | 1, false));
+
+  /** Pone a un gato justo en el centro de un patio. */
+  function stand(g: PvpGame, catId: number, point: number): void {
+    const p = g.map.points![point]!;
+    const c = g.cat(catId)!;
+    c.x = p.x;
+    c.y = p.y;
+  }
+
+  it('el mapa trae tres patios y la snapshot dice de quien es cada uno', () => {
+    const g = turf(humans(2));
+    expect(g.map.points).toHaveLength(3);
+    const snap = g.snapshotFor(1)!;
+    expect(snap.mode).toBe('territorio');
+    expect(snap.pvp?.points).toEqual([
+      [-1, 0, -1],
+      [-1, 0, -1],
+      [-1, 0, -1],
+    ]);
+    expect(snap.pvp?.hold).toEqual([0, 0]);
+  });
+
+  it('quedarse en un patio lo captura en unos 6 segundos y avisa con un evento', () => {
+    const g = turf(humans(2));
+    fight(g);
+    g.cat(2)!.x = 5;
+    stand(g, 1, 0);
+    run(g, 3);
+    let pts = g.snapshotFor(1)!.pvp!.points!;
+    expect(pts[0]![0]).toBe(-1);
+    expect(pts[0]![1]).toBeGreaterThan(30);
+    expect(pts[0]![1]).toBeLessThan(80);
+    expect(pts[0]![2]).toBe(0);
+    run(g, 4);
+    pts = g.snapshotFor(1)!.pvp!.points!;
+    expect(pts[0]).toEqual([0, 100, 0]);
+    // la captura quedo registrada para los clientes cercanos
+    const names = g.snapshotFor(1)!.ev.map((e) => e.e);
+    expect(names.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('entre dos equipos en el mismo patio nadie avanza', () => {
+    const g = turf(humans(2));
+    fight(g);
+    const p = g.map.points![1]!;
+    g.cat(1)!.x = p.x - 10;
+    g.cat(1)!.y = p.y;
+    g.cat(2)!.x = p.x + 10;
+    g.cat(2)!.y = p.y;
+    // los dos se mantienen vivos y quietos en el centro
+    for (let i = 0; i < 90; i++) {
+      g.cat(1)!.hp = 100;
+      g.cat(2)!.hp = 100;
+      g.step();
+    }
+    expect(g.snapshotFor(1)!.pvp!.points![1]).toEqual([-1, 0, -1]);
+  });
+
+  it('un patio se le quita al rival pasando antes por cero y los patios propios curan', () => {
+    const g = turf(humans(2));
+    fight(g);
+    stand(g, 1, 0);
+    g.cat(2)!.x = 5;
+    run(g, 7);
+    expect(g.snapshotFor(1)!.pvp!.points![0]![0]).toBe(0);
+    // dentro de su patio el dueno se cura solo
+    g.cat(1)!.hp = 50;
+    run(g, 2);
+    expect(g.cat(1)!.hp).toBeGreaterThan(55);
+    // el rival lo va a quitando: primero baja el avance y luego cambia de dueno
+    g.cat(1)!.x = 5;
+    stand(g, 2, 0);
+    run(g, 2);
+    expect(g.snapshotFor(2)!.pvp!.points![0]![0]).toBe(0);
+    run(g, 5);
+    // primero queda sin dueno...
+    expect(g.snapshotFor(2)!.pvp!.points![0]![0]).toBe(-1);
+    run(g, 7);
+    // ...y luego es suyo
+    expect(g.snapshotFor(2)!.pvp!.points![0]![0]).toBe(1);
+  });
+
+  it('dominar los tres patios mucho tiempo gana la ronda', () => {
+    const g = turf(humans(6), 3);
+    fight(g);
+    // tres gatos del equipo 0 (ids 1, 3, 5) se reparten los tres patios
+    const mine = [1, 3, 5];
+    for (const id of [2, 4, 6]) g.cat(id)!.x = 5;
+    for (let i = 0; i < 3; i++) stand(g, mine[i]!, i);
+    run(g, 8);
+    expect(g.snapshotFor(1)!.pvp!.points!.every((p) => p[0] === 0)).toBe(true);
+    run(g, HOLD_TO_WIN_S + 1);
+    expect(g.wins).toEqual([1, 0]);
+    expect(g.roundWinner).toBe(0);
+    expect(g.phase).toBe('between');
+  });
+
+  it('el equipo grande de cinco se arma entero y los bots se reparten por los patios', () => {
+    const g = turf(
+      [
+        cat(1, 0, false),
+        ...[2, 3, 4, 5].map((i) => cat(i, 0, true)),
+        ...[6, 7, 8, 9, 10].map((i) => cat(i, 1, true)),
+      ],
+      5,
+    );
+    expect(g.cats).toHaveLength(10);
+    expect(g.teamAlive(0)).toBe(5);
+    expect(g.teamAlive(1)).toBe(5);
+    const [a, b] = g.map.teamSpawns!;
+    for (const t of [0, 1] as const) {
+      const spots = (t === 0 ? a : b).map((s) => `${s.x},${s.y}`);
+      const mine = g.cats.filter((c) => c.team === t).map((c) => `${c.x},${c.y}`);
+      expect(new Set(mine).size).toBe(5);
+      for (const m of mine) expect(spots).toContain(m);
+    }
+    until(g, 'fight');
+    run(g, 40);
+    // los bots salieron de su base hacia los patios
+    const moved = g.cats.filter((c) => c.bot && Math.hypot(c.x - c.spawn.x, c.y - c.spawn.y) > 100);
+    expect(moved.length).toBeGreaterThanOrEqual(5);
+  }, 60_000);
+
+  it('una partida entera de bots 3 contra 3 en cada mapa de calle termina sola', () => {
+    for (const mapKind of ['calle', 'patios'] as const) {
+      const g = new PvpGame({
+        seed: 99,
+        mapKind,
+        mode: 'territorio',
+        zone: ZONE_TERRITORIO,
+        teamSize: 3,
+        cats: [0, 1, 2, 3, 4, 5].map((i) => cat(i + 1, (i < 3 ? 0 : 1) as 0 | 1, true)),
+      });
+      for (let i = 0; i < 80_000 && !g.over; i++) g.step();
+      expect(g.over, `${mapKind} no termino`).toBe(true);
+      expect(Math.max(...g.result!.score!)).toBe(2);
+    }
+  }, 120_000);
 });

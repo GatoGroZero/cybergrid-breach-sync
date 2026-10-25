@@ -1,6 +1,7 @@
 import { TILE } from '../../shared/br/constants';
 import type { ItemKind, WeaponKind } from '../../shared/br/items';
 import { G, type PropKind } from '../../shared/br/map';
+import { streetGround, streetProp } from './art-calle';
 import { roofGround, roofProp } from './art-roof';
 import {
   C,
@@ -170,7 +171,7 @@ function groundTile(id: number, variant: number): HTMLCanvasElement {
       return cv;
     }
     default:
-      return roofGround(id, variant) ?? grassTile(variant, G.GRASS);
+      return roofGround(id, variant) ?? streetGround(id, variant) ?? grassTile(variant, G.GRASS);
   }
 }
 
@@ -1058,7 +1059,7 @@ export function buildAssets(): Assets {
         sprite = pumpkinSprite(variant);
         break;
       default:
-        sprite = roofProp(kind, variant);
+        sprite = roofProp(kind, variant) ?? streetProp(kind, variant);
     }
     propCache.set(key, sprite);
     return sprite;

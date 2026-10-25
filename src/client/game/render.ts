@@ -653,6 +653,29 @@ export class BRRenderer {
         if (this.distToMe(ev.x, ev.y) < 80) this.sfx.chest();
         break;
       }
+      case 'capture': {
+        // un patio cambia de dueno: anillos y chispas del color del equipo
+        const col = TEAM_COLORS[ev.team as 0 | 1] as string;
+        this.addLight(ev.x, ev.y, 46, col, 0.8);
+        for (let k = 0; k < 3; k++) fx.ring(ev.x, ev.y, 18 + k * 16, col, 0.7 + k * 0.15);
+        for (let i = 0; i < 16; i++)
+          fx.star(
+            ev.x + (Math.random() - 0.5) * 40,
+            ev.y + (Math.random() - 0.5) * 24,
+            col,
+            0.8,
+            -26,
+          );
+        const mine = this.game?.pvp?.team === ev.team;
+        this.sfx.capture(mine);
+        const name = this.map?.points?.[ev.i]?.name ?? 'el patio';
+        this.game?.say(
+          mine ? `¡Tomaron ${name}!` : `Les quitaron ${name}`,
+          mine ? 'good' : 'bad',
+          3200,
+        );
+        break;
+      }
       case 'splash': {
         fx.ring(ev.x, ev.y + 3, 9, C.cyan, 0.4);
         fx.burst(ev.x, ev.y, 7, {
@@ -852,6 +875,7 @@ export class BRRenderer {
     this.drawGroundFx(b, map, camX, camY, now);
 
     this.labels.length = 0;
+    this.drawPoints(b, g, camX, camY, now);
     const list: Drawable[] = [];
     this.collectStatics(list, camX, camY, now, target, dt);
     this.collectWalls(list, g, camX, camY);
@@ -1034,6 +1058,63 @@ export class BRRenderer {
    * Vida sobre el piso: sombras de nubes que pasan por el bosque y la piscina, rayos de sol por las
    * ventanas de la casa y destellos del agua.
    */
+  /** Los patios que se disputan: anillo del color de quien manda, avance de captura y bandera. */
+  private drawPoints(b: Ctx, g: ClientBR, camX: number, camY: number, now: number): void {
+    const defs = this.map?.points;
+    const st = g.pvp?.points;
+    if (!defs || !st) return;
+    const letters = ['A', 'B', 'C'];
+    defs.forEach((p, i) => {
+      const [owner, prog, cap] = st[i] ?? [-1, 0, -1];
+      const cx = Math.round(p.x - camX);
+      const cy = Math.round(p.y - camY);
+      if (cx < -p.r - 8 || cx > this.viewW + p.r + 8 || cy < -p.r - 8 || cy > this.viewH + p.r + 8)
+        return;
+      const base = owner >= 0 ? (TEAM_COLORS[owner as 0 | 1] as string) : '#e8ecf4';
+      const capCol = cap >= 0 ? (TEAM_COLORS[cap as 0 | 1] as string) : '#e8ecf4';
+      const rx = p.r;
+      const ry = Math.round(p.r * 0.78);
+      // relleno en tablero de ajedrez, tenue
+      b.globalAlpha = owner >= 0 ? 0.2 : 0.1;
+      b.fillStyle = base;
+      for (let y = -ry; y <= ry; y++) {
+        for (let x = -rx; x <= rx; x++) {
+          if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
+          if (((x >> 1) + (y >> 1)) & 1) continue;
+          b.fillRect(cx + x, cy + y, 1, 1);
+        }
+      }
+      b.globalAlpha = 1;
+      // anillo de rayas que gira despacio
+      const steps = Math.max(40, Math.round(rx * 5));
+      const spin = Math.floor(now / 140);
+      for (let k = 0; k < steps; k++) {
+        const a = (k / steps) * Math.PI * 2;
+        const x = Math.round(cx + Math.cos(a) * rx);
+        const y = Math.round(cy + Math.sin(a) * ry);
+        const filled = prog > 0 && owner < 0 && k / steps <= prog / 100;
+        if (!filled && ((k + spin) & 3) > 1) continue;
+        b.fillStyle = filled ? capCol : base;
+        b.fillRect(x, y, filled ? 2 : 1, filled ? 2 : 1);
+      }
+      // bandera en el centro
+      const sway = Math.round(Math.sin(now / 260 + i) * 1);
+      b.fillStyle = '#2a2d38';
+      b.fillRect(cx, cy - 16, 2, 16);
+      b.fillStyle = owner >= 0 ? base : '#c4cad8';
+      b.fillRect(cx + 2, cy - 16, 9 + sway, 6);
+      b.fillStyle = 'rgba(255,255,255,0.35)';
+      b.fillRect(cx + 2, cy - 16, 9 + sway, 1);
+      this.labels.push({
+        x: p.x,
+        y: p.y - 24,
+        text: letters[i] ?? '',
+        color: owner >= 0 ? base : C.white,
+        kind: 'name',
+      });
+    });
+  }
+
   private drawGroundFx(b: Ctx, map: BRMap, camX: number, camY: number, now: number): void {
     const mapW = map.w * T;
     const dl = this.sky.light;

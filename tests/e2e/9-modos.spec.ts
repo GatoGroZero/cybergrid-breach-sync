@@ -10,8 +10,8 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await expect(picker.locator('button')).toHaveCount(4);
     await expect(page.locator('[data-mode=br]')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('solo-help')).toContainText('11 bots');
-    // los modos que aun no estan listos se ven, pero no se pueden elegir
-    await expect(page.locator('[data-mode=territorio]')).toBeDisabled();
+    // el modo que aun no esta listo se ve, pero no se puede elegir
+    await expect(page.locator('[data-mode=territorio]')).toBeEnabled();
     await expect(page.locator('[data-mode=aventura]')).toBeDisabled();
 
     await page.locator('[data-mode=techo]').click();
@@ -158,5 +158,75 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await expect(page.locator('#results-title')).toHaveText('¡VICTORIA DEL EQUIPO!');
     await expect(page.locator('#results-sub')).toContainText('2 a 0');
     await expect(page.locator('#results-body tr').first()).toContainText('Ganó');
+  });
+
+  test('territorio: equipos de hasta 5, patios que se capturan y victoria por rondas', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_terr'), true);
+    await page.locator('[data-mode=territorio]').click();
+    await expect(page.getByTestId('room-teamsize')).toBeVisible();
+    await expect(page.getByTestId('room-format')).toBeHidden();
+    const maps = await page.getByTestId('room-map').locator('option').allTextContents();
+    expect(maps).toEqual(['Mapa al azar', 'Calle del barrio', 'Patios traseros']);
+    await page.getByTestId('room-teamsize').selectOption('3');
+    await expect(page.getByTestId('solo-help')).toContainText('3');
+    await page.getByTestId('room-map').selectOption('calle');
+    await page.getByTestId('btn-solo').click();
+    await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'pick', null, {
+      timeout: 15_000,
+    });
+    await page.keyboard.press('Digit1');
+    await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'fight', null, {
+      timeout: 20_000,
+    });
+    const info = await page.evaluate(() => {
+      const g = (
+        window as unknown as {
+          __game: {
+            mode: string;
+            teamSize: number;
+            map: { w: number; points: { name: string }[] };
+            cats: Map<number, { team?: number }>;
+            pvp: { points: number[][] };
+          };
+        }
+      ).__game;
+      const teams = [...g.cats.values()].map((c) => c.team);
+      return {
+        mode: g.mode,
+        size: g.teamSize,
+        w: g.map.w,
+        points: g.map.points.map((p) => p.name),
+        state: g.pvp.points.length,
+        t0: teams.filter((t) => t === 0).length,
+        t1: teams.filter((t) => t === 1).length,
+      };
+    });
+    expect(info.mode).toBe('territorio');
+    expect(info.size).toBe(3);
+    expect(info.w).toBeGreaterThanOrEqual(90);
+    expect(info.points).toEqual(['Plaza oeste', 'El cruce', 'Plaza este']);
+    expect(info.state).toBe(3);
+    expect([info.t0, info.t1]).toEqual([3, 3]);
+    // se gana la ronda y luego la partida
+    for (let r = 0; r < 2; r++) {
+      await page.evaluate(() =>
+        (
+          window as unknown as { __net: { socket: { emit: (e: string) => void } } }
+        ).__net.socket.emit('dev:round'),
+      );
+      if (r === 0) {
+        await page.waitForFunction(() => window.__cybergrid?.wins === '1-0', null, {
+          timeout: 10_000,
+        });
+        await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'fight', null, {
+          timeout: 30_000,
+        });
+      }
+    }
+    await expect(page.getByTestId('results')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('#results-title')).toHaveText('¡VICTORIA DEL EQUIPO!');
   });
 });
