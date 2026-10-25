@@ -6,6 +6,7 @@ import {
   WEAPONS,
   isAmmo,
   isWeapon,
+  magOf,
   type Item,
 } from '../../shared/br/items';
 import type { Assets } from '../pixel/art';
@@ -33,7 +34,8 @@ export function describeItem(item: Item): string {
       def.pellets > 1
         ? ` por perdigón (${def.pellets} perdigones, usa ${def.ammoPerShot} cartuchos)`
         : '';
-    return `${name} ${RARITY_NAMES[item.rarity]}: ${dmg} de daño${pellets}. ${def.auto ? 'Ráfaga automática.' : 'Un disparo por clic.'}`;
+    const mag = ` Cargador de ${def.magazine} (tiene ${magOf(item)}), recarga en ${def.reload} s, alcance ${def.range} px.`;
+    return `${name} ${RARITY_NAMES[item.rarity]}: ${dmg} de daño${pellets}. ${def.auto ? 'Ráfaga automática.' : 'Un disparo por clic.'}${mag}`;
   }
   if (isAmmo(item.kind))
     return `${name}: se guardan aparte de tus 5 espacios, hasta ${AMMO_MAX} de cada arma.`;
