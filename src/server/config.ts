@@ -155,7 +155,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     celebrationSeconds: Math.min(20, Math.max(0, int(process.env.CELEBRATION_SECONDS, 7))),
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     introSeconds: Math.min(15, Math.max(0, int(process.env.INTRO_SECONDS, 5))),
-    version: '2.2.0',
+    version: '2.3.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
