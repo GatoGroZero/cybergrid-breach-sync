@@ -243,6 +243,8 @@ export interface WinPayload {
   /** Modos por equipos: equipo ganador (0 o 1) y marcador de rondas. */
   winnerTeam?: number | null;
   score?: [number, number];
+  /** Aventura: el grupo gano o perdio. */
+  adv?: 'victory' | 'defeat';
 }
 
 export interface PlacementRow {

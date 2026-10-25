@@ -1,5 +1,6 @@
 import type { DayName, Daylight } from '../../shared/br/daytime';
 import { TEAM_COLORS } from '../../shared/br/modes';
+import { DASH } from '../../shared/br/adventure';
 import { drawPvpHud } from './hudpvp';
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
@@ -20,6 +21,7 @@ import { C, make } from '../pixel/draw';
 import type { Floater } from './fx';
 import { keyLabel, type Circle } from './input';
 import type { ClientBR } from './state';
+import { AdvHud } from './hudadv';
 import { drawTouchControls } from './touchui';
 
 /** Cuanto se ve el aviso del objeto en mano y cuanto tarda en difuminarse. */
@@ -95,6 +97,11 @@ const GROUND_COLOR: Record<number, string> = {
   [G.ADOQUIN]: '#9a948a',
   [G.PATIO]: '#b9b6ae',
   [G.CESPED]: '#4a9b49',
+  [G.MUSGO]: '#2b6b4a',
+  [G.RUNAS]: '#566182',
+  [G.HONGOS]: '#3b7a55',
+  [G.CHARCO]: '#2f86b4',
+  [G.ZARZAL]: '#0f241c',
 };
 /** Coberturas de los techos y las calles: se ven como puntos grises en el minimapa. */
 const MINI_COVER = new Set([
@@ -158,7 +165,7 @@ export function panel(
   ctx.fillRect(x, y, w, 2);
 }
 
-function sprite(ctx: Ctx, s: HTMLCanvasElement, cx: number, cy: number, size: number): void {
+export function sprite(ctx: Ctx, s: HTMLCanvasElement, cx: number, cy: number, size: number): void {
   ctx.imageSmoothingEnabled = false;
   const k = size / Math.max(s.width, s.height);
   ctx.drawImage(
@@ -228,6 +235,7 @@ export class Hud {
   private curGame: ClientBR | null = null;
   /** Donde quedo el panel de la ola, para pegarle el reloj del cielo. */
   private zoneBox = { x: 0, y: 0, w: 0, h: 30 };
+  private readonly advHud = new AdvHud();
 
   constructor(private readonly assets: Assets) {}
 
@@ -258,7 +266,11 @@ export class Hud {
     this.drawVignette(f);
     if (g.input.mode === 'keyboard') g.input.hotbarRects = [];
     const touch = g.input.mode === 'touch';
-    this.drawZoneInfo(f);
+    if (g.mode === 'aventura') {
+      this.advHud.drawTop(f, this.assets);
+      this.zoneBox = this.advHud.topBox;
+      this.advHud.drawBoss(f);
+    } else this.drawZoneInfo(f);
     this.drawSky(f);
     this.drawMinimap(f, touch);
     this.drawFeed(f, touch);
@@ -269,6 +281,11 @@ export class Hud {
       else this.drawHotbar(f);
     } else {
       g.input.hotbarRects = [];
+    }
+    if (g.mode === 'aventura') {
+      this.advHud.drawFallen(f);
+      this.advHud.drawBanner(f);
+      this.advHud.drawRelicChoice(f);
     }
     this.drawEmoteBar(f, touch);
     this.drawWarnings(f);
@@ -421,23 +438,26 @@ export class Hud {
       text(ctx, label, bx + bw / 2, yy + bh / 2 + 1, 18, C.white, 'center');
     };
     const pulse = me.healLeft > 0 && Math.floor(f.now / 200) % 2 === 0;
+    const maxHp = me.maxHp ?? 100;
+    const maxSh = me.maxShield ?? 100;
     bar(
       y,
-      me.hp,
-      me.hp <= 25 ? '#d94a63' : '#e0566d',
+      (me.hp / maxHp) * 100,
+      me.hp / maxHp <= 0.25 ? '#d94a63' : '#e0566d',
       '#f4a6c0',
       this.assets.heart,
       `${Math.ceil(me.hp)}`,
     );
     bar(
       y + 26,
-      me.shield,
+      (me.shield / maxSh) * 100,
       '#3b7fe0',
       '#73eff7',
       this.assets.shieldBadge,
       `${Math.ceil(me.shield)}`,
     );
     this.drawFish(f, x, y + 52, me.stamina, me.tired, bw + 26);
+    if (g.mode === 'aventura') this.advHud.drawGear(f, x, touch ? y + 112 : y - 8);
     if (pulse)
       text(
         ctx,
@@ -1051,6 +1071,14 @@ export class Hud {
       emoteIcon: this.assets.emote.face[0],
       emoteOpen: input.emoteOpen,
       reloadFrac: this.reloadFrac,
+      ...(g.mode === 'aventura'
+        ? {
+            dash: {
+              ready:
+                g.me?.dash === undefined || g.me.dash <= 0.05 ? 1 : 1 - g.me.dash / DASH.cooldown,
+            },
+          }
+        : {}),
       drawSlot: (c: Circle, i: number) => {
         this.drawItemCell(
           ctx,

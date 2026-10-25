@@ -35,12 +35,8 @@ describe('salas por modo: pelea en el techo', () => {
     return s;
   }
 
-  it('los modos que todavia no estan listos se rechazan con un mensaje claro', async () => {
+  it('un modo que no existe se rechaza con un mensaje claro', async () => {
     const s = await player('impaciente');
-    expect(await emitAck(s, 'room:create', { mode: 'aventura' })).toEqual({
-      ok: false,
-      error: 'modo_no_disponible',
-    });
     expect(await emitAck(s, 'room:create', { mode: 'inventado' })).toEqual({
       ok: false,
       error: 'datos_invalidos',
@@ -167,4 +163,60 @@ describe('salas por modo: pelea en el techo', () => {
       error: 'fuera_de_tiempo',
     });
   }, 30_000);
+});
+
+describe('salas por modo: aventura', () => {
+  let server: TestServer;
+  const sockets: Socket[] = [];
+  beforeAll(async () => {
+    server = await startServer({ countdownSeconds: 1, celebrationSeconds: 0.3 });
+  });
+  afterAll(async () => {
+    sockets.forEach((s) => s.close());
+    await server.close();
+  });
+
+  it('una sola persona entra sin bots al bosque, trae sus mejoras y elige su reliquia', async () => {
+    const cookie = await registerUser(server, 'exploradorgato');
+    const s = connectSocket(server, cookie);
+    sockets.push(s);
+    await onceEvent(s, 'connect');
+    expect(
+      await emitAck(s, 'room:meta', {
+        vida: 2,
+        garras: 1,
+        municion: 0,
+        botiquin: 1,
+        vidas: 1,
+        reliquia: 1,
+      }),
+    ).toEqual({ ok: true });
+    expect((await emitAck(s, 'room:meta', { vida: 99 })).ok).toBe(false);
+    const started = onceEvent<GameStartPayload>(s, 'game:start', 8000);
+    const created = await emitAck(s, 'room:create', { mode: 'aventura', isPrivate: true });
+    expect(created.ok).toBe(true);
+    await emitAck(s, 'room:ready', { ready: true });
+    const start = await started;
+    expect(start.mode).toBe('aventura');
+    expect(start.map).toBe('encantado');
+    expect(start.cats).toHaveLength(1);
+    expect(start.cats.every((c) => !c.bot)).toBe(true);
+
+    let snap = await onceEvent<BRSnapshot>(s, 'game:snap');
+    for (let i = 0; i < 10 && !snap.adv?.choice; i++)
+      snap = await onceEvent<BRSnapshot>(s, 'game:snap');
+    expect(snap.mode).toBe('aventura');
+    expect(snap.adv?.lives).toBe(8);
+    expect(snap.adv?.choice).toHaveLength(3);
+    expect(snap.me?.maxHp).toBe(120);
+    expect(await emitAck(s, 'game:relic', { i: 7 })).toEqual({
+      ok: false,
+      error: 'datos_invalidos',
+    });
+    expect((await emitAck(s, 'game:relic', { i: 1 })).ok).toBe(true);
+    let next = await onceEvent<BRSnapshot>(s, 'game:snap');
+    for (let i = 0; i < 6 && next.adv?.choice; i++)
+      next = await onceEvent<BRSnapshot>(s, 'game:snap');
+    expect(next.adv?.choice ?? []).toHaveLength(0);
+  });
 });

@@ -27,8 +27,10 @@ import {
   kitSchema,
   lootIdSchema,
   lootTakeSchema,
+  metaSchema,
   moveItemSchema,
   readySchema,
+  relicSchema,
   roomSettingsSchema,
   selectSchema,
   skinSchema,
@@ -57,6 +59,8 @@ import { defaultSkin, isValidSkin, randomSkin, type Skin } from '../shared/br/sk
 import { createRng } from '../shared/rng';
 import type { SessionUser } from './auth';
 import { BRGame, type CatInit } from './br/Game';
+import { clampMeta, type MetaLevels } from '../shared/br/adventure';
+import { AdventureGame } from './br/AdventureGame';
 import { PvpGame } from './br/PvpGame';
 import type { Config } from './config';
 import type { Repo } from './db';
@@ -149,6 +153,8 @@ export class Lobby {
   private readonly sockets = new Map<number, Socket>();
   /** El pelaje elegido se recuerda mientras el servidor siga vivo. */
   private readonly skins = new Map<number, Skin>();
+  /** Mejoras permanentes de la Aventura que trae cada persona (las guarda su navegador). */
+  private readonly metas = new Map<number, MetaLevels>();
   /** Ultima lista publica enviada, para avisar solo cuando cambia. */
   private publicSignature = '[]';
   private publicTimer: NodeJS.Timeout | null = null;
@@ -262,6 +268,22 @@ export class Lobby {
       const done = m.game.chooseKit(m.member.catId, parsed.data.kit as KitId);
       ack?.(done ? { ok: true } : fail('fuera_de_tiempo'));
     });
+    socket.on('game:relic', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = relicSchema.safeParse(raw);
+      const m = me();
+      if (!parsed.success || !(m?.game instanceof AdventureGame))
+        return ack?.(fail('datos_invalidos'));
+      const done = m.game.chooseRelic(m.member.catId, parsed.data.i);
+      ack?.(done ? { ok: true } : fail('sin_oferta'));
+    });
+    socket.on('room:meta', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = metaSchema.safeParse(raw);
+      if (!parsed.success) return ack?.(fail('datos_invalidos'));
+      this.metas.set(user.id, clampMeta(parsed.data));
+      ack?.({ ok: true });
+    });
     socket.on('game:emote', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = emoteSchema.safeParse(raw);
@@ -277,6 +299,19 @@ export class Lobby {
       if (!this.config.testKit || !(m?.game instanceof PvpGame)) return;
       const mine = m.game.cat(m.member.catId);
       if (mine) m.game.forceRoundWin(mine.team);
+    });
+    socket.on('dev:room', (i?: unknown) => {
+      const m = me();
+      if (this.config.testKit && m?.game instanceof AdventureGame && Number.isInteger(i))
+        m.game.debugTeleport(i as number);
+    });
+    socket.on('dev:win', () => {
+      const m = me();
+      if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugWin();
+    });
+    socket.on('dev:arm', () => {
+      const m = me();
+      if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugArm(m.member.catId);
     });
     socket.on('dev:finish', () => {
       const m = me();
@@ -811,7 +846,11 @@ export class Lobby {
     for (let i = 0; i < 5 && !game; i++) {
       try {
         const seed = randomInt(1, 2_000_000_000);
-        if (room.mode === 'techo' || room.mode === 'territorio') {
+        if (room.mode === 'aventura') {
+          const meta: Record<number, MetaLevels> = {};
+          for (const m of members) meta[m.catId] = this.metas.get(m.userId) ?? clampMeta({});
+          game = new AdventureGame({ seed, cats, meta });
+        } else if (room.mode === 'techo' || room.mode === 'territorio') {
           game = new PvpGame({
             seed,
             mapKind,
@@ -867,12 +906,13 @@ export class Lobby {
           const winner = result ? game.cat(result.winnerId ?? -1) : undefined;
           const team = result?.winnerTeam;
           this.io.to(room.code).emit('game:win', {
-            winnerId: result?.winnerId ?? null,
+            winnerId: result?.adv ? null : (result?.winnerId ?? null),
             winnerName:
               team !== undefined && team !== null
                 ? `Equipo ${TEAM_NAMES[team as 0 | 1]}`
                 : (winner?.name ?? null),
             ...(team !== undefined ? { winnerTeam: team, score: result?.score } : {}),
+            ...(result?.adv ? { adv: result.adv.victory ? 'victory' : 'defeat' } : {}),
           });
         }
       }

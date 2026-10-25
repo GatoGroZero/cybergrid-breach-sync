@@ -41,6 +41,9 @@ import {
 } from './ui/modes';
 import { Painter, drawCatIcon, startWalker } from './ui/painter';
 import { Settings } from './ui/settings';
+import { Shrine } from './ui/santuario';
+import { relicIcon } from './pixel/art-items';
+import { RELICS } from '../shared/br/adventure';
 
 const canvas = $<HTMLCanvasElement>('game');
 const screenAuth = $('screen-auth');
@@ -127,6 +130,11 @@ const input = new InputController(canvas, {
     else toggleMenu();
   },
   onSelect: (slot) => {
+    // en la Aventura, si hay reliquias para elegir, los numeros 1 a 3 eligen una
+    if (game?.adv?.choice) {
+      game.sendRelic(slot);
+      return;
+    }
     // en la eleccion de kit, los numeros 1 a 4 eligen el kit
     if (game?.pvp?.phase === 'pick') {
       const id = KIT_IDS[slot];
@@ -136,6 +144,10 @@ const input = new InputController(canvas, {
     game?.select(slot);
   },
   onKit: (index) => {
+    if (game?.adv?.choice) {
+      game.sendRelic(index);
+      return;
+    }
     const id = KIT_IDS[index];
     if (id) game?.sendKit(id);
   },
@@ -282,8 +294,17 @@ const picker = new ModePicker();
 const refreshSoloHelp = (): void => {
   $('solo-help').textContent = soloHelp(picker.mode, picker.format, picker.teamSize);
 };
-picker.onChange = refreshSoloHelp;
-refreshSoloHelp();
+const shrine = new Shrine();
+const shrineBtn = $('btn-shrine');
+const refreshMode = (): void => {
+  refreshSoloHelp();
+  shrineBtn.hidden = picker.mode !== 'aventura';
+};
+picker.onChange = refreshMode;
+refreshMode();
+shrineBtn.addEventListener('click', () => shrine.open());
+$('btn-results-shrine').addEventListener('click', () => shrine.open());
+shrine.onChange = (levels) => net?.socket.emit('room:meta', levels);
 
 /** Opciones de bots: llenar, o una cantidad exacta de 0 a 9. */
 function fillBotsSelect(select: HTMLSelectElement): void {
@@ -377,6 +398,7 @@ function wireNet(n: Net): void {
   s.on('connect', () => {
     setNetChip(true);
     s.emit('skin:set', painter.skin);
+    s.emit('room:meta', shrine.save.levels);
     if (hasConnectedBefore) watchResume();
     hasConnectedBefore = true;
   });
@@ -624,14 +646,16 @@ function renderRoom(): void {
         ? `${MODES.territorio.name} (${teamSizeLabel(room.teamSize)})`
         : MODES[room.mode].name;
   $('room-meta').textContent =
-    `${modeText} · ${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · ${people} + ${botsLabel(room.botCount)}`;
+    `${modeText} · ${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · ${people}${room.mode === 'aventura' ? '' : ` + ${botsLabel(room.botCount)}`}`;
   $('room-code').textContent = room.code;
   $('bots-line').textContent =
-    room.teamSize > 0
-      ? `Cada equipo es de ${room.teamSize}; los lugares libres se llenan con bots.`
-      : room.bots === BOTS_FILL
-        ? `Los lugares libres se llenan con bots (hasta ${room.maxPlayers} gatos).`
-        : `${botsLabel(room.bots)} fijos: caben ${room.maxHumans} personas.`;
+    room.mode === 'aventura'
+      ? 'La aventura es de 1 a 4 gatos, sin bots: entre más amigos, más enemigos y más vidas.'
+      : room.teamSize > 0
+        ? `Cada equipo es de ${room.teamSize}; los lugares libres se llenan con bots.`
+        : room.bots === BOTS_FILL
+          ? `Los lugares libres se llenan con bots (hasta ${room.maxPlayers} gatos).`
+          : `${botsLabel(room.bots)} fijos: caben ${room.maxHumans} personas.`;
 
   const list = $('member-list');
   list.replaceChildren();
@@ -886,6 +910,12 @@ function updateHud(g: ClientBR, n: Net): void {
     pvpPhase: g.pvp?.phase ?? '',
     round: g.pvp?.round ?? 0,
     wins: g.pvp ? `${g.pvp.wins[0]}-${g.pvp.wins[1]}` : '',
+    advRoom: g.adv?.room ?? -1,
+    advLives: g.adv?.lives ?? -1,
+    advMobs: g.latest?.mobs?.length ?? 0,
+    advChoice: g.adv?.choice?.length ?? 0,
+    advRelics: g.adv?.relics.length ?? 0,
+    advClosed: g.closedRooms.size,
   };
 }
 
@@ -959,18 +989,33 @@ function endGame(payload: GameEndPayload): void {
   menuEl.hidden = true;
   inventory.close();
   const me = payload.rows.find((r) => r.id === game?.you);
+  const advGame = payload.adv !== undefined;
+  $('results-adv').hidden = !advGame;
+  if (advGame && payload.adv) showAdventureResults(payload, me);
   const teamGame = payload.winnerTeam !== undefined;
   const myTeam = game.teamOf(game.you);
-  const win = teamGame ? payload.winnerTeam === myTeam : payload.winnerId === game.you;
+  const win = advGame
+    ? payload.adv?.victory === true
+    : teamGame
+      ? payload.winnerTeam === myTeam
+      : payload.winnerId === game.you;
   const title = $('results-title');
-  title.textContent = win
-    ? teamGame
-      ? '¡VICTORIA DEL EQUIPO!'
-      : '¡VICTORIA REAL!'
-    : 'Fin de la partida';
+  title.textContent = advGame
+    ? win
+      ? '¡EL BOSQUE ESTÁ A SALVO!'
+      : 'El bosque los venció'
+    : win
+      ? teamGame
+        ? '¡VICTORIA DEL EQUIPO!'
+        : '¡VICTORIA REAL!'
+      : 'Fin de la partida';
   title.dataset.win = String(win);
   const winner = payload.rows.find((r) => r.placement === 1);
-  if (teamGame) {
+  if (advGame && payload.adv) {
+    $('results-sub').textContent = win
+      ? `Derrotaron al Rey Gato de las Sombras en ${fmtClock(payload.durationS)}.`
+      : `Llegaron a la sala ${Math.min(payload.adv.totalRooms, payload.adv.rooms + 1)} de ${payload.adv.totalRooms}. Cada intento los hace más fuertes.`;
+  } else if (teamGame) {
     const score = payload.score ?? [0, 0];
     const name =
       payload.winnerTeam === null ? 'Nadie' : `Equipo ${TEAM_NAMES[payload.winnerTeam as 0 | 1]}`;
@@ -981,17 +1026,26 @@ function endGame(payload: GameEndPayload): void {
       ? `Eres el último gato en pie. ${me?.kills ?? 0} bajas en ${Math.round(payload.durationS)} s.`
       : `${winner ? `Ganó ${winner.name}. ` : ''}Quedaste en el puesto ${me?.placement ?? '?'} de ${payload.rows.length}.`;
   }
+  const head = $('results-head');
+  head.replaceChildren();
+  (advGame
+    ? ['Gato', 'Bajas', 'Daño', 'Esencia']
+    : ['Puesto', 'Gato', 'Bajas', 'Daño', 'Tiempo']
+  ).forEach((t) => head.append(el('th', '', t)));
   const body = $('results-body');
   body.replaceChildren();
   for (const r of [...payload.rows].sort((a, b) => a.placement - b.placement)) {
     const tr = el('tr', r.id === game.you ? 'me' : '');
-    [
-      teamGame ? (r.placement === 1 ? 'Ganó' : 'Perdió') : placementText(r.placement),
-      r.name + (r.bot ? ' (bot)' : ''),
-      String(r.kills),
-      String(r.damageDealt),
-      `${Math.round(r.survivalS)} s`,
-    ].forEach((t) => tr.append(el('td', '', t)));
+    (advGame
+      ? [r.name, String(r.kills), String(r.damageDealt), `+${payload.adv?.essence[r.id] ?? 0}`]
+      : [
+          teamGame ? (r.placement === 1 ? 'Ganó' : 'Perdió') : placementText(r.placement),
+          r.name + (r.bot ? ' (bot)' : ''),
+          String(r.kills),
+          String(r.damageDealt),
+          `${Math.round(r.survivalS)} s`,
+        ]
+    ).forEach((t) => tr.append(el('td', '', t)));
     body.append(tr);
   }
   if (resultsTimer !== null) window.clearTimeout(resultsTimer);
@@ -1008,6 +1062,48 @@ function endGame(payload: GameEndPayload): void {
     },
     win ? 1600 : 900,
   );
+}
+
+const fmtClock = (sec: number): string => {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/** Aventura: resumen, reliquias reunidas y la esencia lunar que se lleva este gato. */
+function showAdventureResults(
+  payload: GameEndPayload,
+  me: GameEndPayload['rows'][number] | undefined,
+): void {
+  const adv = payload.adv;
+  if (!adv) return;
+  const stats = $('adv-stats');
+  stats.replaceChildren();
+  const add = (value: string, label: string): void => {
+    const li = el('li');
+    li.append(el('b', '', value), el('span', '', label));
+    stats.append(li);
+  };
+  add(`${adv.rooms}/${adv.totalRooms}`, 'salas superadas');
+  add(`${adv.bosses}/6`, 'jefes derrotados');
+  add(String(adv.kills), 'enemigos vencidos');
+  add(fmtClock(payload.durationS), 'tiempo');
+  const relics = $('adv-relics');
+  relics.replaceChildren();
+  for (const id of adv.relics) {
+    const c = el('canvas');
+    const icon = relicIcon(id);
+    c.width = icon.width;
+    c.height = icon.height;
+    (c.getContext('2d') as CanvasRenderingContext2D).drawImage(icon, 0, 0);
+    c.title = RELICS[id]?.name ?? '';
+    relics.append(c);
+  }
+  const mine = me ? (adv.essence[me.id] ?? 0) : 0;
+  if (game && !game.essenceBanked) {
+    game.essenceBanked = true;
+    shrine.bank(mine, adv.rooms, adv.victory);
+  }
+  $('adv-essence').textContent = `+${mine} de esencia lunar (en tu bolsa: ${shrine.save.essence})`;
 }
 
 function leaveGameView(): void {
@@ -1145,6 +1241,12 @@ declare global {
       pvpPhase: string;
       round: number;
       wins: string;
+      advRoom: number;
+      advLives: number;
+      advMobs: number;
+      advChoice: number;
+      advRelics: number;
+      advClosed: number;
     };
   }
 }

@@ -50,6 +50,8 @@ export class DaylightFx {
   private readonly flies: Firefly[] = [];
   private readonly bats: Bat[] = [];
   private batAt = 0;
+  /** Brillo minimo de las luciernagas (el bosque encantado las tiene siempre). */
+  private baseGlow = 0;
   private readonly batFrames: HTMLCanvasElement[];
 
   constructor() {
@@ -119,7 +121,12 @@ export class DaylightFx {
   ): void {
     const l = this.light;
     // luciernagas: aparecen de noche en el bosque y la piscina; en la casa son motas de luz
-    const want = Math.round(l.night * (kind === 'casa' ? 10 : 24));
+    // en el bosque encantado siempre flotan motas de luz, y de noche son muchas mas
+    this.baseGlow = kind === 'encantado' ? 0.5 : 0;
+    const want =
+      kind === 'encantado'
+        ? Math.round(10 + l.night * 30)
+        : Math.round(l.night * (kind === 'casa' ? 10 : 24));
     while (this.flies.length < want) {
       this.flies.push({
         x: cam.x + Math.random() * cam.w,
@@ -150,7 +157,7 @@ export class DaylightFx {
     // murcielagos: cruzan la pantalla al atardecer y de noche
     const batLevel = Math.max(l.dusk, l.night * 0.7);
     if (batLevel > 0.15) {
-      if (now > this.batAt) {
+      if (now > this.batAt && this.baseGlow === 0) {
         this.batAt = now + (6 + Math.random() * 9) * 1000 * (1.3 - batLevel);
         const dir = Math.random() < 0.5 ? 1 : -1;
         const n = Math.random() < 0.35 ? 2 : 1;
@@ -182,7 +189,7 @@ export class DaylightFx {
       const prev = b.globalCompositeOperation;
       for (const f of this.flies) {
         const pulse = 0.5 + 0.5 * Math.sin(f.phase * 3.1);
-        const a = l.night * (0.25 + 0.75 * pulse);
+        const a = Math.max(l.night, this.baseGlow) * (0.25 + 0.75 * pulse);
         if (a < 0.05) continue;
         const sx = Math.round(f.x - camX);
         const sy = Math.round(f.y - camY);
@@ -280,6 +287,7 @@ export class DaylightFx {
 
 /** Luces fijas de un mapa: las casas encendidas y las calabazas. */
 export function staticLights(map: BRMap): LightSrc[] {
+  const forest = map.kind === 'encantado';
   const out: LightSrc[] = [];
   for (const h of map.houses) {
     if (h.kind === 'bed') continue;
@@ -313,6 +321,17 @@ export function staticLights(map: BRMap): LightSrc[] {
         k: 0.85,
         warm: '#ffe08a',
         warmK: 0.4,
+      });
+      continue;
+    }
+    if (forest && (p.kind === 'crystal' || p.kind === 'mushroom')) {
+      out.push({
+        x: p.x * TILE + TILE / 2,
+        y: p.y * TILE + TILE / 2 - 4,
+        r: p.kind === 'crystal' ? 38 : 24,
+        k: p.kind === 'crystal' ? 0.85 : 0.55,
+        warm: p.kind === 'crystal' ? '#73eff7' : '#b794f4',
+        warmK: 0.45,
       });
       continue;
     }

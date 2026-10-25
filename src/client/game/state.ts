@@ -1,4 +1,6 @@
 import { CAT, INTEREST_RADIUS, TICK_DT, TILE } from '../../shared/br/constants';
+import { DASH } from '../../shared/br/adventure';
+import { GATE_SOLID } from '../../shared/br/mapadv';
 import { SnapshotBuffer } from '../../shared/interp';
 import {
   AMMO_KINDS,
@@ -23,10 +25,13 @@ import type {
   WinPayload,
 } from '../../shared/br/protocol';
 import type {
+  AdvState,
   BREvent,
   BRSnapshot,
   ContainerTuple,
+  HazardTuple,
   MeState,
+  PickupTuple,
   PvpState,
   ZoneView,
 } from '../../shared/br/types';
@@ -56,6 +61,19 @@ export interface ShotView {
   ang: number;
 }
 
+/** Un enemigo ya interpretado de la instantanea. */
+export interface MobView {
+  id: number;
+  x: number;
+  y: number;
+  kind: number;
+  /** Vida en porcentaje (1 a 100). */
+  hp: number;
+  /** Banderas de MOB_FLAG. */
+  flags: number;
+  ang: number;
+}
+
 export interface Banner {
   text: string;
   until: number;
@@ -67,9 +85,14 @@ interface Pending {
   mx: number;
   my: number;
   run: boolean;
+  /** Aventura: velocidad extra de reliquias y pociones, y la voltereta si estaba en curso. */
+  extra: number;
+  dash: { dx: number; dy: number } | null;
 }
 
 const INTERP_DELAY_MS = 90;
+/** Multiplicador de velocidad durante la voltereta (igual que en el servidor). */
+const DASH_MUL = DASH.distance / DASH.seconds / CAT.speed;
 const DEG = Math.PI / 180;
 
 export class ClientBR {
@@ -119,6 +142,19 @@ export class ClientBR {
 
   private readonly catBuf = new SnapshotBuffer<CatView>();
   private readonly shotBuf = new SnapshotBuffer<ShotView>();
+  private readonly mobBuf = new SnapshotBuffer<MobView>();
+  /** Aventura: zonas de peligro, botin del suelo y estado del grupo (de la ultima instantanea). */
+  hazards: HazardTuple[] = [];
+  pickups: PickupTuple[] = [];
+  adv: AdvState | null = null;
+  /** Salas cuyas puertas de enredadera estan cerradas, y desde cuando esta activa cada una. */
+  private readonly gateClosed = new Set<number>();
+  private readonly roomSince = new Map<number, number>();
+  /** Voltereta predicha: segundos que le quedan, direccion y segundos hasta poder repetirla. */
+  private dashLeft = 0;
+  private dashDx = 0;
+  private dashDy = 0;
+  private dashCool = 0;
   private readonly eventQueue: { t: number; ev: BREvent }[] = [];
   private serverOffset = 0;
   private haveOffset = false;
@@ -149,6 +185,19 @@ export class ClientBR {
   hurtFlash = 0;
   healPulse = 0;
 
+  /** Aventura: la esencia de esta partida ya se sumo a la bolsa (para no contarla dos veces). */
+  essenceBanked = false;
+  /** Aventura: cartel grande al entrar a una sala o superarla. */
+  advBanner: { title: string; sub: string; at: number; tone: 'info' | 'good' | 'bad' } | null =
+    null;
+  private lastAdvRoom = -1;
+  private lastAdvStates: number[] = [];
+  private lastAdvChoice = false;
+
+  /** Aventura: un enemigo acaba de disparar (tipo de bala y lugar). */
+  onHostile: (kind: number, x: number, y: number) => void = () => undefined;
+  private hostileSeen = new Set<number>();
+
   /** El renderizador se suscribe para recibir los eventos cuando les toca verse. */
   onEvent: (ev: BREvent) => void = () => undefined;
   onInventory: () => void = () => undefined;
@@ -165,6 +214,7 @@ export class ClientBR {
     this.mode = start.mode ?? 'br';
     this.teamSize = start.teamSize ?? 0;
     this.map = generateMap(this.mapKind, start.seed);
+    input.dashEnabled = this.mode === 'aventura';
     this.you = start.you;
     start.cats.forEach((c) => this.cats.set(c.id, c));
     const spawn = this.map.spawns[0] ?? { x: 100, y: 100 };
@@ -253,6 +303,38 @@ export class ClientBR {
       shots.set(t[0], { id: t[0], x: t[1], y: t[2], kind: t[3], ang: t[4] * DEG });
     this.shotBuf.push(snap.t, shots);
 
+    if (this.mode === 'aventura') {
+      const mobs = new Map<number, MobView>();
+      for (const t of snap.mobs ?? [])
+        mobs.set(t[0], {
+          id: t[0],
+          x: t[1],
+          y: t[2],
+          kind: t[3],
+          hp: t[4],
+          flags: t[5],
+          ang: t[6] * DEG,
+        });
+      this.mobBuf.push(snap.t, mobs);
+      const fresh = new Set<number>();
+      let played = 0;
+      for (const t of snap.shots) {
+        if (t[3] < 64) continue;
+        fresh.add(t[0]);
+        if (!this.hostileSeen.has(t[0]) && played < 3) {
+          played++;
+          this.onHostile(t[3], t[1], t[2]);
+        }
+      }
+      this.hostileSeen = fresh;
+      this.hazards = snap.haz ?? [];
+      this.pickups = snap.pk ?? [];
+      this.adv = snap.adv ?? null;
+      if (snap.adv) this.trackAdv(snap.adv);
+      this.syncGates(snap.adv ?? null);
+      if (snap.me.dash !== undefined)
+        this.dashCool = Math.max(0, snap.me.dash - this.pending.length * TICK_DT);
+    }
     this.syncWalls(snap);
     for (const ev of snap.ev) this.eventQueue.push({ t: snap.t, ev });
     for (const f of snap.feed ?? []) {
@@ -269,6 +351,87 @@ export class ClientBR {
       this.x = snap.me.x;
       this.y = snap.me.y;
     }
+  }
+
+  /** Aventura: carteles al cambiar de sala y sonidos de sala superada y de reliquia nueva. */
+  private trackAdv(adv: AdvState): void {
+    const now = performance.now();
+    if (adv.room !== this.lastAdvRoom) {
+      const first = this.lastAdvRoom < 0;
+      this.lastAdvRoom = adv.room;
+      if (!first && adv.roomKind !== 'inicio') {
+        const boss = adv.roomKind === 'minijefe' || adv.roomKind === 'jefe';
+        this.advBanner = {
+          title:
+            adv.roomKind === 'jefe'
+              ? 'EL JEFE FINAL'
+              : boss
+                ? 'GUARIDA DE MINIJEFE'
+                : adv.roomKind === 'tesoro'
+                  ? 'SALA DEL TESORO'
+                  : adv.roomKind === 'descanso'
+                    ? 'LUGAR DE DESCANSO'
+                    : `SALA ${adv.room + 1}`,
+          sub: adv.roomName,
+          at: now,
+          tone: boss ? 'bad' : 'info',
+        };
+      }
+    }
+    adv.states.forEach((st, i) => {
+      const before = this.lastAdvStates[i];
+      if (before === 1 && st === 2) {
+        this.sfx.roomClear();
+        if (i === adv.room)
+          this.advBanner = {
+            title: 'SALA SUPERADA',
+            sub: adv.roomKind === 'combate' ? 'Recoge lo que dejaron y sigue adelante' : '',
+            at: now,
+            tone: 'good',
+          };
+      }
+    });
+    this.lastAdvStates = adv.states.slice();
+    const choosing = adv.choice !== null;
+    if (choosing && !this.lastAdvChoice) this.sfx.offer();
+    this.lastAdvChoice = choosing;
+  }
+
+  /** Aventura: las puertas de enredadera se cierran con la pelea y se abren al ganarla. */
+  private syncGates(adv: AdvState | null): void {
+    if (!adv) return;
+    const now = performance.now();
+    adv.states.forEach((state, i) => {
+      if (state === 1) {
+        const since = this.roomSince.get(i) ?? now;
+        this.roomSince.set(i, since);
+        // por si se perdio el aviso de cierre: pasado un rato de pelea, la puerta ya esta cerrada
+        if (!this.gateClosed.has(i) && now - since > 2600) this.setGates(i, true);
+      } else {
+        this.roomSince.delete(i);
+        if (this.gateClosed.has(i)) this.setGates(i, false);
+      }
+    });
+  }
+
+  private setGates(room: number, closed: boolean): void {
+    const def = this.map.rooms?.[room];
+    if (!def) return;
+    for (const g of def.gates) this.map.solid[g.y * this.map.w + g.x] = closed ? GATE_SOLID : 0;
+    if (closed) this.gateClosed.add(room);
+    else this.gateClosed.delete(room);
+  }
+
+  /** Puertas cerradas ahora mismo (para dibujarlas). */
+  get closedRooms(): ReadonlySet<number> {
+    return this.gateClosed;
+  }
+
+  /** Aventura: elige una de las reliquias ofrecidas (0 a 2). */
+  sendRelic(i: number): void {
+    if (!this.net.connected || !this.adv?.choice || i < 0 || i >= this.adv.choice.length) return;
+    this.net.socket.emit('game:relic', { i });
+    this.sfx.click();
   }
 
   /** Los muros colocados viven en la cuadricula de colisiones: se sincronizan con lo que se ve cerca. */
@@ -303,6 +466,20 @@ export class ClientBR {
 
   /** La partida termino: el mundo se congela y empieza la celebracion del ganador. */
   onWin(payload: WinPayload): void {
+    if (payload.adv) {
+      // Aventura: se gana o se pierde todo el grupo a la vez
+      this.inputFrozen = true;
+      if (payload.adv === 'victory') {
+        this.win = payload;
+        this.winAt = performance.now();
+        this.say('¡EL BOSQUE ESTÁ A SALVO!', 'good', 6500);
+        this.sfx.win();
+      } else {
+        this.say('El bosque los venció', 'bad', 5200);
+        this.sfx.lose();
+      }
+      return;
+    }
     this.win = payload;
     this.winAt = performance.now();
     this.inputFrozen = true;
@@ -330,13 +507,17 @@ export class ClientBR {
     // Se repiten los inputs que el servidor todavia no confirmo, con su estamina incluida.
     const st: StaminaState = { value: me.stamina, tired: me.tired };
     for (const p of this.pending) {
+      if (p.dash) {
+        stepCat(this.map, motion, { mx: p.dash.dx, my: p.dash.dy }, TICK_DT, DASH_MUL);
+        continue;
+      }
       const running = stepStamina(st, p.run, Math.min(1, Math.hypot(p.mx, p.my)), TICK_DT);
       stepCat(
         this.map,
         motion,
         { mx: p.mx, my: p.my },
         TICK_DT,
-        running ? STAMINA.runMultiplier : 1,
+        (running ? STAMINA.runMultiplier : 1) * p.extra,
       );
     }
     this.stamina = st;
@@ -401,11 +582,45 @@ export class ClientBR {
       fire: sample.fire,
       hold: sample.hold,
       run: sample.run,
+      ...(sample.dash && this.mode === 'aventura' ? { dash: true } : {}),
     };
     const before = { x: this.x, y: this.y };
     const motion = { x: this.x, y: this.y };
-    this.running = stepStamina(this.stamina, sample.run, Math.min(1, Math.hypot(mx, my)), TICK_DT);
-    stepCat(this.map, motion, { mx, my }, TICK_DT, this.running ? STAMINA.runMultiplier : 1);
+    // Aventura: la voltereta y la velocidad de reliquias y pociones se predicen como el servidor
+    let dash: Pending['dash'] = null;
+    let extra = 1;
+    if (this.mode === 'aventura') {
+      this.dashCool = Math.max(0, this.dashCool - TICK_DT);
+      if (sample.dash && this.dashLeft <= 0 && this.dashCool <= 0) {
+        const len = Math.hypot(mx, my);
+        this.dashDx = len > 0.1 ? mx / len : Math.cos(sample.aim);
+        this.dashDy = len > 0.1 ? my / len : Math.sin(sample.aim);
+        this.dashLeft = DASH.seconds;
+        this.dashCool = DASH.cooldown;
+      }
+      if (this.dashLeft > 0) {
+        this.dashLeft -= TICK_DT;
+        dash = { dx: this.dashDx, dy: this.dashDy };
+      } else extra = this.me?.spd ?? 1;
+    }
+    if (dash) {
+      this.running = false;
+      stepCat(this.map, motion, { mx: dash.dx, my: dash.dy }, TICK_DT, DASH_MUL);
+    } else {
+      this.running = stepStamina(
+        this.stamina,
+        sample.run,
+        Math.min(1, Math.hypot(mx, my)),
+        TICK_DT,
+      );
+      stepCat(
+        this.map,
+        motion,
+        { mx, my },
+        TICK_DT,
+        (this.running ? STAMINA.runMultiplier : 1) * extra,
+      );
+    }
     this.prevX = before.x;
     this.prevY = before.y;
     this.x = motion.x;
@@ -413,16 +628,24 @@ export class ClientBR {
     this.stepDX = this.x - before.x;
     this.stepDY = this.y - before.y;
     this.moving = Math.hypot(this.stepDX, this.stepDY) > 0.05;
-    this.pending.push({ seq: payload.seq, mx, my, run: sample.run });
+    this.pending.push({ seq: payload.seq, mx, my, run: sample.run, extra, dash });
     if (this.pending.length > 90) this.pending.shift();
     this.net.socket.emit('game:input', payload);
   }
 
   // ---------------------------------------------------------------- vista del mundo
 
-  sampleWorld(): { cats: Map<number, CatView>; shots: Map<number, ShotView> } {
+  sampleWorld(): {
+    cats: Map<number, CatView>;
+    shots: Map<number, ShotView>;
+    mobs: Map<number, MobView>;
+  } {
     const t = this.renderTime;
-    return { cats: this.catBuf.sample(t, 70), shots: this.shotBuf.sample(t, 25) };
+    return {
+      cats: this.catBuf.sample(t, 70),
+      shots: this.shotBuf.sample(t, 25),
+      mobs: this.mode === 'aventura' ? this.mobBuf.sample(t, 70) : new Map(),
+    };
   }
 
   /** Posicion a la que apunta la camara: el gato propio o a quien se esta viendo si ya caiste. */
@@ -530,8 +753,12 @@ export class ClientBR {
   aimLocked(angle: number): boolean {
     const item = this.selectedItem;
     const range = item && isWeapon(item.kind) ? WEAPONS[item.kind].range : CLAWS.range + 8;
-    const { cats } = this.sampleWorld();
-    const others = [...cats.values()].filter((c) => c.id !== this.you && (c.flags & 1) === 0);
+    const { cats, mobs } = this.sampleWorld();
+    // en la Aventura se apunta a los enemigos; en los demas modos, a los otros gatos
+    const others =
+      this.mode === 'aventura'
+        ? [...mobs.values()]
+        : [...cats.values()].filter((c) => c.id !== this.you && (c.flags & 1) === 0);
     return aimTouchesTarget(this.map, this.x, this.y, angle, range, others);
   }
 
@@ -577,6 +804,13 @@ export class ClientBR {
       case 'emote':
         this.emotes.set(ev.id, { k: ev.k, at: performance.now() });
         break;
+      case 'gate': {
+        const i = this.map.rooms?.findIndex((r) =>
+          r.gates.some((g) => g.x * TILE === ev.x && g.y * TILE === ev.y),
+        );
+        if (i !== undefined && i >= 0) this.setGates(i, !ev.open);
+        break;
+      }
       case 'heal':
         if (Math.hypot(ev.x - this.x, ev.y - this.y) < 10) this.healPulse = 1;
         break;

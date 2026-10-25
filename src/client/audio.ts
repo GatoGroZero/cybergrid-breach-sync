@@ -36,7 +36,10 @@ export function surfaceFor(ground: number): Surface {
     case G.WALLTOP:
       return 'stone';
     case G.WATER:
+    case G.CHARCO:
       return 'water';
+    case G.RUNAS:
+      return 'stone';
     case G.TEJA:
     case G.TEJA2:
     case G.PIZARRA:
@@ -670,6 +673,215 @@ export class Sfx {
 
   // ------------------------------------------------------------------ ambiente
 
+  // ------------------------------------------------------------------ aventura
+
+  /** Aviso de ataque enemigo: algo carga energia (o un gruñido si es una embestida). */
+  telegraph(v = 1, pan = 0, charge = false): void {
+    this.ch = 'damage';
+    if (charge) {
+      this.tone(140, 0.28, 'sawtooth', 0.05 * v, 90, pan);
+      this.noise(0.2, 0.04 * v, 700, pan, 'bandpass', 0.8);
+    } else {
+      this.tone(170, 0.32, 'sawtooth', 0.04 * v, 330, pan);
+      this.tone(880, 0.07, 'square', 0.014 * v, 1100, pan, 0.18);
+    }
+  }
+
+  /** Cae un enemigo: cada familia suena distinto y los jefes retumban. */
+  mobDie(kind: number, boss: boolean, v = 1, pan = 0): void {
+    this.ch = 'damage';
+    if (boss) {
+      this.tone(120, 1.3, 'sawtooth', 0.11 * v, 32, pan);
+      this.tone(240, 0.9, 'square', 0.05 * v, 55, pan, 0.08);
+      this.noise(1.1, 0.13 * v, 520, pan);
+      [523, 659, 784, 1047].forEach((f, i) =>
+        this.tone(f, 0.5, 'triangle', 0.05 * v, undefined, pan, 0.55 + i * 0.1),
+      );
+      return;
+    }
+    switch (kind) {
+      case 0: // raton: chillido corto
+      case 4:
+        this.tone(1500, 0.1, 'sine', 0.05 * v, 480, pan);
+        this.noise(0.06, 0.04 * v, 2600, pan);
+        break;
+      case 1: // buho
+      case 21:
+        this.tone(460, 0.2, 'sine', 0.05 * v, 210, pan);
+        this.noise(0.12, 0.05 * v, 1800, pan);
+        break;
+      case 2: // perro: aullido
+        this.tone(520, 0.22, 'sawtooth', 0.055 * v, 190, pan);
+        this.noise(0.1, 0.04 * v, 1200, pan);
+        break;
+      case 3: // hongo: se deshace
+        this.noise(0.3, 0.07 * v, 700, pan, 'bandpass', 0.6);
+        this.tone(190, 0.16, 'sine', 0.06 * v, 70, pan);
+        break;
+      case 6: // golem: se desmorona
+        this.noise(0.6, 0.1 * v, 420, pan);
+        this.tone(90, 0.4, 'sine', 0.09 * v, 40, pan);
+        break;
+      case 20: // sombra: humo
+        this.noise(0.4, 0.05 * v, 1500, pan, 'bandpass', 0.5);
+        this.tone(300, 0.35, 'triangle', 0.03 * v, 120, pan);
+        break;
+      default:
+        this.tone(640, 0.14, 'triangle', 0.05 * v, 220, pan);
+        this.noise(0.08, 0.05 * v, 2000, pan);
+    }
+  }
+
+  /** El rugido de cada jefe al aparecer y al enfurecerse. */
+  bossRoar(kind: number, phase: number): void {
+    this.ch = 'damage';
+    const m = phase > 1 ? 1.25 : 1;
+    switch (kind) {
+      case 10: // reina de los ratones: chillido agudo doble
+        this.tone(1300, 0.35, 'sawtooth', 0.06 * m, 700);
+        this.tone(1000, 0.35, 'square', 0.04 * m, 560, 0, 0.12);
+        this.noise(0.3, 0.05, 3200, 0, 'highpass');
+        break;
+      case 11: // buho anciano: ulular grave
+        [0, 0.42].forEach((d) => this.tone(250, 0.34, 'sine', 0.12 * m, 170, 0, d));
+        this.tone(125, 0.8, 'triangle', 0.07 * m, 90);
+        break;
+      case 12: // mama hongo: burbujeo
+        for (let i = 0; i < 7; i++)
+          this.tone(rand(150, 320), 0.09, 'sine', 0.07 * m, rand(300, 600), 0, i * 0.07);
+        this.noise(0.6, 0.07, 500, 0, 'bandpass', 0.5);
+        break;
+      case 13: // perro guardian: gruñido de tres bocas
+        for (const f of [88, 100, 118]) this.tone(f, 0.9, 'sawtooth', 0.07 * m, f * 0.75);
+        this.noise(0.7, 0.06, 420);
+        break;
+      case 14: // zorro espectral: lamento
+        this.tone(640, 0.7, 'triangle', 0.07 * m, 1150);
+        this.tone(960, 0.7, 'sine', 0.04 * m, 1500, 0, 0.1);
+        break;
+      default: // rey gato: maullido enorme y retumbo
+        this.tone(380, 0.9, 'sawtooth', 0.09 * m, 880);
+        this.tone(880, 0.6, 'sawtooth', 0.07 * m, 300, 0, 0.55);
+        this.tone(70, 1.4, 'sine', 0.16 * m, 38);
+        this.noise(0.9, 0.08, 800);
+    }
+  }
+
+  /** Las puertas de enredadera: crujen al cerrarse y se desenroscan al abrirse. */
+  gate(open: boolean, v = 1, pan = 0): void {
+    this.ch = 'ambient';
+    if (open) {
+      this.noise(0.55, 0.06 * v, 1400, pan, 'bandpass', 0.6);
+      this.tone(180, 0.4, 'triangle', 0.05 * v, 120, pan);
+      [660, 880, 1175].forEach((f, i) =>
+        this.tone(f, 0.22, 'sine', 0.045 * v, undefined, pan, 0.15 + i * 0.08),
+      );
+    } else {
+      this.noise(0.5, 0.08 * v, 900, pan, 'bandpass', 0.7);
+      this.tone(120, 0.5, 'sawtooth', 0.05 * v, 70, pan);
+      this.tone(80, 0.3, 'sine', 0.1 * v, 50, pan, 0.35);
+    }
+  }
+
+  /** Recoger botin del suelo: 0 corazon, 1 balas, 2 pocion, 3 armadura. */
+  pickupAdv(kind: number): void {
+    this.ch = 'ui';
+    if (kind === 0) {
+      this.tone(587, 0.08, 'sine', 0.07);
+      this.tone(880, 0.14, 'sine', 0.07, undefined, 0, 0.07);
+    } else if (kind === 1) {
+      this.tone(1400, 0.03, 'square', 0.04);
+      this.tone(1100, 0.04, 'square', 0.04, undefined, 0, 0.05);
+      this.tone(200, 0.06, 'triangle', 0.05, undefined, 0, 0.09);
+    } else if (kind === 2) {
+      this.potion();
+    } else {
+      this.tone(1500, 0.05, 'triangle', 0.06);
+      this.tone(2000, 0.12, 'triangle', 0.05, undefined, 0, 0.05);
+      this.noise(0.08, 0.04, 4200, 0, 'highpass', 0.7, 0.02);
+    }
+  }
+
+  /** Beber una pocion: burbujitas que suben. */
+  potion(): void {
+    this.ch = 'ui';
+    for (let i = 0; i < 4; i++)
+      this.tone(280 + i * 90, 0.07, 'sine', 0.07, 420 + i * 110, 0, i * 0.06);
+    this.noise(0.18, 0.04, 3000, 0, 'highpass', 0.7, 0.2);
+  }
+
+  /** El gato se levanta: acorde brillante que sube. */
+  revive(v = 1, pan = 0): void {
+    this.ch = 'ui';
+    [392, 523, 659, 784, 1047].forEach((f, i) =>
+      this.tone(f, 0.3, 'triangle', 0.075 * v, undefined, pan, i * 0.07),
+    );
+    this.tone(1568, 0.5, 'sine', 0.04 * v, undefined, pan, 0.35);
+  }
+
+  /** Voltereta: un golpe de aire y una nota que baja. */
+  dash(v = 1, pan = 0): void {
+    this.ch = 'steps';
+    this.noise(0.2, 0.09 * v, 2400, pan, 'bandpass', 0.7);
+    this.tone(560, 0.12, 'sine', 0.05 * v, 240, pan);
+  }
+
+  /** Una reliquia se suma al gato: campanitas magicas. */
+  relic(): void {
+    this.ch = 'ui';
+    [784, 988, 1175, 1568].forEach((f, i) =>
+      this.tone(f, 0.4, 'sine', 0.07, undefined, 0, i * 0.09),
+    );
+    this.noise(0.3, 0.035, 5200, 0, 'highpass', 0.7, 0.1);
+  }
+
+  /** Un enemigo dispara: cada tipo de bala suena distinto. */
+  enemyShot(kind: number, v = 1, pan = 0): void {
+    this.ch = 'damage';
+    switch (kind) {
+      case 64: // pluma
+        this.noise(0.08, 0.04 * v, 3600, pan, 'highpass', 0.7);
+        this.tone(1100, 0.05, 'triangle', 0.02 * v, 1700, pan);
+        break;
+      case 65: // espora
+        this.tone(240, 0.09, 'sine', 0.045 * v, 420, pan);
+        this.noise(0.05, 0.02 * v, 1200, pan, 'bandpass', 0.6);
+        break;
+      case 66: // fuego
+        this.noise(0.22, 0.06 * v, 1500, pan, 'bandpass', 0.5);
+        this.tone(180, 0.2, 'sawtooth', 0.035 * v, 100, pan);
+        break;
+      case 67: // orbe
+        this.tone(300, 0.2, 'sine', 0.05 * v, 90, pan);
+        this.tone(900, 0.1, 'triangle', 0.025 * v, 400, pan);
+        break;
+      case 68: // onda
+        this.tone(220, 0.3, 'triangle', 0.05 * v, 120, pan);
+        this.noise(0.25, 0.045 * v, 900, pan, 'bandpass', 0.5);
+        break;
+      case 69: // chispa
+        this.tone(1800, 0.06, 'square', 0.03 * v, 700, pan);
+        this.noise(0.05, 0.03 * v, 5000, pan, 'highpass');
+        break;
+      default: // dardo
+        this.tone(2200, 0.07, 'sine', 0.025 * v, 1300, pan);
+    }
+  }
+
+  /** Sala superada: dos notas que suben y la puerta que se abre. */
+  roomClear(): void {
+    this.ch = 'ui';
+    [523, 784, 1047].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.08, undefined, 0, i * 0.1));
+  }
+
+  /** Cada reliquia a elegir aparece con un destello. */
+  offer(): void {
+    this.ch = 'ui';
+    this.tone(880, 0.12, 'sine', 0.07);
+    this.tone(1320, 0.22, 'sine', 0.06, undefined, 0, 0.09);
+    this.noise(0.25, 0.03, 5000, 0, 'highpass', 0.7, 0.04);
+  }
+
   private brown(): AudioBuffer | null {
     if (!this.ctx) return null;
     if (!this.brownBuffer) {
@@ -825,6 +1037,34 @@ export class Sfx {
           this.tone(560, 0.16, 'triangle', 0.03, 820, p);
           this.tone(820, 0.2, 'triangle', 0.026, 470, p, 0.15);
         }
+      });
+    } else if (kind === 'encantado') {
+      // bosque encantado: viento entre hojas, goteo, campanitas lejanas y susurros
+      layer('lowpass', 380, 0.12, 0.06, 0.08);
+      layer('bandpass', 1500, 0.02, 0.014, 0.17, 0.9);
+      layer('highpass', 3400, 0.008, 0.006, 0.11, 0.6);
+      later(3, 8, () => {
+        // campanitas de luz
+        const p = pan();
+        const base = rand(1500, 2400);
+        [1, 1.25, 1.5, 2]
+          .slice(0, Math.floor(rand(2, 5)))
+          .forEach((m, i) => this.tone(base * m, 0.5, 'sine', 0.018, undefined, p, i * 0.13));
+      });
+      later(2.4, 7, () => {
+        // gota que cae en un charco
+        const p = pan();
+        this.tone(rand(1100, 1700), 0.05, 'sine', 0.025, rand(500, 800), p);
+        this.tone(rand(500, 700), 0.1, 'sine', 0.012, undefined, p, 0.07);
+      });
+      later(10, 24, () => {
+        // un susurro entre los arboles
+        this.noise(1.4, 0.035, 1900, pan(), 'bandpass', 1.2);
+      });
+      later(16, 34, () => {
+        if (this.dayP < 0.45) return;
+        const p = pan();
+        [0, 0.4].forEach((d) => this.tone(330, 0.3, 'sine', 0.04, 250, p, d));
       });
     } else if (kind === 'casa') {
       layer('lowpass', 210, 0.12, 0.04, 0.07);
