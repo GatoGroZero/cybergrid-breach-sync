@@ -44,6 +44,8 @@ export default defineConfig({
       CELEBRATION_SECONDS: '1',
       // Cuenta regresiva corta del inicio (la real son 5 segundos).
       INTRO_SECONDS: '2',
+      // Eleccion de kit corta en las partidas por rondas (la real son 14 segundos).
+      PICK_SECONDS: '6',
       // Google y el correo "console" (imprime el codigo) para probar la pantalla de acceso.
       GOOGLE_CLIENT_ID: 'e2e-cliente.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'e2e-secreto-del-cliente',

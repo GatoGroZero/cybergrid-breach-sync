@@ -4,7 +4,7 @@ import './styles.css';
 import './zod-config';
 
 import { CAT } from '../shared/br/constants';
-import { MAP_KINDS, MAP_NAMES } from '../shared/br/map';
+import { MAP_NAMES, type MapKind } from '../shared/br/map';
 import type {
   DiedPayload,
   GameEndPayload,
@@ -13,6 +13,7 @@ import type {
   WinPayload,
   RoomState,
 } from '../shared/br/protocol';
+import { KIT_IDS, MODES, TEAM_COLORS, TEAM_NAMES, type DuelFormat } from '../shared/br/modes';
 import { BOTS_FILL, maxHumans, type BotsSetting } from '../shared/br/rooms';
 import { randomSkin } from '../shared/br/skin';
 import type { BRSnapshot } from '../shared/br/types';
@@ -28,6 +29,16 @@ import { $, el, toast } from './ui/dom';
 import { AuthScreen, authErrorText } from './ui/auth';
 import { InventoryPanel } from './ui/inventory';
 import { NicknameDialog, nicknameConfirmed } from './ui/nickname';
+import {
+  FORMAT_LABELS,
+  ModePicker,
+  fillFormatSelect,
+  fillMapSelect,
+  fillModeSelect,
+  fillTeamSizeSelect,
+  soloHelp,
+  teamSizeLabel,
+} from './ui/modes';
 import { Painter, drawCatIcon, startWalker } from './ui/painter';
 import { Settings } from './ui/settings';
 
@@ -65,6 +76,10 @@ const ERRORS: Record<string, string> = {
   solo_el_anfitrion: 'Solo el anfitrión puede hacer eso',
   demasiados_jugadores: 'Hay más personas en la sala que lugares con esos bots',
   faltan_jugadores: 'Con esos bots hacen falta al menos 2 personas',
+  modo_no_disponible: 'Ese modo todavía no está listo',
+  equipo_lleno: 'Ese equipo ya está completo',
+  sin_equipos: 'Este modo no tiene equipos',
+  fuera_de_tiempo: 'Ya pasó el tiempo para elegir',
 };
 /** Enlace de invitacion (?sala=ABCDE): se guarda para entrar a la sala cuando haya sesion. */
 const INVITE_KEY = 'cg_invitacion';
@@ -111,7 +126,19 @@ const input = new InputController(canvas, {
     else if (renderer.mapOpen) renderer.mapOpen = false;
     else toggleMenu();
   },
-  onSelect: (slot) => game?.select(slot),
+  onSelect: (slot) => {
+    // en la eleccion de kit, los numeros 1 a 4 eligen el kit
+    if (game?.pvp?.phase === 'pick') {
+      const id = KIT_IDS[slot];
+      if (id) game.sendKit(id);
+      return;
+    }
+    game?.select(slot);
+  },
+  onKit: (index) => {
+    const id = KIT_IDS[index];
+    if (id) game?.sendKit(id);
+  },
   onEmote: (kind) => game?.sendEmote(kind),
   onReload: () => game?.sendReload(),
   onMute: () => {
@@ -251,16 +278,12 @@ function setNetChip(online: boolean): void {
 }
 
 const mapSelect = $<HTMLSelectElement>('room-map');
-{
-  const random = el('option', '', 'Mapa al azar');
-  random.value = 'azar';
-  mapSelect.append(random);
-  for (const kind of MAP_KINDS) {
-    const o = el('option', '', MAP_NAMES[kind]);
-    o.value = kind;
-    mapSelect.append(o);
-  }
-}
+const picker = new ModePicker();
+const refreshSoloHelp = (): void => {
+  $('solo-help').textContent = soloHelp(picker.mode, picker.format, picker.teamSize);
+};
+picker.onChange = refreshSoloHelp;
+refreshSoloHelp();
 
 /** Opciones de bots: llenar, o una cantidad exacta de 0 a 9. */
 function fillBotsSelect(select: HTMLSelectElement): void {
@@ -283,7 +306,12 @@ fillBotsSelect(botsSelect);
 const setBotsSelect = $<HTMLSelectElement>('set-bots');
 fillBotsSelect(setBotsSelect);
 const setMapSelect = $<HTMLSelectElement>('set-map');
-setMapSelect.append(...[...mapSelect.options].map((o) => o.cloneNode(true)));
+const setModeSelect = $<HTMLSelectElement>('set-mode');
+fillModeSelect(setModeSelect);
+const setFormatSelect = $<HTMLSelectElement>('set-format');
+fillFormatSelect(setFormatSelect);
+const setTeamSizeSelect = $<HTMLSelectElement>('set-teamsize');
+fillTeamSizeSelect(setTeamSizeSelect);
 
 const parseBots = (value: string): BotsSetting => (value === BOTS_FILL ? BOTS_FILL : Number(value));
 
@@ -422,7 +450,7 @@ function renderRoomList(rooms: PublicRoom[]): void {
     info.append(
       el('strong', '', r.name),
       el('div', 'muted', `Anfitrión: ${r.host}`),
-      el('div', 'muted', mapName),
+      el('div', 'muted', `${MODES[r.mode ?? 'br'].name} · ${mapName}`),
       el('div', 'muted', `${r.players}/${r.maxPlayers} personas · ${botsLabel(r.bots)}`),
     );
     const join = el('button', 'btn small', !joinable ? 'En curso' : full ? 'Llena' : 'Entrar');
@@ -459,6 +487,9 @@ async function createRoom(
     isPrivate,
     map: mapSelect.value,
     bots,
+    mode: picker.mode,
+    format: picker.format,
+    teamSize: picker.teamSize,
   });
   lobbyError(res.ok ? undefined : res.error);
   return res.ok;
@@ -532,6 +563,15 @@ async function sendSettings(settings: Record<string, unknown>): Promise<void> {
 }
 
 setMapSelect.addEventListener('change', () => void sendSettings({ map: setMapSelect.value }));
+setModeSelect.addEventListener('change', () => void sendSettings({ mode: setModeSelect.value }));
+setFormatSelect.addEventListener(
+  'change',
+  () => void sendSettings({ format: setFormatSelect.value as DuelFormat }),
+);
+setTeamSizeSelect.addEventListener(
+  'change',
+  () => void sendSettings({ teamSize: Number(setTeamSizeSelect.value) }),
+);
 setBotsSelect.addEventListener(
   'change',
   () => void sendSettings({ bots: parseBots(setBotsSelect.value) }),
@@ -577,16 +617,26 @@ function renderRoom(): void {
   $('room-title').textContent = room.name;
   const mapName = MAP_NAMES[room.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
   const people = room.members.length === 1 ? '1 persona' : `${room.members.length} personas`;
+  const modeText =
+    room.mode === 'techo'
+      ? `${MODES.techo.name} (${FORMAT_LABELS[room.format]})`
+      : room.mode === 'territorio'
+        ? `${MODES.territorio.name} (${teamSizeLabel(room.teamSize)})`
+        : MODES[room.mode].name;
   $('room-meta').textContent =
-    `${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · ${people} + ${botsLabel(room.botCount)}`;
+    `${modeText} · ${room.isPrivate ? 'Privada' : 'Pública'} · ${mapName} · ${people} + ${botsLabel(room.botCount)}`;
   $('room-code').textContent = room.code;
   $('bots-line').textContent =
-    room.bots === BOTS_FILL
-      ? `Los lugares libres se llenan con bots (hasta ${room.maxPlayers} gatos).`
-      : `${botsLabel(room.bots)} fijos: caben ${room.maxHumans} personas.`;
+    room.teamSize > 0
+      ? `Cada equipo es de ${room.teamSize}; los lugares libres se llenan con bots.`
+      : room.bots === BOTS_FILL
+        ? `Los lugares libres se llenan con bots (hasta ${room.maxPlayers} gatos).`
+        : `${botsLabel(room.bots)} fijos: caben ${room.maxHumans} personas.`;
 
   const list = $('member-list');
   list.replaceChildren();
+  list.hidden = room.teamSize > 0;
+  renderTeamBoard(room);
   let ready = 0;
   for (const m of room.members) {
     if (m.ready) ready++;
@@ -620,7 +670,15 @@ function renderRoom(): void {
   const settingsBox = $('room-settings');
   settingsBox.hidden = !isHost;
   if (isHost) {
+    if (setModeSelect.value !== room.mode) setModeSelect.value = room.mode;
+    fillMapSelect(setMapSelect, room.mode);
     setMapSelect.value = room.map;
+    setFormatSelect.value = room.format;
+    if (room.teamSize > 0 && room.mode === 'territorio')
+      setTeamSizeSelect.value = String(room.teamSize);
+    $('set-bots-field').hidden = room.mode !== 'br';
+    $('set-format-field').hidden = room.mode !== 'techo';
+    $('set-teamsize-field').hidden = room.mode !== 'territorio';
     setBotsSelect.value = String(room.bots);
     $<HTMLInputElement>('set-private').checked = room.isPrivate;
     for (const o of setBotsSelect.options) {
@@ -632,7 +690,9 @@ function renderRoom(): void {
   }
 
   const status = $('room-status');
-  if (room.phase === 'countdown') status.textContent = 'Iniciando…';
+  if (!room.canStart && room.teamSize > 0)
+    status.textContent = 'Hay más personas en un equipo de las que caben: pasen a otro equipo.';
+  else if (room.phase === 'countdown') status.textContent = 'Iniciando…';
   else if (room.phase === 'playing') status.textContent = 'Partida en curso';
   else if (room.phase === 'ended') status.textContent = 'Partida terminada, preparando la sala...';
   else if (!room.canStart)
@@ -643,6 +703,64 @@ function renderRoom(): void {
         ? 'Empieza cuando todos estén listos o cuando pulses Iniciar ya.'
         : 'Empieza cuando todos estén listos o cuando el anfitrión inicie.'
     }`;
+}
+
+/** Los dos equipos con sus personas, los lugares de bots y el boton para cambiarte de lado. */
+function renderTeamBoard(state: RoomState): void {
+  const board = $('team-board');
+  board.hidden = state.teamSize <= 0;
+  board.replaceChildren();
+  if (state.teamSize <= 0) return;
+  const me = state.members.find((m) => m.userId === user?.id);
+  const open = state.phase === 'lobby' || state.phase === 'countdown';
+  for (const team of [0, 1] as const) {
+    const box = el('section', 'team');
+    box.dataset.testid = `team-${team}`;
+    box.style.setProperty('--team', TEAM_COLORS[team]);
+    const mates = state.members.filter((m) => (m.team ?? 0) === team);
+    const head = el('div', 'team-head');
+    head.append(
+      el('strong', '', `Equipo ${TEAM_NAMES[team]}`),
+      el('span', 'muted', `${mates.length}/${state.teamSize}`),
+    );
+    box.append(head);
+    const ul = el('ul', 'member-list');
+    for (const m of mates) {
+      const li = el('li');
+      li.dataset.testid = 'member';
+      li.dataset.name = m.name;
+      const left = el('div', 'who');
+      const icon = el('canvas');
+      drawCatIcon(icon, m.skin, 2);
+      const label = el('div');
+      label.append(el('strong', '', m.name));
+      if (m.host) label.append(el('span', 'badge', 'anfitrión'));
+      left.append(icon, label);
+      const badge = el('span', m.connected ? (m.ready ? 'badge ready' : 'badge') : 'badge off');
+      badge.textContent = m.connected ? (m.ready ? 'Listo' : 'Esperando') : 'Desconectado';
+      badge.dataset.testid = 'member-state';
+      li.append(left, badge);
+      ul.append(li);
+    }
+    for (let k = mates.length; k < state.teamSize; k++) {
+      const li = el('li', 'team-open');
+      li.append(el('span', 'muted', 'Un bot ocupará este lugar'));
+      ul.append(li);
+    }
+    box.append(ul);
+    if (me && (me.team ?? 0) !== team) {
+      const b = el('button', 'btn small', 'Pasarme a este equipo');
+      b.type = 'button';
+      b.dataset.testid = `btn-team-${team}`;
+      b.disabled = !open || mates.length >= state.teamSize;
+      b.addEventListener('click', async () => {
+        const res = await net?.ack('room:team', { team });
+        if (res && !res.ok) toast(ERRORS[res.error] ?? 'No se pudo cambiar de equipo');
+      });
+      box.append(b);
+    }
+    board.append(box);
+  }
 }
 
 // ---------------------------------------------------------------- partida
@@ -683,11 +801,12 @@ function startGame(payload: GameStartPayload): void {
   input.active = true;
   applyMode(input.mode);
   // El sonido y el cartel de inicio los pone la cuenta regresiva (o, sin ella, no hay ninguno).
-  sfx.startAmbient(payload.map as 'bosque' | 'casa' | 'piscina');
+  sfx.startAmbient(payload.map as MapKind);
   if (tipTimer !== null) window.clearTimeout(tipTimer);
   tipTimer = window.setTimeout(() => {
     tipTimer = null;
-    if (!game || !game.alive || game.result) return;
+    // el consejo de buscar un cofre solo sirve en el Battle Royale (en equipos nadie abre cofres)
+    if (!game || !game.alive || game.result || game.mode !== 'br') return;
     const how =
       input.mode === 'touch'
         ? 'Acércate a un cofre y toca ABRIR'
@@ -741,6 +860,8 @@ function updateHud(g: ClientBR, n: Net): void {
   $('hud-rtt').textContent = n.connected ? `ping ${Math.round(n.rttMedian)} ms` : 'sin red';
   $('hud-rtt').dataset.q =
     !n.connected || n.rttMedian >= 160 ? 'bad' : n.rttMedian >= 100 ? 'warn' : 'ok';
+  // por equipos nadie "queda en un puesto": el eliminado mira a su equipo mientras dura la ronda
+  if (g.pvp) specBar.hidden = g.alive || g.pvp.phase !== 'fight' || g.result !== null;
   if (!specBar.hidden) {
     const spec = g.latest?.spectating;
     $('spec-name').textContent =
@@ -762,6 +883,9 @@ function updateHud(g: ClientBR, n: Net): void {
     drawMs: Math.round(drawMs * 100) / 100,
     daytime: Math.round(renderer.daylight.p * 1000) / 1000,
     dayName: renderer.daylight.name,
+    pvpPhase: g.pvp?.phase ?? '',
+    round: g.pvp?.round ?? 0,
+    wins: g.pvp ? `${g.pvp.wins[0]}-${g.pvp.wins[1]}` : '',
   };
 }
 
@@ -835,20 +959,34 @@ function endGame(payload: GameEndPayload): void {
   menuEl.hidden = true;
   inventory.close();
   const me = payload.rows.find((r) => r.id === game?.you);
-  const win = payload.winnerId === game.you;
+  const teamGame = payload.winnerTeam !== undefined;
+  const myTeam = game.teamOf(game.you);
+  const win = teamGame ? payload.winnerTeam === myTeam : payload.winnerId === game.you;
   const title = $('results-title');
-  title.textContent = win ? '¡VICTORIA REAL!' : 'Fin de la partida';
+  title.textContent = win
+    ? teamGame
+      ? '¡VICTORIA DEL EQUIPO!'
+      : '¡VICTORIA REAL!'
+    : 'Fin de la partida';
   title.dataset.win = String(win);
   const winner = payload.rows.find((r) => r.placement === 1);
-  $('results-sub').textContent = win
-    ? `Eres el último gato en pie. ${me?.kills ?? 0} bajas en ${Math.round(payload.durationS)} s.`
-    : `${winner ? `Ganó ${winner.name}. ` : ''}Quedaste en el puesto ${me?.placement ?? '?'} de ${payload.rows.length}.`;
+  if (teamGame) {
+    const score = payload.score ?? [0, 0];
+    const name =
+      payload.winnerTeam === null ? 'Nadie' : `Equipo ${TEAM_NAMES[payload.winnerTeam as 0 | 1]}`;
+    $('results-sub').textContent =
+      `${name} gana ${Math.max(...score)} a ${Math.min(...score)} en rondas. ${me?.kills ?? 0} bajas tuyas.`;
+  } else {
+    $('results-sub').textContent = win
+      ? `Eres el último gato en pie. ${me?.kills ?? 0} bajas en ${Math.round(payload.durationS)} s.`
+      : `${winner ? `Ganó ${winner.name}. ` : ''}Quedaste en el puesto ${me?.placement ?? '?'} de ${payload.rows.length}.`;
+  }
   const body = $('results-body');
   body.replaceChildren();
   for (const r of [...payload.rows].sort((a, b) => a.placement - b.placement)) {
     const tr = el('tr', r.id === game.you ? 'me' : '');
     [
-      placementText(r.placement),
+      teamGame ? (r.placement === 1 ? 'Ganó' : 'Perdió') : placementText(r.placement),
       r.name + (r.bot ? ' (bot)' : ''),
       String(r.kills),
       String(r.damageDealt),
@@ -1004,6 +1142,9 @@ declare global {
       drawMs: number;
       daytime: number;
       dayName: string;
+      pvpPhase: string;
+      round: number;
+      wins: string;
     };
   }
 }

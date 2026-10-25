@@ -57,4 +57,6 @@ export const FLAG = {
   disconnected: 16,
   bot: 32,
   running: 64,
+  /** Pertenece al equipo 1 (azul) en los modos por equipos. */
+  team1: 128,
 } as const;

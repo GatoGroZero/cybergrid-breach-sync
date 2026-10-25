@@ -1,4 +1,5 @@
 import type { Item } from './items';
+import type { GameMode, KitId } from './modes';
 
 /** [id, x, y, flags, apuntado en grados, arma en mano (indice de ITEM_KINDS * 3 + rareza, o -1)] */
 export type CatTuple = [number, number, number, number, number, number];
@@ -61,7 +62,36 @@ export interface ZoneView {
   nextIn: number;
 }
 
+/** Fases de una ronda en los modos por equipos. */
+export type PvpPhase = 'pick' | 'ready' | 'fight' | 'between' | 'over';
+
+/** Estado de la partida por rondas (Pelea en el techo y Territorio). */
+export interface PvpState {
+  phase: PvpPhase;
+  round: number;
+  wins: [number, number];
+  /** Segundos que faltan de la fase actual (elegir kit, cuenta, pausa entre rondas). */
+  left: number;
+  /** Equipo de quien recibe la instantanea (0 o 1). */
+  team: number;
+  /** Gatos por equipo. */
+  teamSize: number;
+  /** Kit que elegiste (o null si todavia no). */
+  kit: KitId | null;
+  /** Kits ya elegidos por tu equipo; los del otro equipo salen cuando empieza la cuenta. */
+  picks: { id: number; kit: KitId | null }[];
+  /** Quien gano la ultima ronda: 0, 1, -1 empate, o null si todavia se juega. */
+  roundWinner: number | null;
+  /** Territorio: [dueno (-1 nadie, 0 o 1), avance 0 a 100, equipo que captura] de cada patio. */
+  points?: [number, number, number][];
+  /** Territorio: segundos seguidos que cada equipo lleva dominando todos los patios. */
+  hold?: [number, number];
+}
+
 export interface BRSnapshot {
+  /** Modo de la partida (solo se manda si no es Battle Royale). */
+  mode?: GameMode;
+  pvp?: PvpState;
   /** Milisegundos de reloj de la partida (corre tambien durante la cuenta regresiva inicial). */
   t: number;
   /** Segundos que faltan de la cuenta regresiva inicial (todos quietos), o 0. */
@@ -83,5 +113,9 @@ export interface BRSnapshot {
   /** A quien se esta viendo cuando ya estas eliminado. */
   spectating?: number;
   /** Eliminaciones nuevas (para el aviso arriba a la izquierda). */
-  feed?: { k: string | null; v: string }[];
+  feed?: {
+    k: string | null;
+    v: string;
+    /** Mensaje completo (rondas, patios) en lugar del texto de eliminacion. */ m?: string;
+  }[];
 }

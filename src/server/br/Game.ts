@@ -83,13 +83,15 @@ import type {
   ZoneView,
 } from '../../shared/br/types';
 import {
-  ZONE_TIMELINE,
+  ZONE_BR,
   insideCircle,
   planZones,
   zoneAt,
   type ZonePlan,
+  type ZoneSpec,
   type ZoneState,
 } from '../../shared/br/zone';
+import type { GameMode, TeamId } from '../../shared/br/modes';
 import { createRng, type Rng } from '../../shared/rng';
 import { BotBrain } from './bots';
 
@@ -99,6 +101,8 @@ export interface CatInit {
   userId: number | null;
   bot: boolean;
   skin: Skin;
+  /** Modos por equipos: 0 o 1. Sin equipo (todos contra todos) se omite. */
+  team?: TeamId;
 }
 
 export interface GameOptions {
@@ -109,6 +113,14 @@ export interface GameOptions {
   zoneScale?: number;
   /** Segundos de cuenta regresiva con todos quietos antes de que empiece la partida. */
   introSeconds?: number;
+  /** Modo de juego (por omision, Battle Royale). */
+  mode?: GameMode;
+  /** Mapa ya generado (si no, se genera con la semilla). */
+  map?: BRMap;
+  /** Tiempos y dano de la zona de este modo. */
+  zone?: ZoneSpec;
+  /** Segundos al inicio en que nadie puede hacer dano. */
+  graceSeconds?: number;
 }
 
 export interface Cat {
@@ -131,6 +143,10 @@ export interface Cat {
   running: boolean;
   sel: number;
   heal: { kind: HealKind; elapsed: number; left: number } | null;
+  /** Equipo (0 o 1) en los modos por equipos, o -1 si juega por su cuenta. */
+  team: number;
+  /** Donde aparece al empezar (y al empezar cada ronda). */
+  spawn: { x: number; y: number };
   /** Recarga en curso: casilla del arma y cuando termina. */
   reload: { slot: number; until: number } | null;
   /** Hasta cuando no puede volver a mandar un emote. */
@@ -226,7 +242,12 @@ export class BRGame {
   readonly startedAt = Date.now();
   readonly plan: ZonePlan;
   readonly rng: Rng;
-  private readonly zoneScale: number;
+  readonly mode: GameMode;
+  protected readonly zoneSpec: ZoneSpec;
+  readonly graceS: number;
+  /** Si al caer un gato deja una lapida con sus cosas (en los kits fijos no). */
+  protected dropLoot = true;
+  protected readonly zoneScale: number;
 
   tick = 0;
   /** Tiempo de juego: no corre durante la cuenta regresiva del inicio. */
@@ -238,37 +259,49 @@ export class BRGame {
   result: GameEndPayload | null = null;
   zone: ZoneState;
 
-  private readonly shots: Shot[] = [];
+  protected readonly shots: Shot[] = [];
   /** Disparos recientes: los bots "oyen" de donde vienen y van a mirar. */
   readonly shotLog: { x: number; y: number; t: number; owner: number }[] = [];
-  private readonly walls = new Map<number, Wall>();
-  private readonly wallByTile = new Map<number, Wall>();
-  private readonly containers = new Map<number, Container>();
-  private events: BREvent[] = [];
-  private nextId = 10_000;
-  private lastZoneKey = -1;
-  private readonly brains = new Map<number, BotBrain>();
-  private readonly deaths: DiedPayload[] = [];
-  private readonly deathOwners: number[] = [];
-  private feed: { k: string | null; v: string }[] = [];
+  protected readonly walls = new Map<number, Wall>();
+  protected readonly wallByTile = new Map<number, Wall>();
+  protected readonly containers = new Map<number, Container>();
+  protected events: BREvent[] = [];
+  protected nextId = 10_000;
+  protected lastZoneKey = -1;
+  protected readonly brains = new Map<number, BotBrain>();
+  protected readonly deaths: DiedPayload[] = [];
+  protected readonly deathOwners: number[] = [];
+  protected feed: { k: string | null; v: string; m?: string }[] = [];
 
   constructor(options: GameOptions) {
     this.seed = options.seed;
     this.zoneScale = Math.max(1, options.zoneScale ?? 1);
     this.introLeft = Math.max(0, options.introSeconds ?? 0);
     this.mapKind = options.mapKind;
-    this.map = generateMap(options.mapKind, options.seed);
+    this.mode = options.mode ?? 'br';
+    this.zoneSpec = options.zone ?? ZONE_BR;
+    this.graceS = options.graceSeconds ?? SPAWN_GRACE_S;
+    this.map = options.map ?? generateMap(options.mapKind, options.seed);
     this.rng = createRng((options.seed ^ 0x9e3779b9) >>> 0);
     this.plan = planZones(
       createRng((options.seed ^ 0x5bd1e995) >>> 0),
       mapWidthPx(this.map),
       mapHeightPx(this.map),
+      this.zoneSpec,
     );
-    this.zone = zoneAt(this.plan, mapWidthPx(this.map), mapHeightPx(this.map), 0);
+    this.zone = zoneAt(this.plan, mapWidthPx(this.map), mapHeightPx(this.map), 0, this.zoneSpec);
 
     const spawns = this.rng.shuffle([...this.map.spawns]);
+    const teamSeen: number[] = [0, 0];
     this.cats = options.cats.map((init, i) => {
-      const sp = spawns[i % spawns.length] as { x: number; y: number };
+      let sp = spawns[i % spawns.length] as { x: number; y: number };
+      // En los modos por equipos cada gato aparece en el lugar de su equipo.
+      const team: number = init.team ?? -1;
+      const teamSpots = team >= 0 ? this.map.teamSpawns?.[team as TeamId] : undefined;
+      if (teamSpots && teamSpots.length > 0) {
+        sp = teamSpots[(teamSeen[team] as number) % teamSpots.length] as { x: number; y: number };
+        teamSeen[team] = (teamSeen[team] as number) + 1;
+      }
       const cat: Cat = {
         id: init.id,
         name: init.name,
@@ -277,6 +310,7 @@ export class BRGame {
         skin: init.skin,
         x: sp.x,
         y: sp.y,
+        spawn: { x: sp.x, y: sp.y },
         hp: CAT.maxHp,
         shield: CAT.startShield,
         alive: true,
@@ -286,6 +320,7 @@ export class BRGame {
         stamina: fullStamina(),
         running: false,
         sel: 0,
+        team,
         heal: null,
         reload: null,
         emoteUntil: 0,
@@ -343,6 +378,52 @@ export class BRGame {
     return this.result !== null;
   }
 
+  // ---------------------------------------------------------------- ganchos para otros modos
+
+  /** Antes de simular un tick: devuelve true si el modo ya se encargo de este tick. */
+  protected beforeSim(): boolean {
+    return false;
+  }
+
+  /** Despues de simular un tick de combate (antes de revisar si termino). */
+  protected afterSim(_dt: number): void {
+    // nada en el Battle Royale
+  }
+
+  /** Si se juega por equipos (los bots pelean siempre y no hay botin que buscar). */
+  get teamMode(): boolean {
+    return this.mode === 'techo' || this.mode === 'territorio';
+  }
+
+  /** A donde conviene que vaya un bot cuando no tiene a quien perseguir (null: que decida el bot). */
+  botGoal(_cat: Cat): { x: number; y: number } | null {
+    return null;
+  }
+
+  /** Si `attacker` puede danar a `target`. En equipos no hay fuego amigo. */
+  protected canHurt(attacker: Cat, target: Cat): boolean {
+    return attacker.team < 0 || target.team < 0 || attacker.team !== target.team;
+  }
+
+  /** Si `other` es enemigo de `cat` (para los bots y los avisos). */
+  isFoe(cat: Cat, other: Cat): boolean {
+    return other.id !== cat.id && other.alive && this.canHurt(cat, other);
+  }
+
+  /** A quien mira un jugador eliminado al principio. */
+  protected spectateTarget(_target: Cat, killer: Cat | null): number | null {
+    return killer && killer.alive ? killer.id : (this.aliveCats()[0]?.id ?? null);
+  }
+
+  /** Datos extra que cada modo agrega a la instantanea de un jugador. */
+  protected extendSnapshot(_snap: BRSnapshot, _cat: Cat): void {
+    // nada en el Battle Royale
+  }
+
+  protected extraFlags(cat: Cat): number {
+    return cat.team === 1 ? FLAG.team1 : 0;
+  }
+
   cat(id: number): Cat | undefined {
     return this.cats.find((c) => c.id === id);
   }
@@ -351,7 +432,7 @@ export class BRGame {
     return this.cats.filter((c) => c.alive);
   }
 
-  private humans(): Cat[] {
+  protected humans(): Cat[] {
     return this.cats.filter((c) => !c.bot);
   }
 
@@ -359,7 +440,7 @@ export class BRGame {
     return cat.inv[cat.sel] ?? null;
   }
 
-  private emit(ev: BREvent): void {
+  protected emit(ev: BREvent): void {
     if (this.events.length < 220) this.events.push(ev);
   }
 
@@ -416,7 +497,7 @@ export class BRGame {
     return true;
   }
 
-  private applyInput(cat: Cat, input: InputPayload): void {
+  protected applyInput(cat: Cat, input: InputPayload): void {
     cat.lastSeq = input.seq;
     const before = { x: cat.x, y: cat.y };
     const len = Math.min(1, Math.hypot(input.mx, input.my));
@@ -455,7 +536,7 @@ export class BRGame {
     }
   }
 
-  private nearestEnemy(cat: Cat, range: number): Cat | null {
+  protected nearestEnemy(cat: Cat, range: number): Cat | null {
     let best: Cat | null = null;
     let bestD = range;
     for (const other of this.cats) {
@@ -469,7 +550,7 @@ export class BRGame {
     return best;
   }
 
-  private shoot(cat: Cat, item: Item, def: WeaponDef, aim: number): void {
+  protected shoot(cat: Cat, item: Item, def: WeaponDef, aim: number): void {
     if (cat.reload) return;
     if (this.time < cat.cooldownUntil) return;
     if (this.shots.length > MAX_SHOTS) return;
@@ -547,7 +628,7 @@ export class BRGame {
     return cat ? this.startReload(cat) : false;
   }
 
-  private updateReload(cat: Cat): void {
+  protected updateReload(cat: Cat): void {
     const r = cat.reload;
     if (!r) return;
     const item = cat.inv[r.slot];
@@ -578,16 +659,16 @@ export class BRGame {
   }
 
   /** Disparo con el cargador vacio y sin balas de repuesto: solo un clic seco. */
-  private emitDry(cat: Cat, def: WeaponDef): void {
+  protected emitDry(cat: Cat, def: WeaponDef): void {
     cat.cooldownUntil = this.time + 0.4;
     this.emit({ e: 'dry', x: q1(cat.x), y: q1(cat.y), w: ITEM_KINDS.indexOf(def.kind) });
   }
 
-  private claw(cat: Cat, aim: number): void {
+  protected claw(cat: Cat, aim: number): void {
     cat.cooldownUntil = this.time + CLAWS.cooldown;
     this.emit({ e: 'claw', x: q1(cat.x), y: q1(cat.y), a: Math.round((aim * 180) / Math.PI) });
     for (const other of this.cats) {
-      if (!other.alive || other.id === cat.id) continue;
+      if (!other.alive || other.id === cat.id || !this.canHurt(cat, other)) continue;
       const d = dist(cat.x, cat.y, other.x, other.y);
       if (d > CLAWS.range + HIT_RADIUS) continue;
       const toOther = Math.atan2(other.y - cat.y, other.x - cat.x);
@@ -627,7 +708,7 @@ export class BRGame {
   // ---------------------------------------------------------------- curacion
 
   /** El objeto se gasta al empezar. Si cancelas, lo que faltaba por curar se pierde. */
-  private startHeal(cat: Cat, kind: HealKind): void {
+  protected startHeal(cat: Cat, kind: HealKind): void {
     if (cat.heal) return;
     if (healMissing(kind, cat) <= 0) return;
     const slot = cat.sel;
@@ -636,7 +717,7 @@ export class BRGame {
     cat.heal = { kind, elapsed: 0, left: HEAL[kind].total };
   }
 
-  private updateHeal(cat: Cat, dt: number): void {
+  protected updateHeal(cat: Cat, dt: number): void {
     const heal = cat.heal;
     if (!heal) return;
     heal.elapsed += dt;
@@ -662,7 +743,7 @@ export class BRGame {
 
   // ---------------------------------------------------------------- muros
 
-  private placeWall(cat: Cat, aim: number): void {
+  protected placeWall(cat: Cat, aim: number): void {
     if (this.walls.size >= MAX_WALLS) return;
     const px = cat.x + Math.cos(aim) * WALL_ITEM.placeDistance;
     const py = cat.y + Math.sin(aim) * WALL_ITEM.placeDistance;
@@ -685,7 +766,7 @@ export class BRGame {
     this.emit({ e: 'place', x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 });
   }
 
-  private damageWall(wall: Wall, dmg: number): void {
+  protected damageWall(wall: Wall, dmg: number): void {
     wall.hp -= dmg;
     const x = wall.tx * TILE + TILE / 2;
     const y = wall.ty * TILE + TILE / 2;
@@ -703,7 +784,8 @@ export class BRGame {
 
   damageCat(target: Cat, amount: number, attacker: Cat | null): void {
     if (!target.alive || amount <= 0) return;
-    if (this.time < SPAWN_GRACE_S && attacker !== null) return;
+    if (this.time < this.graceS && attacker !== null) return;
+    if (attacker && !this.canHurt(attacker, target)) return;
     const r = applyDamage(target, amount);
     target.hp = r.hp;
     target.shield = r.shield;
@@ -721,7 +803,7 @@ export class BRGame {
     if (target.hp <= 0) this.killCat(target, attacker);
   }
 
-  private killCat(target: Cat, killer: Cat | null): void {
+  protected killCat(target: Cat, killer: Cat | null): void {
     const alive = this.aliveCats().length;
     target.alive = false;
     target.placement = alive;
@@ -741,15 +823,17 @@ export class BRGame {
     target.inv = emptyInventory();
     target.ammo = emptyAmmo();
     target.invDirty = true;
-    this.containers.set(this.nextId, {
-      id: this.nextId++,
-      kind: 'tomb',
-      x: target.x,
-      y: target.y,
-      items,
-      opened: true,
-      title: `Lápida de ${target.name}`,
-    });
+    if (this.dropLoot) {
+      this.containers.set(this.nextId, {
+        id: this.nextId++,
+        kind: 'tomb',
+        x: target.x,
+        y: target.y,
+        items,
+        opened: true,
+        title: `Lápida de ${target.name}`,
+      });
+    }
 
     // Los bots festejan algunas bajas con una carita, como lo haria una persona.
     if (
@@ -769,7 +853,7 @@ export class BRGame {
         survivalS: Math.round(this.time * 10) / 10,
       });
       this.deathOwners.push(target.id);
-      target.spectate = killer && killer.alive ? killer.id : (this.aliveCats()[0]?.id ?? null);
+      target.spectate = this.spectateTarget(target, killer);
     }
   }
 
@@ -795,7 +879,7 @@ export class BRGame {
 
   // ---------------------------------------------------------------- cofres, lapidas, inventario
 
-  private nearestContainer(cat: Cat, range: number): Container | null {
+  protected nearestContainer(cat: Cat, range: number): Container | null {
     let best: Container | null = null;
     let bestD = range;
     for (const c of this.containers.values()) {
@@ -810,7 +894,7 @@ export class BRGame {
     return best;
   }
 
-  private contentsOf(c: Container): LootContents {
+  protected contentsOf(c: Container): LootContents {
     return { id: c.id, kind: c.kind, title: c.title, items: c.items.map(cloneItem) };
   }
 
@@ -883,7 +967,7 @@ export class BRGame {
     return this.containers.has(containerId) ? this.contentsOf(c) : { ...first, items: [] };
   }
 
-  private cleanup(c: Container): void {
+  protected cleanup(c: Container): void {
     if ((c.kind === 'tomb' || c.kind === 'drop') && c.items.length === 0)
       this.containers.delete(c.id);
   }
@@ -932,7 +1016,7 @@ export class BRGame {
     return true;
   }
 
-  private dropAt(cat: Cat, item: Item): void {
+  protected dropAt(cat: Cat, item: Item): void {
     const near = [...this.containers.values()].find(
       (c) => c.kind === 'drop' && dist(c.x, c.y, cat.x, cat.y) < 10 && c.items.length < 8,
     );
@@ -957,6 +1041,8 @@ export class BRGame {
     if (this.over) return;
     this.tick++;
     this.clock += TICK_DT;
+    // Los modos con fases propias (elegir kit, rondas) deciden aqui si este tick se simula.
+    if (this.beforeSim()) return;
     // Cuenta regresiva inicial: todos quietos, sin disparar ni abrir nada.
     if (this.introLeft > 0) {
       this.introLeft = this.introLeft - TICK_DT < 1e-6 ? 0 : this.introLeft - TICK_DT;
@@ -973,6 +1059,7 @@ export class BRGame {
       mapWidthPx(this.map),
       mapHeightPx(this.map),
       this.time * this.zoneScale,
+      this.zoneSpec,
     );
     // Cada cambio de la ola (empieza a cerrar, se queda quieta, ultima ola...) se avisa a todos.
     const zoneKey = this.zone.phase * 2 + (this.zone.shrinking ? 1 : 0);
@@ -1012,10 +1099,11 @@ export class BRGame {
     }
     this.updateShots(TICK_DT);
     this.hazards(TICK_DT);
+    this.afterSim(TICK_DT);
     this.checkEnd();
   }
 
-  private updateShots(dt: number): void {
+  protected updateShots(dt: number): void {
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const s = this.shots[i] as Shot;
       const step = Math.min(s.speed * dt, s.left);
@@ -1026,8 +1114,11 @@ export class BRGame {
       let hitCat: Cat | null = null;
       const solid = segmentSolidHit(this.map, s.x, s.y, nx, ny);
       if (solid.hit) tHit = solid.t;
+      const shooter = this.cat(s.owner) ?? null;
       for (const cat of this.cats) {
         if (!cat.alive || cat.id === s.owner) continue;
+        // las balas atraviesan a los companeros de equipo
+        if (shooter && !this.canHurt(shooter, cat)) continue;
         const t = segmentCircleHit(s.x, s.y, nx, ny, cat.x, cat.y, HIT_RADIUS);
         if (t >= 0 && t < tHit) {
           tHit = t;
@@ -1062,12 +1153,13 @@ export class BRGame {
   }
 
   /** Explosion de bazuca: golpe directo completo y daño de area que baja con la distancia. */
-  private explode(s: Shot, x: number, y: number, direct: Cat | null): void {
+  protected explode(s: Shot, x: number, y: number, direct: Cat | null): void {
     this.emit({ e: 'boom', x: q1(x), y: q1(y), r: s.splash });
     const owner = this.cat(s.owner) ?? null;
     if (direct) this.damageCat(direct, s.dmg, owner);
     for (const cat of this.cats) {
       if (!cat.alive || cat === direct) continue;
+      if (owner && cat.id !== owner.id && !this.canHurt(owner, cat)) continue;
       const d = dist(x, y, cat.x, cat.y);
       let dmg = splashDamage(s.dmg, d, s.splash + HIT_RADIUS);
       if (dmg > 0 && cat.id === s.owner) dmg = Math.ceil(dmg / 2);
@@ -1081,7 +1173,7 @@ export class BRGame {
   }
 
   /** La ola de la zona y el agua de la alberca danan primero al escudo. */
-  private hazards(dt: number): void {
+  protected hazards(dt: number): void {
     for (const cat of this.cats) {
       if (!cat.alive) continue;
       if (this.zone.dps > 0 && !insideCircle(this.zone.circle, cat.x, cat.y)) {
@@ -1106,20 +1198,20 @@ export class BRGame {
     }
   }
 
-  private checkEnd(): void {
+  protected checkEnd(): void {
     const alive = this.aliveCats();
     const humans = this.humans();
     if (alive.length <= 1) return this.finish(alive[0] ?? null);
     // Si el humano cae, la partida sigue para que pueda verla; termina si se va.
     if (humans.length > 0 && humans.every((c) => !c.alive && !c.connected))
       return this.finish(null);
-    if (this.time >= ZONE_TIMELINE.end / this.zoneScale + HARD_CAP_EXTRA_S) {
+    if (this.time >= this.zoneSpec.timeline.end / this.zoneScale + HARD_CAP_EXTRA_S) {
       const best = [...alive].sort((a, b) => b.hp + b.shield - (a.hp + a.shield))[0] ?? null;
       this.finish(best);
     }
   }
 
-  private finish(winner: Cat | null): void {
+  protected finish(winner: Cat | null): void {
     // Los que siguen vivos al terminar se ordenan: primero el ganador y luego por vida restante.
     const alive = this.cats
       .filter((c) => c.alive)
@@ -1184,12 +1276,12 @@ export class BRGame {
 
   // ---------------------------------------------------------------- instantanea por cliente
 
-  private heldCode(cat: Cat): number {
+  protected heldCode(cat: Cat): number {
     const item = this.held(cat);
     return item ? ITEM_KINDS.indexOf(item.kind) * 3 + item.rarity : -1;
   }
 
-  private flags(cat: Cat): number {
+  protected flags(cat: Cat): number {
     let f = 0;
     if (!cat.alive) f |= FLAG.dead;
     if (cat.heal) f |= FLAG.healing;
@@ -1198,7 +1290,7 @@ export class BRGame {
     if (!cat.connected) f |= FLAG.disconnected;
     if (cat.bot) f |= FLAG.bot;
     if (cat.running) f |= FLAG.running;
-    return f;
+    return f | this.extraFlags(cat);
   }
 
   /** Instantanea para un jugador: solo lo cercano a su camara, para no revelar a todos. */
@@ -1304,6 +1396,7 @@ export class BRGame {
     }
     if (!cat.alive && cat.spectate !== null) snap.spectating = cat.spectate;
     if (this.feed.length > 0) snap.feed = this.feed;
+    this.extendSnapshot(snap, cat);
     return snap;
   }
 

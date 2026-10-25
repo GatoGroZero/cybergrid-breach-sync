@@ -308,8 +308,88 @@ function paintIndoorDetails(c: Ctx, map: BRMap): void {
   }
 }
 
+// ------------------------------------------------------------------ techos
+
+const isRoofWall = (id: number): boolean => id === G.PARAPETO;
+
+/**
+ * Bordes de un techo: el parapeto muestra su frente de ladrillo (mas oscuro) donde da al tejado y
+ * deja una sombra en el suelo, el canalon se hunde junto al muro y la cumbrera se ve como un
+ * lomo redondeado (claro arriba, oscuro abajo) con su sombra.
+ */
+function paintRoofEdges(c: Ctx, map: BRMap): void {
+  const seed = map.seed & 0xffff;
+  for (let ty = 0; ty < map.h; ty++) {
+    for (let tx = 0; tx < map.w; tx++) {
+      const id = groundAt(map, tx, ty);
+      const X = tx * T;
+      const Y = ty * T;
+      if (isRoofWall(id)) {
+        const south = groundAt(map, tx, ty + 1);
+        if (south >= 0 && !isRoofWall(south)) {
+          // frente del parapeto
+          fill(c, X, Y + T - 6, T, 6, '#6b4b40');
+          for (let k = 0; k < T; k += 8) fill(c, X + k, Y + T - 6, 1, 6, '#53392f');
+          fill(c, X, Y + T - 6, T, 1, '#8f6c5e');
+          fill(c, X, Y + T - 1, T, 1, '#3e2a23');
+        }
+        const north = groundAt(map, tx, ty - 1);
+        if (north >= 0 && !isRoofWall(north)) fill(c, X, Y, T, 1, '#c4a090');
+      } else if (id === G.CANALON) {
+        const n = groundAt(map, tx, ty - 1);
+        const s2 = groundAt(map, tx, ty + 1);
+        const w = groundAt(map, tx - 1, ty);
+        const e = groundAt(map, tx + 1, ty);
+        // sombra del parapeto sobre el canalon
+        if (isRoofWall(s2)) fill(c, X, Y + T - 4, T, 4, 'rgba(10,12,24,0.35)');
+        if (isRoofWall(n)) fill(c, X, Y, T, 4, 'rgba(10,12,24,0.3)');
+        if (isRoofWall(w)) fill(c, X, Y, 4, T, 'rgba(10,12,24,0.3)');
+        if (isRoofWall(e)) fill(c, X + T - 4, Y, 4, T, 'rgba(10,12,24,0.3)');
+        // una gota que escurre de vez en cuando
+        if (hash(tx, ty, seed + 5) < 0.12) fill(c, X + 7, Y + 5, 2, 3, '#7ea6d8');
+      } else if (id === G.CUMBRERA) {
+        const top = groundAt(map, tx, ty - 1) !== G.CUMBRERA;
+        const bottom = groundAt(map, tx, ty + 1) !== G.CUMBRERA;
+        if (!top && !bottom) continue;
+        if (top) fill(c, X, Y, T, 2, 'rgba(255,255,255,0.18)');
+        if (bottom) {
+          fill(c, X, Y + T - 2, T, 2, 'rgba(0,0,0,0.3)');
+          // sombra sobre las tejas de abajo
+          fill(c, X, Y + T, T, 4, 'rgba(10,12,24,0.28)');
+          fill(c, X, Y + T + 4, T, 2, 'rgba(10,12,24,0.14)');
+        }
+      }
+    }
+  }
+}
+
+/** Charcos y manchas de humedad sobre el alquitran y las tejas (la lluvia no perdona). */
+function paintRoofPuddles(c: Ctx, map: BRMap): void {
+  const seed = map.seed & 0xffff;
+  for (let ty = 3; ty < map.h - 3; ty++) {
+    for (let tx = 3; tx < map.w - 3; tx++) {
+      if (map.solid[ty * map.w + tx]) continue;
+      const id = groundAt(map, tx, ty);
+      if (id === G.CANALON || id === G.CUMBRERA) continue;
+      const r = hash(tx, ty, seed + 77);
+      if (r > 0.035) continue;
+      const X = tx * T + 2 + Math.floor(hash(tx, ty, 3) * 4);
+      const Y = ty * T + 4 + Math.floor(hash(tx, ty, 5) * 4);
+      fill(c, X, Y, 9, 4, 'rgba(120,170,230,0.32)');
+      fill(c, X + 1, Y - 1, 7, 1, 'rgba(120,170,230,0.32)');
+      fill(c, X + 1, Y + 4, 7, 1, 'rgba(120,170,230,0.32)');
+      fill(c, X + 2, Y + 1, 4, 1, 'rgba(255,255,255,0.35)');
+    }
+  }
+}
+
 /** Todo lo que se hornea encima del terreno base, segun el mapa. */
 export function paintWorld(c: Ctx, map: BRMap): void {
+  if (map.kind === 'tejado' || map.kind === 'azotea' || map.kind === 'mansarda') {
+    paintRoofEdges(c, map);
+    paintRoofPuddles(c, map);
+    return;
+  }
   paintGrassPatches(c, map);
   paintBoards(c, map);
   paintCheckers(c, map);

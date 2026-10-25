@@ -2,7 +2,21 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { Server, Socket } from 'socket.io';
 import { MAX_PLAYERS, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, TICK_HZ } from '../shared/br/constants';
-import { MAP_KINDS, type MapKind } from '../shared/br/map';
+import {
+  ADVENTURE_MAPS,
+  DUEL_MAPS,
+  MAP_KINDS,
+  TERRITORY_MAPS,
+  type MapKind,
+} from '../shared/br/map';
+import {
+  ENABLED_MODES,
+  type DuelFormat,
+  type GameMode,
+  type KitId,
+  type TeamId,
+  TEAM_NAMES,
+} from '../shared/br/modes';
 import {
   createRoomSchema,
   dropAmmoSchema,
@@ -10,6 +24,7 @@ import {
   emoteSchema,
   inputSchema,
   joinRoomSchema,
+  kitSchema,
   lootIdSchema,
   lootTakeSchema,
   moveItemSchema,
@@ -18,6 +33,7 @@ import {
   selectSchema,
   skinSchema,
   spectateSchema,
+  teamSchema,
   type Ack,
   type CatInfo,
   type GameEndPayload,
@@ -28,11 +44,20 @@ import {
   type RoomState,
 } from '../shared/br/protocol';
 import type { AmmoKind } from '../shared/br/items';
-import { botsFor, canStart, maxHumans, type BotsSetting } from '../shared/br/rooms';
+import {
+  botCountFor,
+  humanCapacity,
+  startable,
+  teamSizeOf,
+  type BotsSetting,
+  type RoomRules,
+} from '../shared/br/rooms';
+import { ZONE_TECHO, ZONE_TERRITORIO } from '../shared/br/zone';
 import { defaultSkin, isValidSkin, randomSkin, type Skin } from '../shared/br/skin';
 import { createRng } from '../shared/rng';
 import type { SessionUser } from './auth';
 import { BRGame, type CatInit } from './br/Game';
+import { PvpGame } from './br/PvpGame';
 import type { Config } from './config';
 import type { Repo } from './db';
 
@@ -43,6 +68,8 @@ interface Member {
   socketId: string | null;
   catId: number;
   skin: Skin;
+  /** Equipo en los modos por equipos. */
+  team: TeamId;
 }
 
 interface Room {
@@ -51,6 +78,9 @@ interface Room {
   isPrivate: boolean;
   map: MapKind | 'azar';
   bots: BotsSetting;
+  mode: GameMode;
+  format: DuelFormat;
+  teamSize: number;
   phase: RoomPhase;
   hostId: number;
   members: Map<number, Member>;
@@ -204,6 +234,9 @@ export class Lobby {
     socket.on('room:settings', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setSettings(user.id, raw));
     });
+    socket.on('room:team', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.setTeam(user.id, raw));
+    });
     socket.on('room:start', (ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.startNow(user.id));
     });
@@ -220,6 +253,15 @@ export class Lobby {
       const m = me();
       if (m?.game) m.game.reload(m.member.catId);
     });
+    socket.on('game:kit', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = kitSchema.safeParse(raw);
+      const m = me();
+      if (!parsed.success || !(m?.game instanceof PvpGame)) return ack?.(fail('datos_invalidos'));
+      // (se evalua antes: sin callback de respuesta igual hay que registrar la eleccion)
+      const done = m.game.chooseKit(m.member.catId, parsed.data.kit as KitId);
+      ack?.(done ? { ok: true } : fail('fuera_de_tiempo'));
+    });
     socket.on('game:emote', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = emoteSchema.safeParse(raw);
@@ -229,6 +271,12 @@ export class Lobby {
     socket.on('dev:kit', (kind?: unknown) => {
       const m = me();
       if (this.config.testKit && m?.game) m.game.giveTestKit(m.member.catId, kind === 'heavy');
+    });
+    socket.on('dev:round', () => {
+      const m = me();
+      if (!this.config.testKit || !(m?.game instanceof PvpGame)) return;
+      const mine = m.game.cat(m.member.catId);
+      if (mine) m.game.forceRoundWin(mine.team);
     });
     socket.on('dev:finish', () => {
       const m = me();
@@ -353,18 +401,71 @@ export class Lobby {
     return randomBytes(3).toString('hex').toUpperCase().slice(0, ROOM_CODE_LENGTH);
   }
 
+  private rulesOf(room: Room): RoomRules {
+    return { mode: room.mode, bots: room.bots, format: room.format, teamSize: room.teamSize };
+  }
+
+  /** Personas de cada equipo (solo cuenta en los modos por equipos). */
+  private teamHumans(room: Room): [number, number] {
+    const out: [number, number] = [0, 0];
+    for (const m of room.members.values()) out[m.team]++;
+    return out;
+  }
+
+  private canStartRoom(room: Room): boolean {
+    return startable(this.rulesOf(room), room.members.size, this.teamHumans(room));
+  }
+
+  /** Mapas que existen en cada modo. */
+  private mapsOf(mode: GameMode): readonly MapKind[] {
+    return mode === 'techo'
+      ? DUEL_MAPS
+      : mode === 'territorio'
+        ? TERRITORY_MAPS
+        : mode === 'aventura'
+          ? ADVENTURE_MAPS
+          : MAP_KINDS;
+  }
+
+  private mapFits(mode: GameMode, map: string): boolean {
+    return map === 'azar' || (this.mapsOf(mode) as readonly string[]).includes(map);
+  }
+
+  /** El equipo con menos personas (o el primero si van igual). */
+  private lighterTeam(room: Room): TeamId {
+    const [a, b] = this.teamHumans(room);
+    return a <= b ? 0 : 1;
+  }
+
+  /** Despues de cambiar el formato: si un lado quedo pasado de gente, se mueve al otro. */
+  private rebalanceTeams(room: Room): void {
+    const size = teamSizeOf(this.rulesOf(room));
+    if (size <= 0) return;
+    for (const m of room.members.values()) {
+      const counts = this.teamHumans(room);
+      if (counts[m.team] > size) m.team = (m.team === 0 ? 1 : 0) as TeamId;
+    }
+  }
+
   private createRoom(user: SessionUser, socket: Socket, raw: unknown): Ack<{ code: string }> {
     const parsed = createRoomSchema.safeParse(raw ?? {});
     if (!parsed.success) return fail('datos_invalidos') as Ack<{ code: string }>;
     if (this.userRoom.has(user.id)) return fail('ya_estas_en_una_sala') as Ack<{ code: string }>;
     if (this.rooms.size >= MAX_ROOMS) return fail('servidor_lleno') as Ack<{ code: string }>;
+    const mode = parsed.data.mode;
+    if (!ENABLED_MODES.includes(mode)) return fail('modo_no_disponible') as Ack<{ code: string }>;
+    // un mapa de otro modo no sirve: se deja al azar
+    const map = this.mapFits(mode, parsed.data.map) ? parsed.data.map : 'azar';
 
     const room: Room = {
       code: this.newCode(),
       name: parsed.data.name ?? `Sala de ${user.username}`,
       isPrivate: parsed.data.isPrivate,
-      map: parsed.data.map as MapKind | 'azar',
+      map: map as MapKind | 'azar',
       bots: parsed.data.bots,
+      mode,
+      format: parsed.data.format,
+      teamSize: parsed.data.teamSize,
       phase: 'lobby',
       hostId: user.id,
       members: new Map(),
@@ -391,7 +492,7 @@ export class Lobby {
     if (this.userRoom.has(user.id)) return fail('ya_estas_en_una_sala') as Ack<{ code: string }>;
     if (room.phase === 'playing' || room.phase === 'ended')
       return fail('partida_en_curso') as Ack<{ code: string }>;
-    if (room.members.size >= maxHumans(room.bots))
+    if (room.members.size >= humanCapacity(this.rulesOf(room)))
       return fail('sala_llena') as Ack<{ code: string }>;
     this.cancelCountdown(room);
     this.addMember(room, user, socket);
@@ -407,6 +508,7 @@ export class Lobby {
       socketId: socket.id,
       catId: 0,
       skin: this.skins.get(user.id) ?? defaultSkin(),
+      team: this.lighterTeam(room),
     });
     this.userRoom.set(user.id, room.code);
     void socket.leave(BROWSE);
@@ -455,9 +557,29 @@ export class Lobby {
     if (
       [...room.members.values()].every((m) => m.ready) &&
       room.phase === 'lobby' &&
-      canStart(room.bots, room.members.size)
+      this.canStartRoom(room)
     )
       this.startCountdown(room);
+    return { ok: true };
+  }
+
+  /** Cambiarse de equipo (solo si el otro lado tiene lugar). */
+  private setTeam(userId: number, raw: unknown): Ack {
+    const parsed = teamSchema.safeParse(raw);
+    if (!parsed.success) return fail('datos_invalidos');
+    const room = this.roomOf(userId);
+    const member = room?.members.get(userId);
+    if (!room || !member) return fail('no_estas_en_una_sala');
+    if (room.phase !== 'lobby' && room.phase !== 'countdown') return fail('partida_en_curso');
+    const size = teamSizeOf(this.rulesOf(room));
+    if (size <= 0) return fail('sin_equipos');
+    const target = parsed.data.team;
+    if (member.team === target) return { ok: true };
+    if (this.teamHumans(room)[target] >= size) return fail('equipo_lleno');
+    member.team = target;
+    member.ready = false;
+    this.cancelCountdown(room);
+    this.broadcast(room);
     return { ok: true };
   }
 
@@ -470,13 +592,26 @@ export class Lobby {
     if (room.hostId !== userId) return fail('solo_el_anfitrion');
     if (room.phase !== 'lobby' && room.phase !== 'countdown') return fail('partida_en_curso');
     const next = parsed.data;
-    if (next.bots !== undefined && room.members.size > maxHumans(next.bots))
-      return fail('demasiados_jugadores');
+    const after: RoomRules = {
+      mode: next.mode ?? room.mode,
+      bots: next.bots ?? room.bots,
+      format: next.format ?? room.format,
+      teamSize: next.teamSize ?? room.teamSize,
+    };
+    if (next.mode !== undefined && !ENABLED_MODES.includes(next.mode))
+      return fail('modo_no_disponible');
+    if (room.members.size > humanCapacity(after)) return fail('demasiados_jugadores');
 
     if (next.name !== undefined) room.name = next.name;
     if (next.isPrivate !== undefined) room.isPrivate = next.isPrivate;
+    room.mode = after.mode;
+    room.bots = after.bots;
+    room.format = after.format;
+    room.teamSize = after.teamSize;
     if (next.map !== undefined) room.map = next.map as MapKind | 'azar';
-    if (next.bots !== undefined) room.bots = next.bots;
+    // al cambiar de modo, un mapa de otro modo se deja al azar
+    if (!this.mapFits(room.mode, room.map)) room.map = 'azar';
+    this.rebalanceTeams(room);
     this.cancelCountdown(room);
     for (const m of room.members.values()) m.ready = false;
     this.broadcast(room);
@@ -489,7 +624,7 @@ export class Lobby {
     if (!room) return fail('no_estas_en_una_sala');
     if (room.hostId !== userId) return fail('solo_el_anfitrion');
     if (room.phase !== 'lobby') return fail('partida_en_curso');
-    if (!canStart(room.bots, room.members.size)) return fail('faltan_jugadores');
+    if (!this.canStartRoom(room)) return fail('faltan_jugadores');
     this.startCountdown(room);
     return { ok: true };
   }
@@ -502,10 +637,11 @@ export class Lobby {
         name: r.name,
         host: r.members.get(r.hostId)?.name ?? '',
         players: r.members.size,
-        maxPlayers: maxHumans(r.bots),
-        bots: botsFor(r.bots, r.members.size),
+        maxPlayers: humanCapacity(this.rulesOf(r)),
+        bots: botCountFor(this.rulesOf(r), r.members.size),
         phase: r.phase,
         map: r.map,
+        mode: r.mode,
       }));
   }
 
@@ -529,11 +665,14 @@ export class Lobby {
       isPrivate: room.isPrivate,
       phase: room.phase,
       map: room.map,
-      maxPlayers: MAX_PLAYERS,
-      maxHumans: maxHumans(room.bots),
+      maxPlayers: this.totalCats(room),
+      maxHumans: humanCapacity(this.rulesOf(room)),
       bots: room.bots,
-      botCount: botsFor(room.bots, room.members.size),
-      canStart: canStart(room.bots, room.members.size),
+      botCount: botCountFor(this.rulesOf(room), room.members.size),
+      canStart: this.canStartRoom(room),
+      mode: room.mode,
+      format: room.format,
+      teamSize: teamSizeOf(this.rulesOf(room)),
       countdown: room.countdown,
       members: [...room.members.values()].map((m) => ({
         userId: m.userId,
@@ -542,8 +681,17 @@ export class Lobby {
         connected: m.socketId !== null,
         host: m.userId === room.hostId,
         skin: m.skin,
+        team: m.team,
       })),
     };
+  }
+
+  /** Gatos que habra en la partida (personas y bots) con la sala como esta. */
+  private totalCats(room: Room): number {
+    const rules = this.rulesOf(room);
+    return room.mode === 'br'
+      ? MAX_PLAYERS
+      : room.members.size + botCountFor(rules, room.members.size);
   }
 
   private broadcast(room: Room): void {
@@ -582,7 +730,13 @@ export class Lobby {
   }
 
   private catInfos(game: BRGame): CatInfo[] {
-    return game.cats.map((c) => ({ id: c.id, name: c.name, bot: c.bot, skin: c.skin }));
+    return game.cats.map((c) => ({
+      id: c.id,
+      name: c.name,
+      bot: c.bot,
+      skin: c.skin,
+      ...(c.team >= 0 ? { team: c.team } : {}),
+    }));
   }
 
   private startPayload(room: Room, member: Member): GameStartPayload {
@@ -590,17 +744,19 @@ export class Lobby {
     return {
       seed: game.seed,
       map: game.mapKind,
+      ...(game.mode !== 'br' ? { mode: game.mode } : {}),
+      ...(game instanceof PvpGame ? { teamSize: game.teamSize } : {}),
       you: member.catId,
       cats: this.catInfos(game),
       tickHz: TICK_HZ,
     };
   }
 
-  private startGame(room: Room): void {
+  /** Los gatos de la partida: las personas y, en cada lado, los bots que falten. */
+  private buildCats(room: Room, rng: ReturnType<typeof createRng>): CatInit[] {
     const members = [...room.members.values()];
-    const rng = createRng(randomInt(1, 2_000_000_000));
-    const mapKind: MapKind = room.map === 'azar' ? (rng.pick([...MAP_KINDS]) as MapKind) : room.map;
-
+    const rules = this.rulesOf(room);
+    const teamSize = teamSizeOf(rules);
     const cats: CatInit[] = members.map((m, i) => {
       m.catId = i + 1;
       m.ready = false;
@@ -610,21 +766,43 @@ export class Lobby {
         userId: m.userId,
         bot: false,
         skin: isValidSkin(m.skin) ? m.skin : defaultSkin(),
+        ...(teamSize > 0 ? { team: m.team } : {}),
       };
     });
-    // Los bots que pidio el anfitrion (o los que falten hasta 12 gatos).
     const taken = new Set(members.map((m) => m.name.toLowerCase()));
     const names = rng.shuffle(BOT_NAMES.filter((n) => !taken.has(n.toLowerCase())));
-    const total = members.length + botsFor(room.bots, members.length);
-    for (let i = cats.length; i < total; i++) {
+    const addBot = (team?: TeamId): void => {
+      const i = cats.length;
       cats.push({
         id: i + 1,
         name: names[i - members.length] ?? `Gato${i + 1}`,
         userId: null,
         bot: true,
         skin: randomSkin(rng),
+        ...(team !== undefined ? { team } : {}),
       });
+    };
+    if (teamSize > 0) {
+      // En cada equipo se completan los lugares que las personas no ocupan.
+      for (const team of [0, 1] as const) {
+        const have = cats.filter((c) => c.team === team).length;
+        for (let k = have; k < teamSize; k++) addBot(team);
+      }
+    } else {
+      // Los bots que pidio el anfitrion (o los que falten hasta 12 gatos).
+      const total = members.length + botCountFor(rules, members.length);
+      while (cats.length < total) addBot();
     }
+    return cats;
+  }
+
+  private startGame(room: Room): void {
+    const members = [...room.members.values()];
+    const rng = createRng(randomInt(1, 2_000_000_000));
+    const pool = this.mapsOf(room.mode);
+    const mapKind: MapKind = room.map === 'azar' ? (rng.pick([...pool]) as MapKind) : room.map;
+    const cats = this.buildCats(room, rng);
+    const teamSize = teamSizeOf(this.rulesOf(room));
 
     room.phase = 'playing';
     room.countdown = 0;
@@ -632,13 +810,27 @@ export class Lobby {
     let game: BRGame | null = null;
     for (let i = 0; i < 5 && !game; i++) {
       try {
-        game = new BRGame({
-          seed: randomInt(1, 2_000_000_000),
-          mapKind,
-          cats,
-          zoneScale: this.config.zoneTimeScale,
-          introSeconds: this.config.introSeconds,
-        });
+        const seed = randomInt(1, 2_000_000_000);
+        if (room.mode === 'techo' || room.mode === 'territorio') {
+          game = new PvpGame({
+            seed,
+            mapKind,
+            mode: room.mode,
+            cats,
+            teamSize,
+            zone: room.mode === 'techo' ? ZONE_TECHO : ZONE_TERRITORIO,
+            zoneScale: this.config.zoneTimeScale,
+            pickSeconds: this.config.pickSeconds,
+          });
+        } else {
+          game = new BRGame({
+            seed,
+            mapKind,
+            cats,
+            zoneScale: this.config.zoneTimeScale,
+            introSeconds: this.config.introSeconds,
+          });
+        }
       } catch (err) {
         console.error('no se pudo crear la partida', err);
       }
@@ -673,9 +865,14 @@ export class Lobby {
           room.celebrateUntil = performance.now() + this.config.celebrationSeconds * 1000;
           const result = game.result;
           const winner = result ? game.cat(result.winnerId ?? -1) : undefined;
+          const team = result?.winnerTeam;
           this.io.to(room.code).emit('game:win', {
             winnerId: result?.winnerId ?? null,
-            winnerName: winner?.name ?? null,
+            winnerName:
+              team !== undefined && team !== null
+                ? `Equipo ${TEAM_NAMES[team as 0 | 1]}`
+                : (winner?.name ?? null),
+            ...(team !== undefined ? { winnerTeam: team, score: result?.score } : {}),
           });
         }
       }

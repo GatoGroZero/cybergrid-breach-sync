@@ -58,9 +58,17 @@ export function dayStart(seed: number): number {
 }
 
 /** Hora (0 a 1) a los `clockS` segundos de una partida con esa semilla. */
-export function dayPhase(seed: number, clockS: number): number {
-  return clamp01(dayStart(seed) + Math.max(0, clockS) / DAY_SPAN_S);
+export function dayPhase(seed: number, clockS: number, span: number = DAY_SPAN_S): number {
+  return clamp01(dayStart(seed) + Math.max(0, clockS) / span);
 }
+
+/** Cuanto dura de dia a noche en cada modo: las partidas por rondas son mas largas. */
+export const DAY_SPAN_BY_MODE = {
+  br: DAY_SPAN_S,
+  techo: 330,
+  territorio: 420,
+  aventura: 900,
+} as const;
 
 export function dayName(p: number): DayName {
   for (const [cut, name] of DAY_CUTS) if (p < cut) return name;

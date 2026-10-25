@@ -267,13 +267,20 @@
         <div id="lobby-browse" class="lobby-main">
           <section class="card">
             <h2>Jugar</h2>
+            <div
+              id="mode-picker"
+              class="modes"
+              role="radiogroup"
+              aria-label="Modo de juego"
+              data-testid="mode-picker"
+            ></div>
             <button id="btn-solo" class="btn primary wide big" type="button" data-testid="btn-solo">
               Jugar solo
             </button>
-            <p class="muted">Tú contra 11 bots. La partida empieza al instante.</p>
-            <p class="muted">
-              ¿Con amigos? Crea una sala, elige cuántos bots y comparte el enlace.
+            <p id="solo-help" class="muted" data-testid="solo-help">
+              Tú contra 11 bots. La partida empieza al instante.
             </p>
+            <p class="muted">¿Con amigos? Crea una sala, elige el modo y comparte el enlace.</p>
             <hr />
             <form id="create-form" novalidate>
               <label class="field">
@@ -289,9 +296,17 @@
                 <span>Mapa</span>
                 <select id="room-map" data-testid="room-map"></select>
               </label>
-              <label class="field">
+              <label class="field" id="room-bots-field">
                 <span>Bots</span>
                 <select id="room-bots" data-testid="room-bots"></select>
+              </label>
+              <label class="field" id="room-format-field" hidden>
+                <span>Formato</span>
+                <select id="room-format" data-testid="room-format"></select>
+              </label>
+              <label class="field" id="room-teamsize-field" hidden>
+                <span>Gatos por equipo</span>
+                <select id="room-teamsize" data-testid="room-teamsize"></select>
               </label>
               <label class="check">
                 <input id="room-private" data-testid="room-private" type="checkbox" />
@@ -367,16 +382,29 @@
           </div>
           <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
           <ul id="member-list" class="member-list" data-testid="member-list"></ul>
+          <div id="team-board" class="team-board" hidden data-testid="team-board"></div>
           <p id="bots-line" class="bots-line" data-testid="bots-line"></p>
           <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
             <legend>Ajustes de la sala</legend>
             <label class="field">
+              <span>Modo</span>
+              <select id="set-mode" data-testid="set-mode"></select>
+            </label>
+            <label class="field">
               <span>Mapa</span>
               <select id="set-map" data-testid="set-map"></select>
             </label>
-            <label class="field">
+            <label class="field" id="set-bots-field">
               <span>Bots</span>
               <select id="set-bots" data-testid="set-bots"></select>
+            </label>
+            <label class="field" id="set-format-field" hidden>
+              <span>Formato</span>
+              <select id="set-format" data-testid="set-format"></select>
+            </label>
+            <label class="field" id="set-teamsize-field" hidden>
+              <span>Gatos por equipo</span>
+              <select id="set-teamsize" data-testid="set-teamsize"></select>
             </label>
             <label class="check">
               <input id="set-private" data-testid="set-private" type="checkbox" />
