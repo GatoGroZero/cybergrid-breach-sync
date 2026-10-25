@@ -1,7 +1,6 @@
 import {
   ARMOR_SLOTS,
   BOSS_ORDER,
-  BOSS_POWER,
   DASH,
   HAZARD,
   MINIBOSSES,
@@ -1625,6 +1624,19 @@ export class AdventureGame extends BRGame {
   }
 
   /** Solo para pruebas: da a un gato un arma fuerte. */
+  /** Solo para pruebas: derrota al jefe de la sala donde esta el grupo. */
+  debugKillBoss(): void {
+    const cat = this.cats.find((c) => c.alive);
+    if (!cat) return;
+    for (const m of [...this.mobs.values()]) {
+      if (!m.def.boss) continue;
+      // un jefe recien aparecido no recibe dano: para la prueba se le quita esa proteccion
+      m.born = this.time - 5;
+      m.invuln = 0;
+      this.damageMob(m, m.maxHp + 99, cat);
+    }
+  }
+
   /** Solo para pruebas: da la aventura por ganada con una marcha de ejemplo. */
   debugWin(): void {
     this.roomsCleared = Math.max(this.roomsCleared, 14);

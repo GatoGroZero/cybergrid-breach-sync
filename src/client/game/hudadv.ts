@@ -1,10 +1,19 @@
-import { ARMOR_NAMES, DASH, MOB, RELICS, mobDef } from '../../shared/br/adventure';
+import {
+  ARMOR_NAMES,
+  DASH,
+  MOB,
+  POWERS,
+  RELICS,
+  mobDef,
+  powerCooldown,
+} from '../../shared/br/adventure';
 import { RARITY_COLORS } from '../../shared/br/items';
 import type { Assets } from '../pixel/art';
-import { armorIcon, potionIcon, relicIcon } from '../pixel/art-items';
+import { armorIcon, potionIcon, powerIcon, relicIcon } from '../pixel/art-items';
 import { C } from '../pixel/draw';
 import { keyLabel } from './input';
 import { PIX, VT, panel, sprite, text, type HudFrame } from './hud';
+import type { ClientBR } from './state';
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
@@ -26,6 +35,16 @@ const relicIconOf = (id: number): HTMLCanvasElement => {
   if (!c) {
     c = relicIcon(id);
     relicIcons.set(id, c);
+  }
+  return c;
+};
+
+const powerIcons = new Map<number, HTMLCanvasElement>();
+const powerIconOf = (id: number): HTMLCanvasElement => {
+  let c = powerIcons.get(id);
+  if (!c) {
+    c = powerIcon(id);
+    powerIcons.set(id, c);
   }
   return c;
 };
@@ -289,10 +308,68 @@ export class AdvHud {
     }
   }
 
-  /** Eleccion de reliquia: tres tarjetas. Se toca, se hace clic o se pulsa 1, 2 o 3. */
+  /** Estado de cada habilidad para dibujarla (en PC y en los botones tactiles). */
+  powerStates(
+    g: ClientBR,
+  ): { icon: HTMLCanvasElement; ready: number; active: boolean; level: number }[] {
+    return (g.adv?.powers ?? []).map(([id, level, cd, act]) => {
+      const def = POWERS[id];
+      const total = def ? powerCooldown(def, level) : 1;
+      return {
+        icon: powerIconOf(id),
+        ready: cd <= 0 ? 1 : clamp(1 - cd / total, 0, 1),
+        active: act > 0,
+        level,
+      };
+    });
+  }
+
+  /** Barra de habilidades de PC: una casilla por habilidad con su tecla y su espera. */
+  drawPowerBar(f: HudFrame, bottom: number): void {
+    const { ctx, g, w, now } = f;
+    const list = this.powerStates(g);
+    if (list.length === 0) return;
+    const size = 40;
+    const gap = 8;
+    const total = list.length * size + (list.length - 1) * gap;
+    const x0 = Math.round(w / 2 - total / 2);
+    const keys = [g.input.keys.power1, g.input.keys.power2, g.input.keys.power3];
+    list.forEach((p, i) => {
+      const x = x0 + i * (size + gap);
+      const y = bottom - size;
+      const ready = p.ready >= 1;
+      panel(
+        ctx,
+        x,
+        y,
+        size,
+        size,
+        ready ? 'rgba(41,54,111,0.92)' : 'rgba(26,28,44,0.9)',
+        p.active ? C.yellow : ready ? C.cyan : C.black,
+      );
+      ctx.globalAlpha = ready ? 1 : 0.45;
+      sprite(ctx, p.icon, x + size / 2, y + size / 2 - 1, size - 10);
+      ctx.globalAlpha = 1;
+      if (!ready) {
+        // la espera se ve como una cortina que baja
+        ctx.fillStyle = 'rgba(10,12,24,0.55)';
+        ctx.fillRect(x, y, size, Math.round(size * (1 - p.ready)));
+      } else if (Math.floor(now / 500) % 2 === 0) {
+        ctx.fillStyle = 'rgba(115,239,247,0.18)';
+        ctx.fillRect(x, y, size, size);
+      }
+      text(ctx, keyLabel(keys[i] ?? '').toUpperCase(), x + 5, y + 7, 14, C.yellow, 'left');
+      if (p.level > 1)
+        text(ctx, '*'.repeat(p.level - 1), x + size - 3, y + size - 6, 14, C.yellow, 'right');
+    });
+  }
+
+  /** Eleccion de reliquia o de habilidad: tres tarjetas. Se toca, se hace clic o se pulsa 1, 2 o 3. */
   drawRelicChoice(f: HudFrame): void {
     const { ctx, g, w, h, now } = f;
-    const choice = g.adv?.choice;
+    const relics = g.adv?.choice ?? null;
+    const powers = relics ? null : (g.adv?.pchoice ?? null);
+    const choice = relics ?? powers;
     if (!choice || !g.alive) {
       if (g.input.kitRects.length > 0 && g.mode === 'aventura') g.input.kitRects = [];
       return;
@@ -302,10 +379,21 @@ export class AdvHud {
     ctx.fillRect(0, 0, w, h);
     const title = Math.round(clamp(w * 0.026, 12, 22));
     const top = compact ? f.safe.t + 62 : Math.max(h * 0.16, f.safe.t + 84);
-    text(ctx, 'ELIGE UNA RELIQUIA', w / 2, top, title, C.yellow, 'center', PIX);
     text(
       ctx,
-      'Te acompaña toda la aventura y se puede repetir',
+      powers ? 'ELIGE UNA HABILIDAD' : 'ELIGE UNA RELIQUIA',
+      w / 2,
+      top,
+      title,
+      C.yellow,
+      'center',
+      PIX,
+    );
+    text(
+      ctx,
+      powers
+        ? 'Un premio del jefe: úsala con su tecla o botón'
+        : 'Te acompaña toda la aventura y se puede repetir',
       w / 2,
       top + title * 1.7,
       compact ? 16 : 20,
@@ -321,18 +409,22 @@ export class AdvHud {
     const x0 = Math.round(w / 2 - total / 2);
     g.input.kitRects = [];
     choice.forEach((id, i) => {
-      const relic = RELICS[id];
-      if (!relic) return;
+      const relic = powers ? null : RELICS[id];
+      const power = powers ? POWERS[id] : null;
+      const name = relic?.name ?? power?.name;
+      const desc = relic?.desc ?? power?.desc;
+      if (!name || !desc) return;
       const x = x0 + i * (cardW + gap);
       g.input.kitRects.push({ x, y: y0, w: cardW, h: cardH });
       const bob = Math.round(Math.sin(now / 420 + i) * 2);
-      panel(ctx, x, y0 + bob, cardW, cardH, 'rgba(41,54,111,0.94)', '#8a6a2a');
+      panel(ctx, x, y0 + bob, cardW, cardH, 'rgba(41,54,111,0.94)', powers ? '#2a8aa8' : '#8a6a2a');
       const k = compact ? 40 : 64;
-      sprite(ctx, relicIconOf(id), x + cardW / 2, y0 + bob + (compact ? 30 : 52), k);
+      const icon = powers ? powerIconOf(id) : relicIconOf(id);
+      sprite(ctx, icon, x + cardW / 2, y0 + bob + (compact ? 30 : 52), k);
       const nameY = y0 + bob + (compact ? 62 : 104);
       text(
         ctx,
-        plain(relic.name).toUpperCase(),
+        plain(name).toUpperCase(),
         x + cardW / 2,
         nameY,
         compact ? 10 : 12,
@@ -342,7 +434,7 @@ export class AdvHud {
       );
       wrap(
         ctx,
-        relic.desc,
+        desc,
         x + cardW / 2,
         nameY + (compact ? 18 : 28),
         cardW - 16,
@@ -350,17 +442,16 @@ export class AdvHud {
         compact ? 16 : 20,
         C.lgray,
       );
-      const owned = g.adv?.relics.filter((r) => r === id).length ?? 0;
-      if (owned > 0)
-        text(
-          ctx,
-          `Ya tienes ${owned}`,
-          x + cardW / 2,
-          y0 + bob + cardH - 30,
-          compact ? 14 : 17,
-          C.cyan,
-          'center',
-        );
+      let note = '';
+      if (relic) {
+        const owned = g.adv?.relics.filter((r) => r === id).length ?? 0;
+        if (owned > 0) note = `Ya tienes ${owned}`;
+      } else if (power) {
+        const own = g.adv?.powers.find((p) => p[0] === id);
+        note = own ? `Nivel ${own[1]} a ${own[1] + 1}` : `Nueva, espera ${power.cooldown} s`;
+      }
+      if (note)
+        text(ctx, note, x + cardW / 2, y0 + bob + cardH - 30, compact ? 14 : 17, C.cyan, 'center');
       if (g.input.mode === 'keyboard')
         text(
           ctx,
@@ -386,7 +477,20 @@ export class AdvHud {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
     const y = Math.round(h * 0.34);
-    if (adv.fallen > 0) {
+    if (adv.fallen < 0) {
+      text(ctx, 'CAISTE', w / 2, y, Math.round(clamp(w * 0.03, 16, 30)), C.red, 'center', PIX);
+      text(
+        ctx,
+        'Vuelves al terminar la sala',
+        w / 2,
+        y + 38,
+        Math.round(clamp(w * 0.04, 20, 30)),
+        C.white,
+        'center',
+        VT,
+      );
+      text(ctx, 'Mira a tus compañeros mientras pelean', w / 2, y + 66, 20, C.lgray, 'center', VT);
+    } else if (adv.fallen > 0) {
       text(ctx, 'CAISTE', w / 2, y, Math.round(clamp(w * 0.03, 16, 30)), C.red, 'center', PIX);
       text(
         ctx,

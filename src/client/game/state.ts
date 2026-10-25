@@ -427,6 +427,13 @@ export class ClientBR {
     return this.gateClosed;
   }
 
+  /** Aventura: elige una de las habilidades que dejo un jefe (0 a 2). */
+  sendPower(i: number): void {
+    if (!this.net.connected || !this.adv?.pchoice || i < 0 || i >= this.adv.pchoice.length) return;
+    this.net.socket.emit('game:power', { i });
+    this.sfx.click();
+  }
+
   /** Aventura: elige una de las reliquias ofrecidas (0 a 2). */
   sendRelic(i: number): void {
     if (!this.net.connected || !this.adv?.choice || i < 0 || i >= this.adv.choice.length) return;
@@ -583,6 +590,7 @@ export class ClientBR {
       hold: sample.hold,
       run: sample.run,
       ...(sample.dash && this.mode === 'aventura' ? { dash: true } : {}),
+      ...(sample.power > 0 && this.mode === 'aventura' ? { pw: sample.power } : {}),
     };
     const before = { x: this.x, y: this.y };
     const motion = { x: this.x, y: this.y };

@@ -257,6 +257,7 @@ export class BRRenderer {
     if (game.mode === 'aventura')
       this.adv = new AdvScene(this.fx, this.sfx, {
         light: (x, y, r, color, life) => this.addLight(x, y, r, color, life),
+        icon: (kind) => (this.assets.icon as Record<string, HTMLCanvasElement | undefined>)[kind],
         shake: (n) => {
           this.shake = Math.max(this.shake, n);
         },
@@ -912,6 +913,7 @@ export class BRRenderer {
     this.collectBoxes(list, g, camX, camY, now, dt);
     this.collectCats(list, g, cats, camX, camY, now, dt);
     this.adv?.collect(list, b, g, mobs, camX, camY, now);
+    if (g.alive) this.adv?.drawPlayerAura(b, g, camX, camY, now);
     list.sort((p, q) => p.y - q.y);
     for (const d of list) d.draw();
     this.drawAim(b, g, cats, camX, camY, now);

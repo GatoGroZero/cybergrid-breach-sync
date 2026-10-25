@@ -22,6 +22,9 @@ export const ACTIONS = [
   'emote',
   'reload',
   'dash',
+  'power1',
+  'power2',
+  'power3',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -44,6 +47,9 @@ export const ACTION_LABELS: Record<Action, string> = {
   emote: 'Abrir los emotes',
   reload: 'Recargar el arma',
   dash: 'Voltereta (Aventura)',
+  power1: 'Habilidad 1 (Aventura)',
+  power2: 'Habilidad 2 (Aventura)',
+  power3: 'Habilidad 3 (Aventura)',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -65,6 +71,9 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   emote: 'KeyT',
   reload: 'KeyR',
   dash: 'KeyQ',
+  power1: 'KeyF',
+  power2: 'KeyG',
+  power3: 'KeyH',
 };
 
 /** Las flechas siempre mueven al gato, ademas de las teclas que cada jugador elija. */
@@ -135,6 +144,9 @@ export const TOUCH_IDS = [
   'emote',
   'reload',
   'dash',
+  'power1',
+  'power2',
+  'power3',
 ] as const;
 export type TouchId = (typeof TOUCH_IDS)[number];
 
@@ -158,6 +170,9 @@ export const TOUCH_LABELS: Record<TouchId, string> = {
   emote: 'Emotes',
   reload: 'Recargar',
   dash: 'Voltereta',
+  power1: 'Habilidad 1',
+  power2: 'Habilidad 2',
+  power3: 'Habilidad 3',
 };
 
 export const DEFAULT_TOUCH: TouchLayout = {
@@ -171,6 +186,9 @@ export const DEFAULT_TOUCH: TouchLayout = {
   emote: { x: 0.04, y: 0.5, s: 0.85 },
   reload: { x: 0.74, y: 0.62, s: 0.8 },
   dash: { x: 0.655, y: 0.68, s: 0.95 },
+  power1: { x: 0.79, y: 0.5, s: 0.85 },
+  power2: { x: 0.85, y: 0.43, s: 0.85 },
+  power3: { x: 0.91, y: 0.36, s: 0.85 },
 };
 
 export function loadTouchLayout(): TouchLayout {
@@ -266,6 +284,9 @@ export function touchCircles(
     emote: c('emote', 24),
     reload: c('reload', 24),
     dash: c('dash', 30),
+    power1: c('power1', 26),
+    power2: c('power2', 26),
+    power3: c('power3', 26),
     slots,
   };
 }
@@ -286,6 +307,8 @@ export interface Sample {
   run: boolean;
   /** Pidio la voltereta (Aventura). */
   dash: boolean;
+  /** Habilidad que pidio usar (1 a 3) o 0. */
+  power: 0 | 1 | 2 | 3;
   /** True si el jugador esta apuntando a mano (raton o joystick de la mira). */
   hasAim: boolean;
 }
@@ -340,6 +363,7 @@ export class InputController {
   /** La voltereta existe solo en la Aventura: ahi se muestra su boton y la tecla funciona. */
   dashEnabled = false;
   private dashLatch = false;
+  private powerLatch: 0 | 1 | 2 | 3 = 0;
 
   /** Usa el objeto en mano una vez (botiquin, escudo, pocion o muro) sin tener que apuntar ni disparar. */
   requestUse(): void {
@@ -451,6 +475,9 @@ export class InputController {
       else if (action === 'mute') this.cb.onMute();
       else if (action === 'reload') this.cb.onReload();
       else if (action === 'dash') this.dashLatch = true;
+      else if (action === 'power1') this.powerLatch = 1;
+      else if (action === 'power2') this.powerLatch = 2;
+      else if (action === 'power3') this.powerLatch = 3;
       else if (action.startsWith('slot')) this.cb.onSelect(Number(action.slice(4)) - 1);
       else if (action === 'fireKey') this.clickLatch = true;
     }
@@ -547,6 +574,9 @@ export class InputController {
     if (tap('emote', () => (this.emoteOpen = true))) return;
     if (tap('reload', this.cb.onReload)) return;
     if (this.dashEnabled && tap('dash', () => (this.dashLatch = true))) return;
+    if (this.dashEnabled && tap('power1', () => (this.powerLatch = 1))) return;
+    if (this.dashEnabled && tap('power2', () => (this.powerLatch = 2))) return;
+    if (this.dashEnabled && tap('power3', () => (this.powerLatch = 3))) return;
     if (inside(circles.aim, x, y, 1.6) || (x > w * 0.6 && y > h * 0.3 && y < h * 0.97)) {
       this.pointers.set(id, { id: 'aim', startX: circles.aim.x, startY: circles.aim.y });
       this.pressed.add('aim');
@@ -699,12 +729,14 @@ export class InputController {
       }
     }
     const dash = this.dashLatch;
+    const power = this.powerLatch;
     this.dashLatch = false;
+    this.powerLatch = 0;
     this.clickLatch = false;
     this.tapLatch = false;
     this.releaseLatch = null;
     this.lastFacingAim = aim;
-    return { mx, my, aim, fire, hold, run, dash, hasAim };
+    return { mx, my, aim, fire, hold, run, dash, power, hasAim };
   }
 
   dispose(): void {

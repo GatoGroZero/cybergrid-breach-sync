@@ -285,3 +285,120 @@ export function pickupSprite(kind: number, frame: number): HTMLCanvasElement {
   pickCache.set(key, s);
   return s;
 }
+
+// ------------------------------------------------------------------ habilidades de jefe
+
+/** Icono de una habilidad (0 a 7), con su color propio para reconocerla de un vistazo. */
+export function powerIcon(id: number): HTMLCanvasElement {
+  const [cv, c] = make(16, 16);
+  switch (id) {
+    case 0: {
+      // furia felina: una llama con zarpazos
+      for (let y = 2; y < 14; y++) {
+        const half = Math.max(1, Math.round(Math.sin(((y - 2) / 12) * Math.PI) * 5.4));
+        rect(c, 8 - half, y, half * 2, 1, '#ef7d57');
+      }
+      for (let y = 5; y < 14; y++) {
+        const half = Math.max(0, Math.round(Math.sin(((y - 5) / 9) * Math.PI) * 3));
+        rect(c, 8 - half, y, half * 2, 1, '#ffcd75');
+      }
+      line(c, 4, 3, 7, 12, '#f4f4f4');
+      line(c, 8, 2, 11, 12, '#f4f4f4');
+      break;
+    }
+    case 1: {
+      // mirada de buho: un ojo con rayos
+      disc(c, 8, 8, 5.2, '#ffd25e');
+      disc(c, 8, 8, 3, '#1a1c2c');
+      px(c, 7, 7, '#ffffff');
+      for (const [x0, y0, x1, y1] of [
+        [8, 0, 8, 2],
+        [8, 14, 8, 15],
+        [0, 8, 2, 8],
+        [14, 8, 15, 8],
+        [2, 2, 3, 3],
+        [13, 2, 12, 3],
+        [2, 13, 3, 12],
+        [13, 13, 12, 12],
+      ] as const)
+        line(c, x0, y0, x1, y1, '#fff2a8');
+      break;
+    }
+    case 2: {
+      // esporas curativas: hongo con una cruz
+      ell(c, 8, 6, 6.4, 4.4, '#7be08a');
+      rect(c, 6, 9, 4, 5, '#efe6d2');
+      rect(c, 7, 4, 2, 5, '#ffffff');
+      rect(c, 5, 6, 6, 2, '#ffffff');
+      for (const [x, y] of [
+        [2, 12],
+        [13, 11],
+        [4, 14],
+      ] as const)
+        px(c, x, y, '#d6ffb0');
+      break;
+    }
+    case 3: {
+      // rugido guardian: una boca y ondas
+      ell(c, 7, 8, 4.5, 5, '#b13e53');
+      ell(c, 7, 8, 2.6, 3.4, '#5d1f2c');
+      for (const y of [4, 12]) rect(c, 5, y, 4, 1, '#f4f4f4');
+      for (const r of [7, 10]) {
+        for (let a = -0.8; a <= 0.8; a += 0.12)
+          px(c, 8 + Math.cos(a) * r * 1.0, 8 + Math.sin(a) * r, '#ffcd75');
+      }
+      break;
+    }
+    case 4: {
+      // paso espectral: un fantasma
+      ell(c, 8, 7, 5, 5.4, '#bfe9ff');
+      rect(c, 3, 8, 10, 6, '#bfe9ff');
+      for (const x of [3, 6, 9, 12]) rect(c, x, 13, 2, 2, '#bfe9ff');
+      for (const x of [4, 7, 10]) rect(c, x, 13, 2, 2, '#00000000');
+      rect(c, 5, 6, 2, 3, '#3b5dc9');
+      rect(c, 9, 6, 2, 3, '#3b5dc9');
+      break;
+    }
+    case 5: {
+      // nova de fuego: una estrella de llamas
+      disc(c, 8, 8, 3.2, '#ffcd75');
+      disc(c, 8, 8, 1.6, '#ffffff');
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        line(
+          c,
+          8 + Math.cos(a) * 4,
+          8 + Math.sin(a) * 4,
+          8 + Math.cos(a) * 7.4,
+          8 + Math.sin(a) * 7.4,
+          k % 2 ? '#ef7d57' : '#d9461f',
+        );
+      }
+      break;
+    }
+    case 6: {
+      // escudo de luna: escudo con una luna
+      for (let y = 1; y <= 14; y++) {
+        const half = y < 9 ? 5.6 : Math.max(0, 5.6 - (y - 8) * 0.9);
+        rect(c, Math.round(8 - half), y, Math.round(half * 2), 1, '#41a6f6');
+      }
+      rect(c, 3, 1, 10, 1, '#c9e6ff');
+      disc(c, 8, 7, 3, '#f4f4f4');
+      c.globalCompositeOperation = 'destination-out';
+      disc(c, 9.6, 6.2, 2.6, '#000000');
+      c.globalCompositeOperation = 'source-over';
+      disc(c, 7, 7, 1.2, '#f4f4f4');
+      break;
+    }
+    default: {
+      // maullido hipnotico: una espiral
+      for (let t = 0; t < 60; t++) {
+        const a = t * 0.34;
+        const r = 0.9 + t * 0.105;
+        px(c, 8 + Math.cos(a) * r, 8 + Math.sin(a) * r, t % 6 < 3 ? '#b794f4' : '#e0c9ff');
+      }
+      disc(c, 8, 8, 1, '#ffffff');
+    }
+  }
+  return outline(cv, C.black);
+}
