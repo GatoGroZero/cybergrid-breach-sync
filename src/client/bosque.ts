@@ -5,6 +5,17 @@ import { vineGateTile } from './pixel/art-bosque';
 import { hostileShotSprite, mobSprite } from './pixel/art-mobs';
 import { make } from './pixel/draw';
 import { paintWorld } from './pixel/world';
+import {
+  SCENE_INFO,
+  SceneArt,
+  SceneMotion,
+  Stage,
+  STAGE_H,
+  STAGE_W,
+  type SceneId,
+} from './ui/escenarios';
+import { buildPostal } from './ui/postales';
+import { defaultSkin } from '../shared/br/skin';
 
 /** Pagina de desarrollo del bosque encantado: terreno, props, puertas y un pedazo del mapa. */
 const canvas = document.getElementById('g') as HTMLCanvasElement;
@@ -25,6 +36,39 @@ const row = (h: number): void => {
   y += h * S + 8;
 };
 const view = new URLSearchParams(window.location.search).get('ver') ?? 'mapa';
+if (view === 'lobby') {
+  const art = new SceneArt(A);
+  canvas.width = 1300;
+  canvas.height = 1100;
+  ctx.fillStyle = '#2a3140';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const ids = Object.keys(SCENE_INFO) as SceneId[];
+  const motions = ids.map((id) => new SceneMotion(id, STAGE_W, STAGE_H));
+  const catsFor = (i: number) =>
+    Array.from({ length: 1 + (i % 4) * 2 }, (_, k) => defaultSkin((i + k) % 8));
+  const draw = (t: number): void => {
+    ids.forEach((id, i) => {
+      const [cv, c] = make(STAGE_W, STAGE_H);
+      c.drawImage(art.background(id, STAGE_W, STAGE_H), 0, 0);
+      motions[i]!.paint(c, t);
+      const X = 8 + (i % 3) * 432;
+      const Y = 8 + Math.floor(i / 3) * 250;
+      ctx.drawImage(cv, X, Y, STAGE_W * 1.33, STAGE_H * 1.33);
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px monospace';
+      ctx.fillText(SCENE_INFO[id].name, X + 6, Y + 14);
+    });
+    (['br', 'techo', 'territorio', 'aventura'] as const).forEach((m, i) => {
+      const p = buildPostal(m, art, defaultSkin(1));
+      ctx.drawImage(p, 8 + i * 330, 790, p.width * 2, p.height * 2);
+    });
+    void catsFor;
+    requestAnimationFrame(draw);
+  };
+  requestAnimationFrame(draw);
+  void Stage;
+  throw new Error('fin');
+}
 if (view === 'mobs') {
   // flujo simple: cada dibujo a escala 4 y salto de linea cuando no cabe
   const K = 4;

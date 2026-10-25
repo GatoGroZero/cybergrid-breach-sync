@@ -1,4 +1,6 @@
 import { G, type MapKind } from '../shared/br/map';
+import { Music } from './music';
+import type { TrackId } from './music-data';
 
 type AudioCtor = typeof AudioContext;
 
@@ -66,9 +68,17 @@ export function spatial(dx: number, dy: number, hearing = 420): { v: number; pan
 }
 
 /** Canales del mezclador: cada familia de sonidos tiene su propio volumen. */
-export type Channel = 'ambient' | 'weapons' | 'damage' | 'steps' | 'ui';
-export const CHANNELS: readonly Channel[] = ['ambient', 'weapons', 'damage', 'steps', 'ui'];
+export type Channel = 'music' | 'ambient' | 'weapons' | 'damage' | 'steps' | 'ui';
+export const CHANNELS: readonly Channel[] = [
+  'music',
+  'ambient',
+  'weapons',
+  'damage',
+  'steps',
+  'ui',
+];
 export const CHANNEL_LABELS: Record<Channel, string> = {
+  music: 'Música de fondo',
   ambient: 'Ambiente',
   weapons: 'Armas y explosiones',
   damage: 'Golpes y daño',
@@ -78,6 +88,7 @@ export const CHANNEL_LABELS: Record<Channel, string> = {
 export type Volumes = Record<Channel | 'master', number>;
 export const DEFAULT_VOLUMES: Volumes = {
   master: 1,
+  music: 0.5,
   ambient: 1,
   weapons: 1,
   damage: 1,
@@ -118,6 +129,9 @@ export class Sfx {
   private brownBuffer: AudioBuffer | null = null;
   private voices = 0;
   private ambient: { stop(): void } | null = null;
+  private music: Music | null = null;
+  /** La cancion que toca ahora, aunque el audio aun no se haya desbloqueado. */
+  private wantedTrack: TrackId | null = null;
   private pendingAmbient: AmbientKind | null = null;
   muted = false;
 
@@ -149,11 +163,23 @@ export class Sfx {
       }
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (!this.music) {
+      const bus = this.buses.get('music');
+      const noise = this.noiseSource();
+      if (bus && noise) this.music = new Music(this.ctx, bus, noise);
+    }
+    if (this.wantedTrack) this.music?.play(this.wantedTrack);
     if (this.pendingAmbient) {
       const kind = this.pendingAmbient;
       this.pendingAmbient = null;
       this.startAmbient(kind);
     }
+  }
+
+  /** Musica de fondo: una cancion por modo (o `null` para callarla). Se puede pedir antes de desbloquear el audio. */
+  setMusic(id: TrackId | null): void {
+    this.wantedTrack = id;
+    this.music?.play(id);
   }
 
   setMuted(muted: boolean): void {
@@ -196,11 +222,21 @@ export class Sfx {
         return this.hitDealt(false);
       case 'steps':
         return this.step('wood', false);
+      case 'music':
+        return this.jingle();
       case 'ambient':
         return this.chirp();
       default:
         return this.node();
     }
+  }
+
+  /** Tres notas de muestra para el control de la musica. */
+  private jingle(): void {
+    this.ch = 'music';
+    this.tone(523, 0.16, 'triangle', 0.1);
+    this.tone(659, 0.16, 'triangle', 0.1, undefined, 0, 0.12);
+    this.tone(784, 0.26, 'triangle', 0.1, undefined, 0, 0.24);
   }
 
   /** Piar corto de muestra para el control del ambiente. */

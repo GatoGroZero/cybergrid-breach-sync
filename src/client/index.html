@@ -32,6 +32,7 @@
 
     <!-- ============================================================ acceso -->
     <main id="screen-auth" class="screen center" hidden data-testid="screen-auth">
+      <canvas id="portada" class="portada" aria-hidden="true"></canvas>
       <section class="card auth-card">
         <canvas id="auth-cat" class="auth-cat" width="104" height="100" aria-hidden="true"></canvas>
         <h1 class="logo">GATO<span>ROYALE</span></h1>
@@ -185,9 +186,56 @@
     </main>
 
     <!-- ============================================================ lobby -->
-    <main id="screen-lobby" class="screen" hidden data-testid="screen-lobby">
-      <header class="topbar">
+    <main id="screen-lobby" class="screen lobby" hidden data-testid="screen-lobby">
+      <header class="lb-top">
         <h1 class="logo small">GATO<span>ROYALE</span></h1>
+        <nav class="lb-tabs" role="tablist" aria-label="Secciones del lobby">
+          <button
+            id="tab-jugar"
+            class="lb-tab"
+            type="button"
+            role="tab"
+            data-tab="jugar"
+            aria-selected="true"
+            aria-controls="pane-jugar"
+            data-testid="tab-jugar"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 2h3v2h2v2h2v2H9v2H7v2H4z" />
+            </svg>
+            <span>Jugar</span>
+          </button>
+          <button
+            id="tab-salas"
+            class="lb-tab"
+            type="button"
+            role="tab"
+            data-tab="salas"
+            aria-selected="false"
+            aria-controls="pane-salas"
+            data-testid="tab-salas"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 3h5v4H2zM9 3h5v4H9zM2 9h5v4H2zM9 9h5v4H9z" />
+            </svg>
+            <span>Salas</span>
+          </button>
+          <button
+            id="tab-gato"
+            class="lb-tab"
+            type="button"
+            role="tab"
+            data-tab="gato"
+            aria-selected="false"
+            aria-controls="pane-gato"
+            data-testid="tab-gato"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 2h3v2h6V2h3v6h-1v4h-3v2H7v-2H4V8H2z" />
+            </svg>
+            <span>Mi gato</span>
+          </button>
+        </nav>
         <div class="topbar-right">
           <span id="lobby-net" class="chip" data-testid="lobby-net" data-state="offline"
             >sin conexión</span
@@ -200,6 +248,16 @@
             data-testid="lobby-user"
           ></button>
           <button
+            id="btn-help"
+            class="btn ghost small icon"
+            type="button"
+            aria-label="Cómo se juega"
+            title="Cómo se juega"
+            data-testid="btn-help"
+          >
+            ?
+          </button>
+          <button
             id="btn-settings"
             class="btn ghost small"
             type="button"
@@ -211,62 +269,19 @@
         </div>
       </header>
 
-      <div class="lobby-grid">
-        <section class="card painter" data-testid="painter" aria-labelledby="painter-title">
-          <h2 id="painter-title">Tu gato</h2>
-          <div class="paint-stage">
-            <canvas
-              id="paint-canvas"
-              width="312"
-              height="300"
-              aria-label="Lienzo para pintar tu gato"
-            ></canvas>
-            <canvas
-              id="paint-walk"
-              class="paint-walk"
-              width="78"
-              height="75"
-              aria-hidden="true"
-            ></canvas>
-          </div>
-          <div class="paint-row">
-            <span class="lbl">Pelaje</span>
-            <div id="coats" class="swatches" role="radiogroup" aria-label="Color base"></div>
-          </div>
-          <div class="paint-row">
-            <span class="lbl">Traje</span>
-            <div
-              id="outfits"
-              class="outfits"
-              role="radiogroup"
-              aria-label="Traje de Halloween"
-              data-testid="outfits"
-            ></div>
-          </div>
-          <div class="paint-row">
-            <span class="lbl">Pincel</span>
-            <div
-              id="palette"
-              class="swatches"
-              role="radiogroup"
-              aria-label="Color del pincel"
-            ></div>
-          </div>
-          <div class="paint-row">
-            <span class="lbl">Tamaño</span>
-            <div id="brushes" class="seg" role="radiogroup" aria-label="Tamaño del pincel"></div>
-          </div>
-          <div class="paint-row tools">
-            <button id="paint-stripes" class="btn small" type="button">Rayas</button>
-            <button id="paint-spots" class="btn small" type="button">Manchas</button>
-            <button id="paint-random" class="btn small" type="button">Al azar</button>
-            <button id="paint-clear" class="btn small ghost" type="button">Limpiar</button>
-          </div>
-        </section>
+      <p id="lobby-error" class="lb-error" role="alert" data-testid="lobby-error"></p>
 
-        <div id="lobby-browse" class="lobby-main">
-          <section class="card">
-            <h2>Jugar</h2>
+      <!-- ---------------------------------------------------------- jugar -->
+      <section
+        id="pane-jugar"
+        class="lb-pane"
+        role="tabpanel"
+        aria-labelledby="tab-jugar"
+        data-testid="pane-jugar"
+      >
+        <div class="jugar">
+          <aside class="jg-modes" aria-label="Modos de juego">
+            <h2 class="jg-h">Modos</h2>
             <div
               id="mode-picker"
               class="modes"
@@ -274,25 +289,113 @@
               aria-label="Modo de juego"
               data-testid="mode-picker"
             ></div>
-            <button id="btn-solo" class="btn primary wide big" type="button" data-testid="btn-solo">
-              Jugar solo
-            </button>
-            <p id="solo-help" class="muted" data-testid="solo-help">
-              Tú contra 11 bots. La partida empieza al instante.
-            </p>
-            <button
-              id="btn-shrine"
-              class="btn wide shrine-btn"
-              type="button"
-              hidden
-              data-testid="btn-shrine"
-            >
-              Santuario de la luna
-              <span id="shrine-badge" class="shrine-badge" data-testid="shrine-badge">0</span>
-            </button>
-            <p class="muted">¿Con amigos? Crea una sala, elige el modo y comparte el enlace.</p>
-            <hr />
-            <form id="create-form" novalidate>
+          </aside>
+
+          <section class="jg-stage" aria-label="Escenario">
+            <div class="stage-frame">
+              <canvas id="stage" class="stage" aria-hidden="true"></canvas>
+              <div class="stage-title">
+                <h2 id="stage-mode">Battle Royale</h2>
+                <p id="stage-sub" class="stage-sub"></p>
+              </div>
+              <button
+                id="btn-options"
+                class="btn small stage-opt"
+                type="button"
+                aria-haspopup="dialog"
+                data-testid="btn-options"
+              >
+                Opciones
+              </button>
+            </div>
+          </section>
+
+          <aside class="jg-party" aria-label="Tu grupo">
+            <div id="lobby-browse" class="party-idle">
+              <h2 class="jg-h">Tu grupo</h2>
+              <p class="party-hint">
+                Estás tú solo. Juega ya, o crea una sala y comparte el código con tus amigos.
+              </p>
+              <p id="solo-help" class="muted solo-help" data-testid="solo-help">
+                Tú contra 11 bots. La partida empieza al instante.
+              </p>
+              <button
+                id="btn-shrine"
+                class="btn wide shrine-btn"
+                type="button"
+                hidden
+                data-testid="btn-shrine"
+              >
+                Santuario de la luna
+                <span id="shrine-badge" class="shrine-badge" data-testid="shrine-badge">0</span>
+              </button>
+              <div class="party-cta">
+                <button
+                  id="btn-solo"
+                  class="btn primary wide big"
+                  type="button"
+                  data-testid="btn-solo"
+                >
+                  Jugar solo
+                </button>
+                <button id="btn-create" class="btn wide" type="button" data-testid="btn-create">
+                  Crear sala con amigos
+                </button>
+              </div>
+            </div>
+
+            <section id="room-view" class="room-card" hidden data-testid="room-view">
+              <div class="room-head">
+                <div>
+                  <h2 id="room-title"></h2>
+                  <p class="muted" id="room-meta" data-testid="room-meta"></p>
+                </div>
+                <div class="room-code">
+                  <span class="muted">Código</span>
+                  <strong id="room-code" data-testid="room-code"></strong>
+                  <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
+                  <button
+                    id="btn-copy-link"
+                    class="btn ghost small"
+                    type="button"
+                    data-testid="btn-copy-link"
+                  >
+                    Invitar
+                  </button>
+                </div>
+              </div>
+              <ul id="member-list" class="member-list" data-testid="member-list"></ul>
+              <div id="team-board" class="team-board" hidden data-testid="team-board"></div>
+              <p id="bots-line" class="bots-line" data-testid="bots-line"></p>
+              <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
+              <div class="row party-cta">
+                <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
+                  Estoy listo
+                </button>
+                <button id="btn-start" class="btn" type="button" hidden data-testid="btn-start">
+                  Iniciar ya
+                </button>
+                <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
+                  Salir de la sala
+                </button>
+              </div>
+            </section>
+          </aside>
+        </div>
+
+        <!-- opciones de la partida: al crear la sala o, siendo anfitrion, ya dentro -->
+        <div
+          id="options"
+          class="overlay"
+          hidden
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="options-title"
+          data-testid="options"
+        >
+          <div class="card modal opt-card">
+            <h2 id="options-title">Opciones de la partida</h2>
+            <div id="create-fields">
               <label class="field">
                 <span>Nombre de la sala</span>
                 <input
@@ -322,12 +425,67 @@
                 <input id="room-private" data-testid="room-private" type="checkbox" />
                 <span>Privada (solo entra quien tenga el código)</span>
               </label>
-              <button class="btn wide" type="submit" data-testid="btn-create">Crear sala</button>
-            </form>
-            <hr />
+            </div>
+            <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
+              <legend>Ajustes de la sala</legend>
+              <label class="field">
+                <span>Modo</span>
+                <select id="set-mode" data-testid="set-mode"></select>
+              </label>
+              <label class="field">
+                <span>Mapa</span>
+                <select id="set-map" data-testid="set-map"></select>
+              </label>
+              <label class="field" id="set-bots-field">
+                <span>Bots</span>
+                <select id="set-bots" data-testid="set-bots"></select>
+              </label>
+              <label class="field" id="set-format-field" hidden>
+                <span>Formato</span>
+                <select id="set-format" data-testid="set-format"></select>
+              </label>
+              <label class="field" id="set-teamsize-field" hidden>
+                <span>Gatos por equipo</span>
+                <select id="set-teamsize" data-testid="set-teamsize"></select>
+              </label>
+              <label class="check">
+                <input id="set-private" data-testid="set-private" type="checkbox" />
+                <span>Privada (solo entra quien tenga el código)</span>
+              </label>
+              <p class="muted">Si cambias algo, todos tienen que volver a marcar Listo.</p>
+            </fieldset>
+            <button
+              id="options-close"
+              class="btn primary wide"
+              type="button"
+              data-testid="options-close"
+            >
+              Listo
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- salas -->
+      <section
+        id="pane-salas"
+        class="lb-pane"
+        role="tabpanel"
+        aria-labelledby="tab-salas"
+        data-testid="pane-salas"
+        hidden
+      >
+        <div class="salas">
+          <section class="card">
+            <h2>Salas públicas</h2>
+            <ul id="room-list" class="room-list" data-testid="room-list"></ul>
+            <p id="room-empty" class="muted">No hay salas públicas ahora mismo. Crea la primera.</p>
+          </section>
+          <section class="card">
+            <h2>Entrar con código</h2>
             <form id="join-form" novalidate>
               <label class="field">
-                <span>Unirse con código</span>
+                <span>Código de la sala</span>
                 <input
                   id="join-code"
                   data-testid="join-code"
@@ -338,111 +496,185 @@
                   placeholder="AB3CD"
                 />
               </label>
-              <button class="btn wide" type="submit" data-testid="btn-join">
+              <button class="btn wide primary" type="submit" data-testid="btn-join">
                 Entrar a la sala
               </button>
             </form>
-            <p id="lobby-error" class="error" role="alert" data-testid="lobby-error"></p>
-          </section>
-
-          <section class="card">
-            <h2>Salas públicas</h2>
-            <ul id="room-list" class="room-list" data-testid="room-list"></ul>
-            <p id="room-empty" class="muted">No hay salas públicas ahora mismo. Crea la primera.</p>
-            <hr />
-            <h3>Cómo se juega</h3>
-            <ul class="help">
-              <li>
-                <b>Battle Royale:</b> sé el último gato en pie. Los cofres tienen armas, balas,
-                botiquines y muros, y la ola de agua cierra el mapa en unos 2 minutos.
-              </li>
-              <li>
-                <b>Pelea en el techo y Territorio:</b> eliges un kit antes de cada ronda y gana
-                quien se lleve dos. En los patios, dominen los tres para ganar.
-              </li>
-              <li>
-                <b>Aventura:</b> cruza el bosque sala por sala. Las puertas de enredadera se cierran
-                mientras peleas, los jefes sueltan reliquias y la esencia lunar que ganas compra
-                mejoras en el Santuario.
-              </li>
-              <li>
-                <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre, I
-                inventario, M mapa, T emotes, R recarga y Q da una voltereta en la Aventura.
-              </li>
-              <li>
-                <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a
-                la derecha: se dispara solo mientras ves la línea. La carita abre los emotes. Todo
-                se puede mover en Ajustes.
-              </li>
-            </ul>
+            <p class="muted">
+              Para crear tu propia sala elige un modo en <b>Jugar</b> y pulsa «Crear sala con
+              amigos».
+            </p>
           </section>
         </div>
+      </section>
 
-        <section id="room-view" class="card room-card" hidden data-testid="room-view">
-          <div class="room-head">
-            <div>
-              <h2 id="room-title"></h2>
-              <p class="muted" id="room-meta" data-testid="room-meta"></p>
+      <!-- ---------------------------------------------------------- mi gato -->
+      <section
+        id="pane-gato"
+        class="lb-pane"
+        role="tabpanel"
+        aria-labelledby="tab-gato"
+        data-testid="pane-gato"
+        hidden
+      >
+        <div class="gato" data-testid="painter">
+          <div class="gato-canvas">
+            <div class="paint-stage">
+              <canvas
+                id="paint-canvas"
+                width="312"
+                height="300"
+                aria-label="Lienzo para pintar tu gato"
+              ></canvas>
+              <canvas
+                id="paint-walk"
+                class="paint-walk"
+                width="78"
+                height="75"
+                aria-hidden="true"
+              ></canvas>
             </div>
-            <div class="room-code">
-              <span class="muted">Código</span>
-              <strong id="room-code" data-testid="room-code"></strong>
-              <button id="btn-copy" class="btn ghost small" type="button">Copiar</button>
+          </div>
+          <div class="gato-tools card">
+            <div class="seg gato-sub" role="tablist" aria-label="Qué quieres cambiar">
               <button
-                id="btn-copy-link"
-                class="btn ghost small"
+                class="sub on"
                 type="button"
-                data-testid="btn-copy-link"
+                role="tab"
+                data-sub="pelaje"
+                aria-selected="true"
+                data-testid="sub-pelaje"
               >
-                Invitar
+                Pelaje
+              </button>
+              <button
+                class="sub"
+                type="button"
+                role="tab"
+                data-sub="traje"
+                aria-selected="false"
+                data-testid="sub-traje"
+              >
+                Traje
+              </button>
+              <button
+                class="sub"
+                type="button"
+                role="tab"
+                data-sub="pintura"
+                aria-selected="false"
+                data-testid="sub-pintura"
+              >
+                Pintura
               </button>
             </div>
+            <div class="sub-pane" data-pane="pelaje">
+              <p class="muted">El color de fondo de tu gato. Después puedes pintarle encima.</p>
+              <div id="coats" class="swatches" role="radiogroup" aria-label="Color base"></div>
+              <div class="paint-row tools">
+                <button id="paint-random" class="btn small" type="button">Al azar</button>
+                <button id="paint-stripes" class="btn small" type="button">Rayas</button>
+                <button id="paint-spots" class="btn small" type="button">Manchas</button>
+                <button id="paint-clear" class="btn small ghost" type="button">Limpiar</button>
+              </div>
+            </div>
+            <div class="sub-pane" data-pane="traje" hidden>
+              <p class="muted">Trajes de Halloween: se ven en todas las partidas.</p>
+              <div
+                id="outfits"
+                class="outfits"
+                role="radiogroup"
+                aria-label="Traje de Halloween"
+                data-testid="outfits"
+              ></div>
+            </div>
+            <div class="sub-pane" data-pane="pintura" hidden>
+              <p class="muted">Pinta directo sobre el gato grande: toca o arrastra.</p>
+              <div class="paint-row">
+                <span class="lbl">Pincel</span>
+                <div
+                  id="palette"
+                  class="swatches"
+                  role="radiogroup"
+                  aria-label="Color del pincel"
+                ></div>
+              </div>
+              <div class="paint-row">
+                <span class="lbl">Tamaño</span>
+                <div
+                  id="brushes"
+                  class="seg"
+                  role="radiogroup"
+                  aria-label="Tamaño del pincel"
+                ></div>
+              </div>
+            </div>
           </div>
-          <p class="rotate-tip">Tip: gira el teléfono a horizontal antes de empezar.</p>
-          <ul id="member-list" class="member-list" data-testid="member-list"></ul>
-          <div id="team-board" class="team-board" hidden data-testid="team-board"></div>
-          <p id="bots-line" class="bots-line" data-testid="bots-line"></p>
-          <fieldset id="room-settings" class="room-settings" hidden data-testid="room-settings">
-            <legend>Ajustes de la sala</legend>
-            <label class="field">
-              <span>Modo</span>
-              <select id="set-mode" data-testid="set-mode"></select>
-            </label>
-            <label class="field">
-              <span>Mapa</span>
-              <select id="set-map" data-testid="set-map"></select>
-            </label>
-            <label class="field" id="set-bots-field">
-              <span>Bots</span>
-              <select id="set-bots" data-testid="set-bots"></select>
-            </label>
-            <label class="field" id="set-format-field" hidden>
-              <span>Formato</span>
-              <select id="set-format" data-testid="set-format"></select>
-            </label>
-            <label class="field" id="set-teamsize-field" hidden>
-              <span>Gatos por equipo</span>
-              <select id="set-teamsize" data-testid="set-teamsize"></select>
-            </label>
-            <label class="check">
-              <input id="set-private" data-testid="set-private" type="checkbox" />
-              <span>Privada (solo entra quien tenga el código)</span>
-            </label>
-            <p class="muted">Si cambias algo, todos tienen que volver a marcar Listo.</p>
-          </fieldset>
-          <p id="room-status" class="status" data-testid="room-status" aria-live="polite"></p>
-          <div class="row">
-            <button id="btn-ready" class="btn primary" type="button" data-testid="btn-ready">
-              Estoy listo
-            </button>
-            <button id="btn-start" class="btn" type="button" hidden data-testid="btn-start">
-              Iniciar ya
-            </button>
-            <button id="btn-leave" class="btn ghost" type="button" data-testid="btn-leave">
-              Salir de la sala
-            </button>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- informacion de un modo -->
+      <div
+        id="mode-info"
+        class="overlay"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mode-info-title"
+        data-testid="mode-info"
+      >
+        <div class="card modal info-card">
+          <canvas id="mode-info-pic" class="info-pic" aria-hidden="true"></canvas>
+          <div class="info-body">
+            <div class="info-text">
+              <h2 id="mode-info-title"></h2>
+              <p id="mode-info-lead" class="info-lead"></p>
+              <ul id="mode-info-list" class="help"></ul>
+              <p id="mode-info-meta" class="muted"></p>
+            </div>
+            <button id="mode-info-close" class="btn primary wide" type="button">Entendido</button>
           </div>
-        </section>
+        </div>
+      </div>
+
+      <div
+        id="help-modal"
+        class="overlay"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="help-title"
+        data-testid="help-modal"
+      >
+        <div class="card modal wide-modal">
+          <h2 id="help-title">Cómo se juega</h2>
+          <ul class="help">
+            <li>
+              <b>Battle Royale:</b> sé el último gato en pie. Los cofres tienen armas, balas,
+              botiquines y muros, y la ola de agua cierra el mapa en unos 2 minutos.
+            </li>
+            <li>
+              <b>Pelea en el techo y Territorio:</b> eliges un kit antes de cada ronda y gana quien
+              se lleve dos. En los patios, dominen los tres para ganar.
+            </li>
+            <li>
+              <b>Aventura:</b> cruza el bosque sala por sala. Las puertas de enredadera se cierran
+              mientras peleas, los jefes sueltan reliquias y habilidades, y la esencia lunar que
+              ganas compra mejoras en el Santuario.
+            </li>
+            <li>
+              <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre o usa, I
+              inventario, M mapa, T emotes, R recarga, Q voltereta y F, G, H las habilidades de la
+              Aventura.
+            </li>
+            <li>
+              <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a la
+              derecha: se dispara solo mientras ves la línea. Toca otra vez un objeto o pulsa USAR
+              para curarte. Todo se puede mover en Ajustes.
+            </li>
+          </ul>
+          <button id="help-close" class="btn primary wide" type="button">Cerrar</button>
+        </div>
       </div>
     </main>
 

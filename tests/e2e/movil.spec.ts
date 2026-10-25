@@ -67,6 +67,31 @@ test.describe('Móvil: controles táctiles', () => {
     await expect(page.getByTestId('btn-solo')).toBeVisible();
   });
 
+  test('el menu del lobby cabe en el celular, en vertical y en horizontal, sin desplazarse de lado', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+    await registerViaUi(page, uniqueName('e2e_menu'));
+    for (const size of [
+      { width: 412, height: 915 },
+      { width: 915, height: 412 },
+    ]) {
+      await page.setViewportSize(size);
+      await expect(page.getByTestId('tab-jugar')).toBeVisible();
+      await expect(page.getByTestId('tab-salas')).toBeVisible();
+      await expect(page.getByTestId('tab-gato')).toBeVisible();
+      await expect(page.getByTestId('btn-solo')).toBeInViewport();
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+      // en Mi gato el lienzo se ve completo sin desplazarse
+      await page.getByTestId('tab-gato').click();
+      await expect(page.locator('#paint-canvas')).toBeInViewport({ ratio: 0.9 });
+      await page.getByTestId('tab-jugar').click();
+    }
+  });
+
   test('el inventario se abre con la lata y se ordena arrastrando con el dedo', async ({
     page,
   }) => {

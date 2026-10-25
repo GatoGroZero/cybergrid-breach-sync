@@ -1,6 +1,8 @@
 import '@fontsource/press-start-2p/latin-400.css';
 import '@fontsource/vt323/latin-400.css';
 import './styles.css';
+import './lobby.css';
+import './portada.css';
 import './zod-config';
 
 import { CAT } from '../shared/br/constants';
@@ -42,6 +44,10 @@ import {
 import { Painter, drawCatIcon, startWalker } from './ui/painter';
 import { Settings } from './ui/settings';
 import { Shrine } from './ui/santuario';
+import { SceneArt, Stage, sceneFor } from './ui/escenarios';
+import { buildPostal } from './ui/postales';
+import { Portada } from './ui/portada';
+import { MODE_INFO } from './ui/modes';
 import { relicIcon } from './pixel/art-items';
 import { RELICS } from '../shared/br/adventure';
 
@@ -236,6 +242,12 @@ function showView(view: View): void {
   applyMode(input.mode);
   input.active = view === 'game';
   if (view === 'game') renderer.resize();
+  if (view === 'lobby') stage.start();
+  else stage.stop();
+  if (view === 'auth') portada.start();
+  else portada.stop();
+  // musica: la del lobby fuera de la partida; en la partida la pone cada modo
+  if (view !== 'game') sfx.setMusic(view === 'lobby' ? 'lobby' : null);
 }
 
 function navigate(path: string, replace = false): void {
@@ -303,7 +315,10 @@ function setNetChip(online: boolean): void {
 }
 
 const mapSelect = $<HTMLSelectElement>('room-map');
-const picker = new ModePicker();
+const sceneArt = new SceneArt(renderer.assets);
+const stage = new Stage($<HTMLCanvasElement>('stage'), sceneArt, renderer.assets.crown);
+const portada = new Portada($<HTMLCanvasElement>('portada'));
+const picker = new ModePicker((mode) => buildPostal(mode, sceneArt, painter.skin));
 const refreshSoloHelp = (): void => {
   $('solo-help').textContent = soloHelp(picker.mode, picker.format, picker.teamSize);
 };
@@ -312,6 +327,7 @@ const shrineBtn = $('btn-shrine');
 const refreshMode = (): void => {
   refreshSoloHelp();
   shrineBtn.hidden = picker.mode !== 'aventura';
+  syncStage();
 };
 picker.onChange = refreshMode;
 refreshMode();
@@ -442,7 +458,12 @@ function wireNet(n: Net): void {
   s.on('game:end', (payload: GameEndPayload) => endGame(payload));
 }
 
-painter.onChange = (skin) => net?.socket.emit('skin:set', skin);
+let postalsStale = false;
+painter.onChange = (skin) => {
+  net?.socket.emit('skin:set', skin);
+  postalsStale = true;
+  syncStage();
+};
 
 function updateCountdown(state: RoomState): void {
   if (state.phase !== 'countdown') {
@@ -540,8 +561,7 @@ async function joinRoom(code: string): Promise<void> {
   lobbyError(res.ok ? undefined : res.error);
 }
 
-$<HTMLFormElement>('create-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
+$('btn-create').addEventListener('click', async () => {
   enterImmersive();
   const name = $<HTMLInputElement>('room-name').value.trim();
   await createRoom($<HTMLInputElement>('room-private').checked, name, parseBots(botsSelect.value));
@@ -647,11 +667,170 @@ $('lobby-user').addEventListener('click', async () => {
   await enterLobby();
 });
 
+// ---------------------------------------------------------------- lobby: pestanas, escenario y ventanas
+
+type LobbyTab = 'jugar' | 'salas' | 'gato';
+const lobbyTabs = [...document.querySelectorAll<HTMLButtonElement>('.lb-tab')];
+
+function setTab(name: LobbyTab): void {
+  for (const t of lobbyTabs) {
+    const on = t.dataset.tab === name;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+  }
+  for (const id of ['jugar', 'salas', 'gato'] as const) $(`pane-${id}`).hidden = id !== name;
+  if (name === 'jugar') {
+    if (postalsStale) {
+      picker.refreshPostals();
+      postalsStale = false;
+    }
+    syncStage();
+  } else if (name === 'salas') void refreshRooms();
+}
+
+for (const t of lobbyTabs) {
+  t.addEventListener('click', () => setTab(t.dataset.tab as LobbyTab));
+  t.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const at = lobbyTabs.indexOf(t);
+    const next =
+      lobbyTabs[(at + (e.key === 'ArrowRight' ? 1 : -1) + lobbyTabs.length) % lobbyTabs.length];
+    if (next) {
+      setTab(next.dataset.tab as LobbyTab);
+      next.focus();
+    }
+  });
+}
+
+/** El escenario sigue a lo que se ve: el modo y mapa de la sala (o los elegidos) y los gatos presentes. */
+function syncStage(): void {
+  const mode = room ? room.mode : picker.mode;
+  const map = room ? room.map : mapSelect.value || 'azar';
+  stage.setScene(sceneFor(mode, map));
+  $('stage-mode').textContent = MODES[mode].name;
+  const mapName = map === 'azar' ? 'Mapa al azar' : (MAP_NAMES[map as MapKind] ?? 'Mapa al azar');
+  const who = room
+    ? `${room.members.length === 1 ? '1 persona' : `${room.members.length} personas`}`
+    : 'Tú';
+  $('stage-sub').textContent = `${mapName} · ${who}`;
+  stage.setCats(
+    room
+      ? room.members.map((m) => ({
+          id: m.userId,
+          name: m.name,
+          skin: m.skin,
+          ...(room!.teamSize > 0 ? { team: m.team ?? 0 } : {}),
+          ready: m.ready,
+          me: m.userId === user?.id,
+          host: m.host,
+        }))
+      : [{ id: 'yo', name: user?.username ?? 'Tú', skin: painter.skin, me: true }],
+  );
+}
+mapSelect.addEventListener('change', syncStage);
+
+/** Opciones de la partida: al crear la sala, o las de la sala ya hecha si eres anfitrion. */
+const optionsEl = $('options');
+function openOptions(): void {
+  const me = room?.members.find((m) => m.userId === user?.id);
+  if (room && !me?.host) {
+    toast('Solo el anfitrión cambia las opciones');
+    return;
+  }
+  $('create-fields').hidden = room !== null;
+  $('room-settings').hidden = room === null;
+  optionsEl.hidden = false;
+  $('options-close').focus({ preventScroll: true });
+}
+function closeOptions(): void {
+  optionsEl.hidden = true;
+  syncStage();
+}
+$('btn-options').addEventListener('click', openOptions);
+$('options-close').addEventListener('click', closeOptions);
+optionsEl.addEventListener('click', (e) => {
+  if (e.target === optionsEl) closeOptions();
+});
+
+const infoEl = $('mode-info');
+picker.onInfo = (mode) => {
+  const info = MODE_INFO[mode];
+  $('mode-info-title').textContent = MODES[mode].name;
+  $('mode-info-lead').textContent = info.lead;
+  const list = $('mode-info-list');
+  list.replaceChildren(...info.bullets.map((b) => el('li', '', b)));
+  $('mode-info-meta').textContent = `Jugadores: ${info.players}. Mapas: ${info.maps}.`;
+  const pic = $<HTMLCanvasElement>('mode-info-pic');
+  const src = buildPostal(mode, sceneArt, painter.skin);
+  pic.width = src.width;
+  pic.height = src.height;
+  (pic.getContext('2d') as CanvasRenderingContext2D).drawImage(src, 0, 0);
+  infoEl.hidden = false;
+  $('mode-info-close').focus({ preventScroll: true });
+};
+const closeInfo = (): void => {
+  infoEl.hidden = true;
+};
+$('mode-info-close').addEventListener('click', closeInfo);
+infoEl.addEventListener('click', (e) => {
+  if (e.target === infoEl) closeInfo();
+});
+
+const helpEl = $('help-modal');
+$('btn-help').addEventListener('click', () => {
+  helpEl.hidden = false;
+  $('help-close').focus({ preventScroll: true });
+});
+$('help-close').addEventListener('click', () => {
+  helpEl.hidden = true;
+});
+helpEl.addEventListener('click', (e) => {
+  if (e.target === helpEl) helpEl.hidden = true;
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Escape') return;
+  if (!infoEl.hidden) closeInfo();
+  else if (!helpEl.hidden) helpEl.hidden = true;
+  else if (!optionsEl.hidden) closeOptions();
+});
+
+/** "Mi gato": una cosa a la vez (pelaje, traje o pintura) para que todo quepa en el celular. */
+for (const btn of document.querySelectorAll<HTMLButtonElement>('.gato-sub .sub')) {
+  btn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('.gato-sub .sub'))
+      b.setAttribute('aria-selected', String(b === btn));
+    for (const pane of document.querySelectorAll<HTMLElement>('.sub-pane'))
+      pane.hidden = pane.dataset.pane !== btn.dataset.sub;
+  });
+}
+
+let roomShown = false;
+
 function renderRoom(): void {
   const inRoom = room !== null;
+  // al entrar a una sala (por lista o codigo) se vuelve a la pestana del grupo
+  if (inRoom && !roomShown) setTab('jugar');
+  roomShown = inRoom;
   $('lobby-browse').hidden = inRoom;
   $('room-view').hidden = !inRoom;
-  if (!room || !user) return;
+  $('create-fields').hidden = inRoom;
+  if (!room || !user) {
+    picker.setLocked(false);
+    picker.intercept = null;
+    syncStage();
+    return;
+  }
+  // dentro de una sala el modo lo decide el anfitrion: las tarjetas siguen a la sala
+  picker.setMode(room.mode, false);
+  const amHost = room.members.find((m) => m.userId === user?.id)?.host === true;
+  picker.setLocked(!amHost);
+  picker.intercept = (mode) => {
+    void sendSettings({ mode });
+    return true;
+  };
+  shrineBtn.hidden = room.mode !== 'aventura';
+  syncStage();
 
   $('room-title').textContent = room.name;
   const mapName = MAP_NAMES[room.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
@@ -843,6 +1022,7 @@ function startGame(payload: GameStartPayload): void {
   applyMode(input.mode);
   // El sonido y el cartel de inicio los pone la cuenta regresiva (o, sin ella, no hay ninguno).
   sfx.startAmbient(payload.map as MapKind);
+  sfx.setMusic(game.mode);
   if (tipTimer !== null) window.clearTimeout(tipTimer);
   tipTimer = window.setTimeout(() => {
     tipTimer = null;

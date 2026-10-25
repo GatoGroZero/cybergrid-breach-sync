@@ -38,6 +38,50 @@ export async function registerViaUi(page: Page, username: string, debug = false)
   await expect(page.getByTestId('lobby-net')).toHaveAttribute('data-state', 'online');
 }
 
+export type LobbyTab = 'jugar' | 'salas' | 'gato';
+
+/** El lobby esta dividido en pestanas: Jugar (modos y grupo), Salas (lista y codigo) y Mi gato. */
+export async function openTab(page: Page, tab: LobbyTab): Promise<void> {
+  await page.getByTestId(`tab-${tab}`).click();
+  await expect(page.getByTestId(`pane-${tab}`)).toBeVisible();
+}
+
+/** Las opciones de la partida (mapa, bots, formato...) viven en una ventana aparte. */
+export async function openOptions(page: Page): Promise<void> {
+  await page.getByTestId('btn-options').click();
+  await expect(page.getByTestId('options')).toBeVisible();
+}
+
+export async function closeOptions(page: Page): Promise<void> {
+  await page.getByTestId('options-close').click();
+  await expect(page.getByTestId('options')).toBeHidden();
+}
+
+export interface RoomOptions {
+  name?: string;
+  private?: boolean;
+  bots?: string;
+  map?: string;
+  format?: string;
+  teamSize?: string;
+}
+
+/** Crea una sala con amigos: llena las opciones (si hay) y pulsa "Crear sala con amigos". */
+export async function createRoomUi(page: Page, opts: RoomOptions = {}): Promise<void> {
+  if (Object.keys(opts).length > 0) {
+    await openOptions(page);
+    if (opts.name !== undefined) await page.getByTestId('room-name').fill(opts.name);
+    if (opts.map !== undefined) await page.getByTestId('room-map').selectOption(opts.map);
+    if (opts.bots !== undefined) await page.getByTestId('room-bots').selectOption(opts.bots);
+    if (opts.format !== undefined) await page.getByTestId('room-format').selectOption(opts.format);
+    if (opts.teamSize !== undefined)
+      await page.getByTestId('room-teamsize').selectOption(opts.teamSize);
+    if (opts.private) await page.getByTestId('room-private').check();
+    await closeOptions(page);
+  }
+  await page.getByTestId('btn-create').click();
+}
+
 export async function startSoloGame(page: Page): Promise<void> {
   await page.getByTestId('btn-solo').click();
   await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
