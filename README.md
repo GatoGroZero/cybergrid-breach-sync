@@ -75,9 +75,9 @@ Medidas el 25 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 | `ping`/`pong` por WebSocket (60 muestras)                                 | mediana entre 83 y 96 ms, mínimo ~82 ms          |
 | `GET /api/test/telemetry` con conexión reutilizada                        | ~98 ms                                           |
 | `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos)   | ~170 a 180 ms                                    |
-| `POST /api/test/seed` con 100 y con 1 000 partidas (conexión reutilizada) | ~95 y ~117 ms en total                           |
+| `POST /api/test/seed` con 100 y con 1 000 partidas (conexión reutilizada) | ~95 y ~120 a 130 ms en total                     |
 | FPS del juego (Chromium, escritorio y celular emulado)                    | 60 (el dibujo tarda ~2 ms por cuadro)            |
-| Misma distancia caminada a 60 FPS y con el navegador 4 veces más lento    | razón 0.97 a 1.03 (tiempo delta)                 |
+| Misma distancia caminada a 60 FPS y con el navegador 4 veces más lento    | razón ~1.03 (tiempo delta)                       |
 | Instantáneas del servidor                                                 | 30 por segundo                                   |
 | CPU del servidor por partida de 12 gatos                                  | ~0.1 ms por tick (hay 33 ms disponibles)         |
 
