@@ -1,6 +1,8 @@
 import { TILE } from '../../shared/br/constants';
 import type { ItemKind, WeaponKind } from '../../shared/br/items';
 import { G, type PropKind } from '../../shared/br/map';
+import { forestGround, forestProp } from './art-bosque';
+import { armorIcon, potionIcon } from './art-items';
 import { streetGround, streetProp } from './art-calle';
 import { roofGround, roofProp } from './art-roof';
 import {
@@ -171,7 +173,12 @@ function groundTile(id: number, variant: number): HTMLCanvasElement {
       return cv;
     }
     default:
-      return roofGround(id, variant) ?? streetGround(id, variant) ?? grassTile(variant, G.GRASS);
+      return (
+        roofGround(id, variant) ??
+        streetGround(id, variant) ??
+        forestGround(id, variant) ??
+        grassTile(variant, G.GRASS)
+      );
   }
 }
 
@@ -1059,7 +1066,7 @@ export function buildAssets(): Assets {
         sprite = pumpkinSprite(variant);
         break;
       default:
-        sprite = roofProp(kind, variant) ?? streetProp(kind, variant);
+        sprite = roofProp(kind, variant) ?? streetProp(kind, variant) ?? forestProp(kind, variant);
     }
     propCache.set(key, sprite);
     return sprite;
@@ -1073,6 +1080,9 @@ export function buildAssets(): Assets {
   icon.medkit = medkitIcon();
   icon.shield = shieldIcon();
   icon.wall = wallIcon();
+  icon.potion_catnip = potionIcon('potion_catnip');
+  icon.potion_valerian = potionIcon('potion_valerian');
+  for (const a of ['armor_head', 'armor_body', 'armor_paws'] as const) icon[a] = armorIcon(a, 1);
 
   return {
     ground,

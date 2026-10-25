@@ -21,6 +21,7 @@ export const ACTIONS = [
   'mute',
   'emote',
   'reload',
+  'dash',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -42,6 +43,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   mute: 'Silenciar',
   emote: 'Abrir los emotes',
   reload: 'Recargar el arma',
+  dash: 'Voltereta (Aventura)',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -62,6 +64,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   mute: 'KeyN',
   emote: 'KeyT',
   reload: 'KeyR',
+  dash: 'KeyQ',
 };
 
 /** Las flechas siempre mueven al gato, ademas de las teclas que cada jugador elija. */
@@ -131,6 +134,7 @@ export const TOUCH_IDS = [
   'map',
   'emote',
   'reload',
+  'dash',
 ] as const;
 export type TouchId = (typeof TOUCH_IDS)[number];
 
@@ -153,6 +157,7 @@ export const TOUCH_LABELS: Record<TouchId, string> = {
   map: 'Mapa',
   emote: 'Emotes',
   reload: 'Recargar',
+  dash: 'Voltereta',
 };
 
 export const DEFAULT_TOUCH: TouchLayout = {
@@ -165,6 +170,7 @@ export const DEFAULT_TOUCH: TouchLayout = {
   map: { x: 0.955, y: 0.3, s: 0.9 },
   emote: { x: 0.04, y: 0.5, s: 0.85 },
   reload: { x: 0.74, y: 0.62, s: 0.8 },
+  dash: { x: 0.655, y: 0.68, s: 0.95 },
 };
 
 export function loadTouchLayout(): TouchLayout {
@@ -259,6 +265,7 @@ export function touchCircles(
     map: c('map', 20),
     emote: c('emote', 24),
     reload: c('reload', 24),
+    dash: c('dash', 30),
     slots,
   };
 }
@@ -277,6 +284,8 @@ export interface Sample {
   /** Mantener el disparo (joystick de la mira): las armas de un clic repiten solas. */
   hold: boolean;
   run: boolean;
+  /** Pidio la voltereta (Aventura). */
+  dash: boolean;
   /** True si el jugador esta apuntando a mano (raton o joystick de la mira). */
   hasAim: boolean;
 }
@@ -328,6 +337,9 @@ export class InputController {
    * `target` solo cuando la linea toca a un gato o a un muro colocado.
    */
   fireMode: FireMode = loadFireMode();
+  /** La voltereta existe solo en la Aventura: ahi se muestra su boton y la tecla funciona. */
+  dashEnabled = false;
+  private dashLatch = false;
   /** La mira (movil) esta tocando un objetivo en este momento: se usa para dibujar la guia. */
   aimLocked = false;
   /** La barra de emotes esta abierta; el renderizador pone aqui sus botones mientras lo este. */
@@ -432,6 +444,7 @@ export class InputController {
       else if (action === 'map') this.cb.onMap();
       else if (action === 'mute') this.cb.onMute();
       else if (action === 'reload') this.cb.onReload();
+      else if (action === 'dash') this.dashLatch = true;
       else if (action.startsWith('slot')) this.cb.onSelect(Number(action.slice(4)) - 1);
       else if (action === 'fireKey') this.clickLatch = true;
     }
@@ -527,6 +540,7 @@ export class InputController {
     if (tap('map', this.cb.onMap)) return;
     if (tap('emote', () => (this.emoteOpen = true))) return;
     if (tap('reload', this.cb.onReload)) return;
+    if (this.dashEnabled && tap('dash', () => (this.dashLatch = true))) return;
     if (inside(circles.aim, x, y, 1.6) || (x > w * 0.6 && y > h * 0.3 && y < h * 0.97)) {
       this.pointers.set(id, { id: 'aim', startX: circles.aim.x, startY: circles.aim.y });
       this.pressed.add('aim');
@@ -678,11 +692,13 @@ export class InputController {
         aim = Math.atan2(my, mx);
       }
     }
+    const dash = this.dashLatch;
+    this.dashLatch = false;
     this.clickLatch = false;
     this.tapLatch = false;
     this.releaseLatch = null;
     this.lastFacingAim = aim;
-    return { mx, my, aim, fire, hold, run, hasAim };
+    return { mx, my, aim, fire, hold, run, dash, hasAim };
   }
 
   dispose(): void {

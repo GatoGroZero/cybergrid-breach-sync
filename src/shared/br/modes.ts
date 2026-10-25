@@ -47,7 +47,7 @@ export const MODES: Record<GameMode, ModeInfo> = {
 };
 
 /** Modos que ya se pueden jugar (los demas salen en la lista pero estan por llegar). */
-export const ENABLED_MODES: readonly GameMode[] = ['br', 'techo', 'territorio'];
+export const ENABLED_MODES: readonly GameMode[] = ['br', 'techo', 'territorio', 'aventura'];
 
 export const isGameMode = (v: unknown): v is GameMode =>
   typeof v === 'string' && (GAME_MODES as readonly string[]).includes(v);

@@ -41,6 +41,8 @@ export interface TouchDrawState {
   emoteOpen?: boolean;
   /** Recarga en curso (0 a 1): el boton de recargar se llena. */
   reloadFrac?: number;
+  /** Aventura: el boton de la voltereta y cuanto falta para poder usarla (1 = lista). */
+  dash?: { ready: number };
 }
 
 /** Joystick, fuego, interactuar, inventario, menu, mapa y la barra de objetos, en pixeles CSS. */
@@ -192,6 +194,39 @@ export function drawTouchControls(
   ctx.textBaseline = 'middle';
   ctx.fillText('R', rl.x, rl.y + 1);
 
+  // voltereta (solo en la Aventura; al editar la disposicion tambien se ve)
+  if (st.dash || st.editing) {
+    const dc = circles.dash;
+    const ready = st.dash?.ready ?? 1;
+    ring(
+      ctx,
+      dc,
+      glow('dash') ? C.yellow : ready >= 1 ? 'rgba(115,239,247,0.9)' : 'rgba(148,176,194,0.6)',
+      ready >= 1 ? 'rgba(115,239,247,0.18)' : 'rgba(26,28,44,0.6)',
+    );
+    if (ready < 1) {
+      ctx.beginPath();
+      ctx.arc(dc.x, dc.y, dc.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = C.cyan;
+      ctx.stroke();
+    }
+    // una flecha curva: dar una voltereta
+    ctx.beginPath();
+    ctx.arc(dc.x, dc.y, dc.r * 0.45, Math.PI * 0.15, Math.PI * 1.55);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = ready >= 1 ? C.white : 'rgba(244,244,244,0.5)';
+    ctx.stroke();
+    ctx.beginPath();
+    const tipX = dc.x + Math.cos(Math.PI * 1.55) * dc.r * 0.45;
+    const tipY = dc.y + Math.sin(Math.PI * 1.55) * dc.r * 0.45;
+    ctx.moveTo(tipX - 5, tipY + 1);
+    ctx.lineTo(tipX + 4, tipY - 5);
+    ctx.lineTo(tipX + 5, tipY + 5);
+    ctx.fillStyle = ready >= 1 ? C.white : 'rgba(244,244,244,0.5)';
+    ctx.fill();
+  }
+
   // menu y mapa
   for (const id of ['menu', 'map'] as const) {
     const c = circles[id];
@@ -229,7 +264,7 @@ export function drawTouchControls(
       ctx.textAlign = align;
       ctx.fillText(label, cx, y);
     };
-    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote', 'reload'] as const) {
+    for (const id of ['stick', 'aim', 'interact', 'menu', 'emote', 'reload', 'dash'] as const) {
       const c = circles[id];
       put(TOUCH_LABELS[id], c.x, Math.min(h - 8, c.y + c.r + 12), 'center');
     }

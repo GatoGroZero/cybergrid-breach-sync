@@ -10,9 +10,8 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await expect(picker.locator('button')).toHaveCount(4);
     await expect(page.locator('[data-mode=br]')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('solo-help')).toContainText('11 bots');
-    // el modo que aun no esta listo se ve, pero no se puede elegir
     await expect(page.locator('[data-mode=territorio]')).toBeEnabled();
-    await expect(page.locator('[data-mode=aventura]')).toBeDisabled();
+    await expect(page.locator('[data-mode=aventura]')).toBeEnabled();
 
     await page.locator('[data-mode=techo]').click();
     await expect(page.locator('[data-mode=techo]')).toHaveAttribute('aria-checked', 'true');

@@ -1335,6 +1335,14 @@ export class AdventureGame extends BRGame {
   }
 
   /** Solo para pruebas: da a un gato un arma fuerte. */
+  /** Solo para pruebas: da la aventura por ganada con una marcha de ejemplo. */
+  debugWin(): void {
+    this.roomsCleared = Math.max(this.roomsCleared, 14);
+    this.bossesDown = Math.max(this.bossesDown, 6);
+    this.kills = Math.max(this.kills, 40);
+    this.finishAdventure(true);
+  }
+
   debugArm(catId: number): void {
     const cat = this.cat(catId);
     if (!cat) return;

@@ -1,5 +1,6 @@
 import { TILE } from '../../shared/br/constants';
 import { G, type BRMap } from '../../shared/br/map';
+import { thicketCanopy } from './art-bosque';
 import { hash, shade, type Ctx } from './draw';
 
 const T = TILE;
@@ -466,8 +467,85 @@ function paintRoofPuddles(c: Ctx, map: BRMap): void {
   }
 }
 
+/**
+ * Bosque encantado: el espinar que rodea los claros se cubre de copas de arbusto con volumen (se
+ * pintan de arriba abajo para que se encimen), y el suelo junto a los espinos queda en sombra.
+ */
+function paintForest(c: Ctx, map: BRMap): void {
+  const seed = map.seed & 0xffff;
+  const canopies = [0, 1, 2, 3].map(thicketCanopy);
+  const wall = (x: number, y: number): boolean =>
+    x < 0 || y < 0 || x >= map.w || y >= map.h || groundAt(map, x, y) === G.ZARZAL;
+  // sombra del espinar sobre el claro (arriba y a los lados de cada pared)
+  for (let ty = 0; ty < map.h; ty++) {
+    for (let tx = 0; tx < map.w; tx++) {
+      if (groundAt(map, tx, ty) === G.ZARZAL) continue;
+      const X = tx * T;
+      const Y = ty * T;
+      if (wall(tx, ty - 1)) fill(c, X, Y, T, 4, 'rgba(8,20,16,0.5)');
+      if (wall(tx, ty - 1)) fill(c, X, Y + 4, T, 2, 'rgba(8,20,16,0.22)');
+      if (wall(tx - 1, ty)) fill(c, X, Y, 3, T, 'rgba(8,20,16,0.38)');
+      if (wall(tx + 1, ty)) fill(c, X + T - 3, Y, 3, T, 'rgba(8,20,16,0.38)');
+      if (wall(tx, ty + 1)) fill(c, X, Y + T - 2, T, 2, 'rgba(8,20,16,0.3)');
+    }
+  }
+  // senderos: tierra oscura de bosque con orillas de musgo
+  const path = (x: number, y: number): boolean => groundAt(map, x, y) === G.PATH;
+  for (let ty = 0; ty < map.h; ty++) {
+    for (let tx = 0; tx < map.w; tx++) {
+      if (!path(tx, ty)) continue;
+      const X = tx * T;
+      const Y = ty * T;
+      fill(c, X, Y, T, T, '#5a4a37');
+      for (let i = 0; i < 16; i++) {
+        const sx = Math.floor(hash(tx * 17 + i, ty, seed + 21) * T);
+        const sy = Math.floor(hash(tx, ty * 13 + i, seed + 22) * T);
+        fill(
+          c,
+          X + sx,
+          Y + sy,
+          1,
+          1,
+          i % 3 === 0 ? '#76623f' : i % 3 === 1 ? '#483a2b' : '#6b5940',
+        );
+      }
+      // piedritas y hojas secas
+      if (hash(tx, ty, seed + 23) < 0.22)
+        fill(
+          c,
+          X + 4 + Math.floor(hash(ty, tx, 5) * 7),
+          Y + 5 + Math.floor(hash(tx, tx, 6) * 6),
+          2,
+          1,
+          '#8e8168',
+        );
+      if (hash(tx, ty, seed + 24) < 0.12) fill(c, X + 9, Y + 11, 2, 1, '#b3683a');
+      // orillas de musgo donde el sendero toca otra cosa
+      if (!path(tx, ty - 1)) fill(c, X, Y, T, 2, '#3a7a4c');
+      if (!path(tx, ty + 1)) fill(c, X, Y + T - 2, T, 2, '#2b6b4a');
+      if (!path(tx - 1, ty)) fill(c, X, Y, 2, T, '#3a7a4c');
+      if (!path(tx + 1, ty)) fill(c, X + T - 2, Y, 2, T, '#2b6b4a');
+    }
+  }
+  // copas: solo donde el espinar toca un claro, para no pintar de mas en el fondo del mapa
+  for (let ty = 0; ty < map.h; ty++) {
+    for (let tx = 0; tx < map.w; tx++) {
+      if (groundAt(map, tx, ty) !== G.ZARZAL) continue;
+      const edge = !wall(tx, ty + 1) || !wall(tx - 1, ty) || !wall(tx + 1, ty) || !wall(tx, ty - 1);
+      if (!edge && hash(tx, ty, seed + 9) > 0.35) continue;
+      const sprite = canopies[Math.floor(hash(tx, ty, seed + 11) * 4)] as HTMLCanvasElement;
+      const ox = Math.floor(hash(tx, ty, seed + 12) * 5) - 2;
+      c.drawImage(sprite, tx * T - 5 + ox, ty * T - 8);
+    }
+  }
+}
+
 /** Todo lo que se hornea encima del terreno base, segun el mapa. */
 export function paintWorld(c: Ctx, map: BRMap): void {
+  if (map.kind === 'encantado') {
+    paintForest(c, map);
+    return;
+  }
   if (map.kind === 'tejado' || map.kind === 'azotea' || map.kind === 'mansarda') {
     paintRoofEdges(c, map);
     paintRoofPuddles(c, map);

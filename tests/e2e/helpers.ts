@@ -198,6 +198,12 @@ declare global {
       pvpPhase: string;
       round: number;
       wins: string;
+      advRoom: number;
+      advLives: number;
+      advMobs: number;
+      advChoice: number;
+      advRelics: number;
+      advClosed: number;
     };
   }
 }

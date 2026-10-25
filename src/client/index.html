@@ -280,6 +280,16 @@
             <p id="solo-help" class="muted" data-testid="solo-help">
               Tú contra 11 bots. La partida empieza al instante.
             </p>
+            <button
+              id="btn-shrine"
+              class="btn wide shrine-btn"
+              type="button"
+              hidden
+              data-testid="btn-shrine"
+            >
+              Santuario de la luna
+              <span id="shrine-badge" class="shrine-badge" data-testid="shrine-badge">0</span>
+            </button>
             <p class="muted">¿Con amigos? Crea una sala, elige el modo y comparte el enlace.</p>
             <hr />
             <form id="create-form" novalidate>
@@ -342,14 +352,22 @@
             <hr />
             <h3>Cómo se juega</h3>
             <ul class="help">
-              <li>Sé el último gato en pie. Los cofres tienen armas, balas, botiquines y muros.</li>
               <li>
-                La ola de agua cierra el mapa en 3 olas rápidas, en unos 2 minutos. Quédate dentro
-                del círculo seguro.
+                <b>Battle Royale:</b> sé el último gato en pie. Los cofres tienen armas, balas,
+                botiquines y muros, y la ola de agua cierra el mapa en unos 2 minutos.
+              </li>
+              <li>
+                <b>Pelea en el techo y Territorio:</b> eliges un kit antes de cada ronda y gana
+                quien se lleve dos. En los patios, dominen los tres para ganar.
+              </li>
+              <li>
+                <b>Aventura:</b> cruza el bosque sala por sala. Las puertas de enredadera se cierran
+                mientras peleas, los jefes sueltan reliquias y la esencia lunar que ganas compra
+                mejoras en el Santuario.
               </li>
               <li>
                 <b>PC:</b> WASD mueve, Shift corre, ratón apunta, clic dispara, E abre, I
-                inventario, M mapa, T emotes.
+                inventario, M mapa, T emotes, R recarga y Q da una voltereta en la Aventura.
               </li>
               <li>
                 <b>Móvil:</b> joystick a la izquierda (hasta el borde corre), joystick de la mira a
@@ -546,10 +564,18 @@
       <section class="card results-card">
         <h2 id="results-title" class="results-title"></h2>
         <p id="results-sub" class="muted"></p>
+        <div id="results-adv" class="results-adv" hidden data-testid="results-adv">
+          <ul id="adv-stats" class="adv-stats"></ul>
+          <div id="adv-relics" class="adv-relics" aria-label="Reliquias que reuniste"></div>
+          <p id="adv-essence" class="adv-essence" data-testid="adv-essence"></p>
+          <button id="btn-results-shrine" class="btn wide" type="button">
+            Ir al Santuario de la luna
+          </button>
+        </div>
         <div class="table-wrap">
           <table class="results-table">
             <thead>
-              <tr>
+              <tr id="results-head">
                 <th>Puesto</th>
                 <th>Gato</th>
                 <th>Bajas</th>
@@ -562,6 +588,35 @@
         </div>
         <button id="btn-back" class="btn primary wide" type="button" data-testid="btn-back">
           Volver a la sala
+        </button>
+      </section>
+    </div>
+
+    <!-- ============================================================ santuario -->
+    <div
+      id="shrine"
+      class="overlay"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="shrine-title"
+      data-testid="shrine"
+    >
+      <section class="card shrine-card">
+        <h2 id="shrine-title">Santuario de la luna</h2>
+        <p class="muted">
+          Aquí gastas la esencia lunar que ganas explorando el bosque. Tus mejoras se guardan en
+          este navegador.
+        </p>
+        <div class="shrine-bank">
+          <canvas id="shrine-moon" width="18" height="18" aria-hidden="true"></canvas>
+          <strong id="shrine-essence" data-testid="shrine-essence">0</strong>
+          <span>esencia lunar</span>
+        </div>
+        <ul id="shrine-list" class="shrine-list" data-testid="shrine-list"></ul>
+        <p id="shrine-stats" class="muted shrine-stats" data-testid="shrine-stats"></p>
+        <button id="shrine-close" class="btn primary wide" type="button" data-testid="shrine-close">
+          Cerrar
         </button>
       </section>
     </div>

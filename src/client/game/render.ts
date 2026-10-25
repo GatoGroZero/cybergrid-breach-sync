@@ -27,6 +27,7 @@ import { TEAM_COLORS } from '../../shared/br/modes';
 import { outfitInfo } from '../../shared/br/outfits';
 import { CAT_PAD, catSprites } from '../pixel/cat';
 import { paintWorld } from '../pixel/world';
+import { AdvScene } from './advscene';
 import { DaylightFx, staticLights, type LightSrc } from './daylight';
 import { Fx } from './fx';
 import { RainFx } from './weather';
@@ -148,6 +149,10 @@ export class BRRenderer {
   private confettiUntil = 0;
   private readonly sky = new DaylightFx();
   private readonly rain = new RainFx();
+  /** Aventura: enemigos, avisos y puertas del bosque (solo existe en esa partida). */
+  private adv: AdvScene | null = null;
+  /** Aventura: la hora del dia sigue el avance por el bosque, suavizada. */
+  private advPhase = 0;
   /** Sobre un tejado: llueve y la zona es una tormenta. */
   private storm = false;
   private readonly stormWave: HTMLCanvasElement;
@@ -234,6 +239,8 @@ export class BRRenderer {
     this.nextRocketAt = 0;
     this.lastDayName = null;
     this.phaseToast = null;
+    this.advPhase = 0;
+    this.adv = null;
     if (!game) {
       this.map = null;
       this.ground = null;
@@ -243,6 +250,18 @@ export class BRRenderer {
     }
     game.input.screen = { w: this.cssW, h: this.cssH };
     game.onEvent = (ev) => this.onEvent(ev);
+    game.onHostile = (kind, x, y) => {
+      const sp = spatial(x - game.x, y - game.y, 300);
+      if (sp.v > 0.08) this.sfx.enemyShot(kind, Math.max(0.3, sp.v), sp.pan);
+    };
+    if (game.mode === 'aventura')
+      this.adv = new AdvScene(this.fx, this.sfx, {
+        light: (x, y, r, color, life) => this.addLight(x, y, r, color, life),
+        shake: (n) => {
+          this.shake = Math.max(this.shake, n);
+        },
+        say: (text, tone, ms) => this.game?.say(text, tone, ms),
+      });
     this.setMap(game.map);
   }
 
@@ -726,6 +745,7 @@ export class BRRenderer {
       default:
         break;
     }
+    if (g) this.adv?.onEvent(ev, g, performance.now());
   }
 
   // ------------------------------------------------------------------ ambiente
@@ -821,8 +841,17 @@ export class BRRenderer {
     this.shake = Math.max(0, this.shake - dt * 10);
     // Hora del dia: sale de la semilla y del reloj de la partida, igual para todos.
     const clockS = g.latest ? Math.max(0, g.serverNow / 1000) : 0;
+    if (g.mode === 'aventura' && g.adv) {
+      // a medida que el grupo avanza por el bosque, cae la tarde y llega la noche
+      const goal = Math.min(1, 0.03 + (0.97 * g.adv.room) / Math.max(1, g.adv.rooms - 1));
+      this.advPhase += (goal - this.advPhase) * Math.min(1, dt * 0.4);
+      if (this.advPhase < 0.03) this.advPhase = 0.03;
+    }
     const dl = this.sky.setPhase(
-      this.dayOverride ?? dayPhase(g.seed, clockS, DAY_SPAN_BY_MODE[g.mode]),
+      this.dayOverride ??
+        (g.mode === 'aventura'
+          ? this.advPhase
+          : dayPhase(g.seed, clockS, DAY_SPAN_BY_MODE[g.mode])),
     );
     this.sfx.setDaytime(dl.p);
     if (dl.name !== this.lastDayName) {
@@ -842,7 +871,7 @@ export class BRRenderer {
       }
     }
 
-    const { cats, shots } = g.sampleWorld();
+    const { cats, shots, mobs } = g.sampleWorld();
     this.celebrate(g, cats, now, dt);
     const target = g.cameraTarget(cats);
     const mapW = map.w * T;
@@ -873,6 +902,7 @@ export class BRRenderer {
     this.sky.update(dt, now, map.kind, { x: camX, y: camY, w: this.viewW, h: this.viewH });
     this.drawGround(b, map, camX, camY, now);
     this.drawGroundFx(b, map, camX, camY, now);
+    this.adv?.drawGround(b, g, camX, camY, now);
 
     this.labels.length = 0;
     this.drawPoints(b, g, camX, camY, now);
@@ -881,6 +911,7 @@ export class BRRenderer {
     this.collectWalls(list, g, camX, camY);
     this.collectBoxes(list, g, camX, camY, now, dt);
     this.collectCats(list, g, cats, camX, camY, now, dt);
+    this.adv?.collect(list, b, g, mobs, camX, camY, now);
     list.sort((p, q) => p.y - q.y);
     for (const d of list) d.draw();
     this.drawAim(b, g, cats, camX, camY, now);
@@ -900,7 +931,7 @@ export class BRRenderer {
       this.viewH,
       this.veilLights(g, cats, target, flashes),
     );
-    if (g.zone) this.drawZone(b, g.zone, camX, camY, now);
+    if (g.zone && g.mode !== 'aventura') this.drawZone(b, g.zone, camX, camY, now);
     if (this.storm) {
       this.rain.update(dt, now, this.viewW, this.viewH);
       this.rain.draw(b, this.viewW, this.viewH, g.zone, camX, camY);
@@ -1837,6 +1868,10 @@ export class BRRenderer {
       const x = s.x - camX;
       const y = s.y - camY;
       if (x < -30 || y < -30 || x > this.viewW + 30 || y > this.viewH + 30) continue;
+      if (s.kind >= 64) {
+        this.adv?.drawHostileShot(b, x, y, s.kind, s.ang, now);
+        continue;
+      }
       const base = s.kind & 7;
       const rarity = s.kind >> 3;
       const cx = Math.cos(s.ang);
