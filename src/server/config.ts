@@ -162,7 +162,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
-      guest: int(process.env.LIMIT_GUEST, 40),
+      guest: int(process.env.LIMIT_GUEST, 200),
       oauth: int(process.env.LIMIT_OAUTH, 40),
       emailSend: int(process.env.LIMIT_EMAIL_SEND, 8),
       emailVerify: int(process.env.LIMIT_EMAIL_VERIFY, 30),
