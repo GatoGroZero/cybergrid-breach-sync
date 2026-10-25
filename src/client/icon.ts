@@ -2,7 +2,7 @@
 // Se abre con /icon.html?size=512 y se captura con Playwright.
 import { defaultSkin } from '../shared/br/skin';
 import { C, art, make, outline } from './pixel/draw';
-import { catSprites } from './pixel/cat';
+import { CAT_PAD, catSprites } from './pixel/cat';
 
 const params = new URLSearchParams(window.location.search);
 const size = Number(params.get('size') ?? 512);
@@ -28,7 +28,7 @@ function build(): HTMLCanvasElement {
   c.fillStyle = C.blue;
   c.fillRect(0, 24, 32, 1);
   const cat = catSprites(defaultSkin(0)).right[0] as HTMLCanvasElement;
-  c.drawImage(cat, 3, 9);
+  c.drawImage(cat, 3, 9 - CAT_PAD);
   const crown = outline(
     art(['G...G...G', 'GG.GGG.GG', 'GGGGGGGGG', 'GGGRGGGGG', 'OOOOOOOOO'], {
       G: C.yellow,

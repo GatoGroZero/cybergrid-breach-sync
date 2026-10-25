@@ -22,7 +22,8 @@ import type { BREvent, ZoneView } from '../../shared/br/types';
 import { spatial, surfaceFor, type Sfx } from '../audio';
 import { C, ell, flipH, hash, make, px, rect } from '../pixel/draw';
 import { buildAssets, roofSprite, type Assets } from '../pixel/art';
-import { catSprites } from '../pixel/cat';
+import { outfitInfo } from '../../shared/br/outfits';
+import { CAT_PAD, catSprites } from '../pixel/cat';
 import { paintWorld } from '../pixel/world';
 import { Fx } from './fx';
 import { Hud, type Label } from './hud';
@@ -1266,6 +1267,8 @@ export class BRRenderer {
     const b = this.bctx;
     const info = g.cats.get(id);
     const sprites = catSprites(info?.skin ?? defaultSkin(0));
+    // Los sombreros suben el nombre, el emote y la corona para que no se encimen.
+    const lift = Math.max(0, (outfitInfo(info?.skin.outfit)?.height ?? 0) - 2);
     const moving = (flags & FLAG.moving) !== 0;
     const running = moving && (flags & FLAG.running) !== 0;
     const frame = running
@@ -1354,7 +1357,7 @@ export class BRRenderer {
         }
         if (dim) b.globalAlpha = 0.45;
         const dx = sx - 13;
-        const dy = sy - 11 + hop;
+        const dy = sy - 11 - CAT_PAD + hop;
         if (wet) {
           const h = sprite.height - 7;
           b.drawImage(sprite, 0, 0, sprite.width, h, dx, dy + 3, sprite.width, h);
@@ -1374,7 +1377,7 @@ export class BRRenderer {
         }
         if (winner) {
           const crown = this.assets.crown;
-          b.drawImage(crown, Math.round(sx + facing * 5 - crown.width / 2), sy - 21 + hop);
+          b.drawImage(crown, Math.round(sx + facing * 5 - crown.width / 2), sy - 21 - lift + hop);
         }
         b.globalAlpha = 1;
         // Emote: un globo con la cara sobre la cabeza. Sale con un saltito y se desvanece.
@@ -1388,7 +1391,11 @@ export class BRRenderer {
               const pop = age < 160 ? Math.round((1 - age / 160) * 4) : 0;
               const bob = Math.round(Math.sin(age / 260));
               b.globalAlpha = age > EMOTE_MS - 450 ? Math.max(0, (EMOTE_MS - age) / 450) : 1;
-              b.drawImage(bubble, Math.round(sx - bubble.width / 2), sy - 44 + pop + bob + hop);
+              b.drawImage(
+                bubble,
+                Math.round(sx - bubble.width / 2),
+                sy - 44 - lift + pop + bob + hop,
+              );
               b.globalAlpha = 1;
             }
           }
@@ -1398,14 +1405,20 @@ export class BRRenderer {
     if (!isMe && info && !this.hiddenByRoof(x, y)) {
       this.labels.push({
         x,
-        y: y - 16,
+        y: y - 16 - lift,
         text: info.name,
         color: info.bot ? C.lgray : C.white,
         kind: 'name',
       });
     }
     if (dim)
-      this.labels.push({ x, y: y - 24, text: 'sin conexión', color: C.orange, kind: 'small' });
+      this.labels.push({
+        x,
+        y: y - 24 - lift,
+        text: 'sin conexión',
+        color: C.orange,
+        kind: 'small',
+      });
   }
 
   /** Fuegos artificiales sobre el ganador mientras dura la celebracion. */

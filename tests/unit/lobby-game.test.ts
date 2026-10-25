@@ -54,7 +54,16 @@ describe('eventos de la partida por socket', () => {
     const good = { base: 3, paint: 'f'.repeat(384) };
     expect((await emitAck(s, 'skin:set', good)).ok).toBe(true);
     const back = await emitAck<Skin>(s, 'skin:get');
-    expect(back.ok && back.data).toEqual(good);
+    // sin traje en el mensaje, el servidor guarda "sin traje" (0)
+    expect(back.ok && back.data).toEqual({ ...good, outfit: 0 });
+    const dressed = { ...good, outfit: 7 };
+    expect((await emitAck(s, 'skin:set', dressed)).ok).toBe(true);
+    const again = await emitAck<Skin>(s, 'skin:get');
+    expect(again.ok && again.data).toEqual(dressed);
+    expect(await emitAck(s, 'skin:set', { ...good, outfit: 99 })).toEqual({
+      ok: false,
+      error: 'pelaje_invalido',
+    });
     expect(await emitAck(s, 'skin:set', { base: 3, paint: 'zz' })).toEqual({
       ok: false,
       error: 'pelaje_invalido',

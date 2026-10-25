@@ -1,4 +1,5 @@
 import { SKIN_H, SKIN_W } from '../../shared/br/constants';
+import { OUTFITS } from '../../shared/br/outfits';
 import { createRng } from '../../shared/rng';
 import {
   BASE_COATS,
@@ -7,12 +8,22 @@ import {
   PAINT_PALETTE,
   defaultSkin,
   isValidSkin,
+  outfitOf,
   paintCells,
   paintIndex,
   randomSkin,
   type Skin,
 } from '../../shared/br/skin';
-import { CAT_H, CAT_W, catSprites, isPaintable, pixelColor, roleAt, ROLE } from '../pixel/cat';
+import {
+  CAT_H,
+  CAT_PAD,
+  CAT_W,
+  catSprites,
+  isPaintable,
+  pixelColor,
+  roleAt,
+  ROLE,
+} from '../pixel/cat';
 import { $, el } from './dom';
 
 const SCALE = 12;
@@ -46,6 +57,8 @@ export function startWalker(
   scale: number,
   flip = false,
 ): () => void {
+  canvas.width = CAT_W * scale;
+  canvas.height = CAT_H * scale;
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
   ctx.imageSmoothingEnabled = false;
   const order = [1, 0, 2, 0];
@@ -92,6 +105,7 @@ export class Painter {
   constructor() {
     this.skin = loadSavedSkin();
     this.buildCoats();
+    this.buildOutfits();
     this.buildPalette();
     this.buildBrushes();
     this.canvas.addEventListener('pointerdown', this.onDown);
@@ -125,6 +139,34 @@ export class Painter {
       b.addEventListener('click', () => this.apply({ ...this.skin, base: i }));
       box.append(b);
     });
+  }
+
+  /** Los trajes de Halloween: cada boton muestra al gato con ese traje puesto. */
+  private buildOutfits(): void {
+    const box = $('outfits');
+    box.replaceChildren();
+    const names = ['Sin traje', ...OUTFITS.map((o) => o.name)];
+    names.forEach((name, i) => {
+      const b = el('button', 'outfit');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-label', `Traje: ${name}`);
+      b.dataset.outfit = String(i);
+      b.title = i === 0 ? name : `${name}: ${OUTFITS[i - 1]?.blurb ?? ''}`;
+      b.append(el('canvas'), el('span', '', name));
+      b.addEventListener('click', () => this.apply({ ...this.skin, outfit: i }));
+      box.append(b);
+    });
+    this.drawOutfitPreviews();
+  }
+
+  private drawOutfitPreviews(): void {
+    $('outfits')
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b, i) => {
+        const canvas = b.querySelector('canvas') as HTMLCanvasElement;
+        drawCatIcon(canvas, { ...this.skin, outfit: i }, 2);
+      });
   }
 
   private buildPalette(): void {
@@ -165,6 +207,9 @@ export class Painter {
     $('coats')
       .querySelectorAll('button')
       .forEach((b, i) => b.setAttribute('aria-checked', String(i === this.skin.base)));
+    $('outfits')
+      .querySelectorAll('button')
+      .forEach((b, i) => b.setAttribute('aria-checked', String(i === outfitOf(this.skin))));
     $('palette')
       .querySelectorAll('button')
       .forEach((b, i) => b.setAttribute('aria-checked', String(i === this.color)));
@@ -177,6 +222,7 @@ export class Painter {
   private apply(skin: Skin, quiet = false): void {
     this.skin = skin;
     this.render();
+    this.drawOutfitPreviews();
     saveSkin(skin);
     if (quiet) return;
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
@@ -186,13 +232,14 @@ export class Painter {
   setSkin(skin: Skin): void {
     this.skin = skin;
     this.render();
+    this.drawOutfitPreviews();
   }
 
   private cellAt(e: PointerEvent): { x: number; y: number } {
     const r = this.canvas.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * this.canvas.width;
     const py = ((e.clientY - r.top) / r.height) * this.canvas.height;
-    return { x: Math.floor(px / SCALE) - 1, y: Math.floor(py / SCALE) - 1 };
+    return { x: Math.floor(px / SCALE) - 1, y: Math.floor(py / SCALE) - 1 - CAT_PAD };
   }
 
   private footprint(cx: number, cy: number): [number, number][] {
@@ -277,7 +324,9 @@ export class Painter {
   }
 
   private randomize(): void {
-    this.apply(randomSkin(createRng((Math.random() * 2 ** 31) >>> 0)));
+    // El traje se elige aparte: "al azar" solo cambia el pelaje y la pintura.
+    const fresh = randomSkin(createRng((Math.random() * 2 ** 31) >>> 0));
+    this.apply({ ...fresh, outfit: outfitOf(this.skin) });
   }
 
   render(): void {
@@ -294,7 +343,7 @@ export class Painter {
         const role = roleAt(x, y);
         if (role !== ROLE.coat && role !== ROLE.shade) continue;
         const ox = (x + 1) * SCALE;
-        const oy = (y + 1) * SCALE;
+        const oy = (y + 1 + CAT_PAD) * SCALE;
         ctx.fillRect(ox, oy, SCALE, 1);
         ctx.fillRect(ox, oy, 1, SCALE);
       }
@@ -304,7 +353,7 @@ export class Painter {
       ctx.lineWidth = 2;
       for (const [x, y] of this.footprint(this.hover.x, this.hover.y)) {
         if (x < 0 || y < 0 || x >= SKIN_W || y >= SKIN_H || !isPaintable(x, y)) continue;
-        ctx.strokeRect((x + 1) * SCALE + 1, (y + 1) * SCALE + 1, SCALE - 2, SCALE - 2);
+        ctx.strokeRect((x + 1) * SCALE + 1, (y + 1 + CAT_PAD) * SCALE + 1, SCALE - 2, SCALE - 2);
       }
     }
     this.syncControls();

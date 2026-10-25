@@ -33,7 +33,7 @@
     <!-- ============================================================ acceso -->
     <main id="screen-auth" class="screen center" hidden data-testid="screen-auth">
       <section class="card auth-card">
-        <canvas id="auth-cat" class="auth-cat" width="104" height="72" aria-hidden="true"></canvas>
+        <canvas id="auth-cat" class="auth-cat" width="104" height="100" aria-hidden="true"></canvas>
         <h1 class="logo">GATO<span>ROYALE</span></h1>
         <p class="tagline">CyberGrid · Battle Royale de gatos</p>
 
@@ -218,20 +218,30 @@
             <canvas
               id="paint-canvas"
               width="312"
-              height="216"
+              height="300"
               aria-label="Lienzo para pintar tu gato"
             ></canvas>
             <canvas
               id="paint-walk"
               class="paint-walk"
               width="78"
-              height="54"
+              height="75"
               aria-hidden="true"
             ></canvas>
           </div>
           <div class="paint-row">
             <span class="lbl">Pelaje</span>
             <div id="coats" class="swatches" role="radiogroup" aria-label="Color base"></div>
+          </div>
+          <div class="paint-row">
+            <span class="lbl">Traje</span>
+            <div
+              id="outfits"
+              class="outfits"
+              role="radiogroup"
+              aria-label="Traje de Halloween"
+              data-testid="outfits"
+            ></div>
           </div>
           <div class="paint-row">
             <span class="lbl">Pincel</span>

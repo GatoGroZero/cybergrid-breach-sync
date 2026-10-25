@@ -7,6 +7,7 @@ import {
   SKIN_CELLS,
 } from './constants';
 import { AMMO_KINDS } from './items';
+import { OUTFIT_COUNT } from './outfits';
 import { BASE_COATS } from './skin';
 import { BOTS_FILL, type BotsSetting } from './rooms';
 import type { Item } from './items';
@@ -73,6 +74,8 @@ export const skinSchema = z.object({
     .min(0)
     .max(BASE_COATS.length - 1),
   paint: z.string().regex(new RegExp(`^[0-9a-f]{${SKIN_CELLS}}$`)),
+  /** Traje de Halloween: 0 ninguno. Los clientes viejos no lo mandan. */
+  outfit: z.number().int().min(0).max(OUTFIT_COUNT).default(0),
 });
 
 const roomName = z.string().trim().min(1).max(24);
@@ -125,7 +128,7 @@ export interface RoomMember {
   ready: boolean;
   connected: boolean;
   host: boolean;
-  skin: { base: number; paint: string };
+  skin: { base: number; paint: string; outfit?: number };
 }
 
 export type RoomPhase = 'lobby' | 'countdown' | 'playing' | 'ended';
@@ -168,7 +171,7 @@ export interface CatInfo {
   id: number;
   name: string;
   bot: boolean;
-  skin: { base: number; paint: string };
+  skin: { base: number; paint: string; outfit?: number };
 }
 
 export interface GameStartPayload {
