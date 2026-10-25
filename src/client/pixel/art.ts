@@ -1077,14 +1077,55 @@ export function roofSprite(
   ];
   const pal = palettes[style % palettes.length] as string[];
   if (kind === 'bed') {
-    // colchon con cobija y almohadas
-    rect(c, 2, 2, W + 2, H + 2, '#f4f4f4');
-    const stripe = pal[0] as string;
-    for (let x = 12; x < W; x += 12) rect(c, 2 + x, 2, 6, H + 2, stripe);
-    rect(c, 2, 2, W + 2, 3, '#e0e6ec');
-    rect(c, 6, 6, 16, 9, '#ffffff');
-    rect(c, 6, H - 10, 16, 9, '#ffffff');
-    rect(c, 2, H + 2, W + 2, 3, shade(stripe, 0.7));
+    // Cama vista de 3/4: arriba el colchon con cobija y almohadas, al frente el grosor del colchon
+    // y debajo un hueco oscuro entre las patas, por donde se meten los gatos.
+    const blanket = pal[0] as string;
+    const blanketD = pal[1] as string;
+    const blanketL = pal[2] as string;
+    const top = H - 4;
+    // sombra en el suelo y hueco oscuro debajo
+    rect(c, 2, top + 2, W + 3, 10, 'rgba(26,28,44,0.3)');
+    rect(c, 7, H, W - 6, 6, '#2b2030');
+    rect(c, 7, H, W - 6, 1, '#3c2f44');
+    // patas del frente
+    for (const lx of [3, W - 1]) {
+      rect(c, lx, H - 1, 4, 8, '#4a3224');
+      rect(c, lx, H - 1, 1, 8, '#7a5539');
+      rect(c, lx, H + 5, 4, 2, '#2e1f17');
+    }
+    // colchon: superficie y canto
+    rect(c, 3, 0, W + 1, top, '#f6efe0');
+    rect(c, 3, top, W + 1, 4, '#d9cdb4');
+    rect(c, 3, top + 3, W + 1, 1, '#b3a58a');
+    rect(c, 3, 0, W + 1, 1, '#ffffff');
+    // cobija con dibujo de zigzag
+    const bx = Math.round(W * 0.34);
+    rect(c, bx, 1, W + 4 - bx, top - 1, blanket);
+    rect(c, bx, top, W + 4 - bx, 4, blanketD);
+    rect(c, bx, 1, 3, top - 1, blanketL);
+    for (let y = 5; y < top - 3; y += 6) {
+      for (let x = bx + 6; x < W + 2; x += 6) {
+        rect(c, x, y, 3, 1, blanketL);
+        rect(c, x + 1, y + 1, 3, 1, blanketD);
+      }
+    }
+    // dobles de la cobija
+    rect(c, bx + 3, 1, 1, top - 1, blanketD);
+    // almohadas
+    for (const py of [Math.round(top * 0.16), Math.round(top * 0.56)]) {
+      rect(c, 8, py, 16, 10, '#ffffff');
+      rect(c, 8, py + 8, 16, 2, '#dfe6ee');
+      rect(c, 9, py + 1, 14, 1, '#f1f4f8');
+      rect(c, 8, py, 1, 10, '#dfe6ee');
+      rect(c, 23, py, 1, 10, '#c6d0dc');
+    }
+    // cabecera de madera, del lado cerrado
+    rect(c, 0, 0, 5, H - 2, '#5a3b28');
+    rect(c, 0, 0, 2, H - 2, '#7a5539');
+    rect(c, 0, 0, 5, 2, '#8a6445');
+    rect(c, 0, H - 4, 5, 2, '#3a2418');
+    // costura del borde
+    for (let x = 6; x < W + 2; x += 4) px(c, x, 2, '#e3d8c0');
     return outline(cv, C.black);
   }
   const base = kind === 'cabin' ? ['#41a6f6', '#2f78c4', '#73eff7'] : pal;

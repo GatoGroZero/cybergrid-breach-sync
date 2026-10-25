@@ -211,6 +211,7 @@ export class Hud {
     this.drawLabels(f);
     this.drawFloaters(f);
     this.drawPrompt(f);
+    this.drawAmbientVignette(f);
     this.drawVignette(f);
     if (g.input.mode === 'keyboard') g.input.hotbarRects = [];
     const touch = g.input.mode === 'touch';
@@ -296,6 +297,23 @@ export class Hud {
       text(ctx, label, px0 + 14, py0 + 14, 16, C.black, 'center', VT, null);
     }
     text(ctx, title, px0 + kw + 10, py0 + 14, 20, C.white, 'left', VT, null);
+  }
+
+  /** Esquinas apenas oscuras siempre: da profundidad y centra la mirada en el gato. */
+  private drawAmbientVignette(f: HudFrame): void {
+    const { ctx, w, h } = f;
+    const grad = ctx.createRadialGradient(
+      w / 2,
+      h / 2,
+      Math.min(w, h) * 0.45,
+      w / 2,
+      h / 2,
+      Math.hypot(w, h) * 0.62,
+    );
+    grad.addColorStop(0, 'rgba(10,12,28,0)');
+    grad.addColorStop(1, 'rgba(10,12,28,0.34)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
   }
 
   private drawVignette(f: HudFrame): void {

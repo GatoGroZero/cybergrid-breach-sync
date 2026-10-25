@@ -23,9 +23,19 @@ import { spatial, surfaceFor, type Sfx } from '../audio';
 import { C, ell, flipH, hash, make, px, rect } from '../pixel/draw';
 import { buildAssets, roofSprite, type Assets } from '../pixel/art';
 import { catSprites } from '../pixel/cat';
+import { paintWorld } from '../pixel/world';
 import { Fx } from './fx';
 import { Hud, type Label } from './hud';
 import type { ClientBR, CatView } from './state';
+
+/** Cuanto se mece la copa de cada cosa con el viento (en pixeles). */
+const SWAY: Record<string, number> = {
+  tree: 1.1,
+  pine: 0.9,
+  palm: 1.6,
+  bush: 0.7,
+  plant: 0.7,
+};
 
 const T = TILE;
 const BG = '#1a1c2c';
@@ -108,6 +118,15 @@ export class BRRenderer {
   private lastStepSfx = 0;
   /** Cuando se oyo la ultima pisada de cada gato ajeno (para no sonar todas a la vez). */
   private readonly otherSteps = new Map<number, number>();
+  /** Luces que se encienden un instante: fogonazos, explosiones y cofres que se abren. */
+  private readonly lights: {
+    x: number;
+    y: number;
+    r: number;
+    color: string;
+    life: number;
+    max: number;
+  }[] = [];
   private wasTired = false;
   private lastBeat = 0;
   private labels: Label[] = [];
@@ -279,24 +298,8 @@ export class BRRenderer {
         if (at(tx, ty + 1) !== G.WATER) c.fillRect(tx * T, ty * T + T - 1, T, 1);
       }
     }
-    // Alfombras: son parte del suelo.
-    const cols = [
-      ['#b13e53', '#f4a6c0'],
-      ['#3b5dc9', '#73eff7'],
-      ['#257179', '#a7f070'],
-      ['#5d275d', '#ffcd75'],
-    ] as const;
-    for (const p of map.props) {
-      if (p.kind !== 'rug') continue;
-      const [base, trim] = cols[Math.floor(hash(p.x, p.y, 9) * cols.length)] as readonly [
-        string,
-        string,
-      ];
-      rect(c, p.x * T + 1, p.y * T + 1, p.w * T - 2, p.h * T - 2, trim);
-      rect(c, p.x * T + 3, p.y * T + 3, p.w * T - 6, p.h * T - 6, base);
-      for (let x = p.x * T + 6; x < (p.x + p.w) * T - 6; x += 6)
-        rect(c, x, p.y * T + 6, 2, p.h * T - 12, trim);
-    }
+    // Tablones, azulejos, muros con volumen, alfombras y detalles del suelo.
+    paintWorld(c, map);
     return cv;
   }
 
@@ -343,6 +346,20 @@ export class BRRenderer {
     const fx = this.fx;
     const flash = (size: number, life: number, color: string): void =>
       fx.add({ x, y, vx: 0, vy: 0, life, max: life, color, size, grav: 0, kind: 0, r: 0 });
+    // el fogonazo tambien alumbra un instante lo que tiene alrededor
+    const tint: Record<string, string> = {
+      rifle: '#a7f070',
+      shotgun: '#ffa94d',
+      sniper: '#73eff7',
+      bazooka: '#ffb347',
+    };
+    this.addLight(
+      x,
+      y,
+      weapon === 'bazooka' ? 26 : weapon === 'shotgun' ? 22 : 16,
+      tint[weapon] ?? '#ffcd75',
+      0.09,
+    );
     switch (weapon) {
       case 'rifle':
         fx.burst(x, y, 3, {
@@ -482,6 +499,7 @@ export class BRRenderer {
         break;
       }
       case 'boom': {
+        this.addLight(ev.x, ev.y, ev.r * 2.2, '#ffb347', 0.4);
         fx.ring(ev.x, ev.y, ev.r * 1.15, C.yellow, 0.35);
         fx.ring(ev.x, ev.y, ev.r * 0.8, C.orange, 0.28);
         fx.burst(ev.x, ev.y, 26, {
@@ -567,6 +585,7 @@ export class BRRenderer {
         break;
       }
       case 'open': {
+        this.addLight(ev.x, ev.y, ev.golden ? 24 : 16, ev.ammo ? '#c8e07a' : '#ffd24a', 0.3);
         const cols = ev.ammo
           ? [C.yellow, C.orange, '#a3b86c']
           : ev.golden
@@ -763,6 +782,7 @@ export class BRRenderer {
     b.fillStyle = BG;
     b.fillRect(0, 0, this.viewW, this.viewH);
     this.drawGround(b, map, camX, camY, now);
+    this.drawGroundFx(b, map, camX, camY, now);
 
     this.labels.length = 0;
     const list: Drawable[] = [];
@@ -777,6 +797,8 @@ export class BRRenderer {
     this.drawShots(b, shots, camX, camY);
     this.fx.draw(b, camX, camY);
     this.drawRoofs(b, g, cats, camX, camY, dt);
+    this.drawLights(b, camX, camY, dt);
+    this.drawMood(b, map.kind);
     if (g.zone) this.drawZone(b, g.zone, camX, camY, now);
 
     // buffer -> pantalla
@@ -810,6 +832,159 @@ export class BRRenderer {
       fps: this.fps,
       target,
     });
+  }
+
+  /** Dibujos de resplandor ya pintados (uno por color y tamano): pintarlos pixel a pixel cada cuadro costaria mucho. */
+  private readonly glowCache = new Map<string, HTMLCanvasElement>();
+
+  private glowSprite(color: string, r: number): HTMLCanvasElement {
+    const key = `${color}|${r}`;
+    let cv = this.glowCache.get(key);
+    if (!cv) {
+      const [canvas, c] = make(r * 2 + 2, Math.ceil(r * 1.6) + 2);
+      for (let i = 3; i >= 1; i--) {
+        c.globalAlpha = 0.45;
+        ell(c, r + 1, canvas.height / 2, (r * i) / 3, (r * i * 0.8) / 3, color);
+      }
+      cv = canvas;
+      this.glowCache.set(key, cv);
+    }
+    return cv;
+  }
+
+  private readonly cloudCache = new Map<string, HTMLCanvasElement>();
+
+  /** Sombra de una nube, pintada una sola vez. */
+  private cloudSprite(i: number, color: string): HTMLCanvasElement {
+    const key = `${i}|${color}`;
+    let cv = this.cloudCache.get(key);
+    if (!cv) {
+      const rx = 90 + i * 14;
+      const ry = 42 + i * 8;
+      const [canvas, c] = make(rx * 2 + 4, ry * 2 + 4);
+      ell(c, rx + 2, ry + 2, rx, ry, color);
+      ell(c, rx + 2 - 24, ry + 2 + 6, rx * 0.55, ry * 0.7, color);
+      cv = canvas;
+      this.cloudCache.set(key, cv);
+    }
+    return cv;
+  }
+
+  /** Destello de luz: se suma al color de abajo, como una luz de verdad. */
+  private glow(b: Ctx, x: number, y: number, r: number, color: string, alpha: number): void {
+    const sprite = this.glowSprite(color, Math.max(4, Math.round(r)));
+    const prev = b.globalCompositeOperation;
+    b.globalCompositeOperation = 'lighter';
+    b.globalAlpha = Math.min(1, alpha * 1.6);
+    b.drawImage(sprite, Math.round(x - sprite.width / 2), Math.round(y - sprite.height / 2));
+    b.globalCompositeOperation = prev;
+    b.globalAlpha = 1;
+  }
+
+  private addLight(x: number, y: number, r: number, color: string, life: number): void {
+    if (this.lights.length > 24) this.lights.shift();
+    this.lights.push({ x, y, r, color, life, max: life });
+  }
+
+  private drawLights(b: Ctx, camX: number, camY: number, dt: number): void {
+    for (let i = this.lights.length - 1; i >= 0; i--) {
+      const l = this.lights[i] as (typeof this.lights)[number];
+      l.life -= dt;
+      if (l.life <= 0) {
+        this.lights.splice(i, 1);
+        continue;
+      }
+      const k = l.life / l.max;
+      this.glow(
+        b,
+        Math.round(l.x - camX),
+        Math.round(l.y - camY),
+        l.r * (0.7 + 0.3 * k),
+        l.color,
+        0.6 * k,
+      );
+    }
+  }
+
+  /** Tinte de ambiente de cada mapa: calido en el bosque y la casa, fresco en la piscina. */
+  private drawMood(b: Ctx, kind: string): void {
+    b.globalAlpha = 1;
+    b.fillStyle =
+      kind === 'bosque'
+        ? 'rgba(255,225,150,0.045)'
+        : kind === 'casa'
+          ? 'rgba(255,196,130,0.06)'
+          : 'rgba(150,225,255,0.05)';
+    b.fillRect(0, 0, this.viewW, this.viewH);
+  }
+
+  /**
+   * Vida sobre el piso: sombras de nubes que pasan por el bosque y la piscina, rayos de sol por las
+   * ventanas de la casa y destellos del agua.
+   */
+  private drawGroundFx(b: Ctx, map: BRMap, camX: number, camY: number, now: number): void {
+    const mapW = map.w * T;
+    if (map.kind === 'casa') {
+      // rayos de sol: un par por cuarto, inclinados, que respiran despacio
+      const rooms = [0.17, 0.5, 0.83];
+      const prev = b.globalCompositeOperation;
+      b.globalCompositeOperation = 'lighter';
+      rooms.forEach((fx, i) => {
+        const bx = mapW * fx - camX + Math.sin(now / 5200 + i * 2) * 10;
+        const top = 2 * T - camY;
+        const a = 0.05 + 0.025 * Math.sin(now / 1700 + i * 1.7);
+        for (const [w, off] of [
+          [18, 0],
+          [9, 40],
+        ] as const) {
+          b.globalAlpha = a;
+          b.fillStyle = '#fff1c4';
+          b.beginPath();
+          b.moveTo(bx + off, top);
+          b.lineTo(bx + off + w, top);
+          b.lineTo(bx + off + w + 140, top + 190);
+          b.lineTo(bx + off + 140 - 10, top + 190);
+          b.closePath();
+          b.fill();
+        }
+      });
+      b.globalCompositeOperation = prev;
+      b.globalAlpha = 1;
+    } else {
+      // sombras de nubes
+      const mapH = map.h * T;
+      b.globalAlpha = 0.085;
+      for (let i = 0; i < 4; i++) {
+        const cx = (((now / 1000) * (5 + i) + i * mapW * 0.31) % (mapW + 360)) - 180;
+        const cy = (mapH * (0.18 + i * 0.22) + Math.sin(now / 9000 + i) * 30) % mapH;
+        const cloud = this.cloudSprite(i, map.kind === 'bosque' ? '#0b2a1f' : '#2a4a66');
+        b.drawImage(
+          cloud,
+          Math.round(cx - camX - cloud.width / 2),
+          Math.round(cy - camY - cloud.height / 2),
+        );
+      }
+      b.globalAlpha = 1;
+    }
+    // destellos en el agua
+    if (map.kind !== 'casa') {
+      const tx0 = Math.max(0, Math.floor(camX / T));
+      const ty0 = Math.max(0, Math.floor(camY / T));
+      const tx1 = Math.min(map.w - 1, Math.floor((camX + this.viewW) / T));
+      const ty1 = Math.min(map.h - 1, Math.floor((camY + this.viewH) / T));
+      const beat = Math.floor(now / 150);
+      b.fillStyle = '#ffffff';
+      for (let ty = ty0; ty <= ty1; ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          if (map.ground[ty * map.w + tx] !== G.WATER) continue;
+          if ((tx * 7 + ty * 13 + beat) % 17 !== 0) continue;
+          const px0 = tx * T - camX + ((tx * 5 + ty * 3 + beat) % 11) + 2;
+          const py0 = ty * T - camY + ((tx * 3 + ty * 7 + beat) % 11) + 2;
+          b.fillRect(px0, py0, 2, 1);
+          b.fillRect(px0 + 1, py0 - 1, 1, 3);
+        }
+      }
+    }
   }
 
   private drawGround(b: Ctx, map: BRMap, camX: number, camY: number, now: number): void {
@@ -865,11 +1040,42 @@ export class BRRenderer {
       s.fade += ((covers ? 0.4 : 1) - s.fade) * Math.min(1, dt * 12);
       const alpha = s.fade;
       const bob = s.kind === 'duck' ? Math.round(Math.sin(now / 420 + s.x) * 1) : 0;
+      // Arboles, palmeras y plantas se mecen con el viento: la copa se corre un pixel, el tronco no.
+      const swayAmp = SWAY[s.kind] ?? 0;
+      const sway = swayAmp
+        ? Math.round(Math.sin(now / 1100 + s.x * 0.05 + s.y * 0.031) * swayAmp)
+        : 0;
       list.push({
         y: s.sortY,
         draw: () => {
           if (alpha < 0.98) b.globalAlpha = alpha;
-          b.drawImage(s.sprite, s.x - camX, s.y - camY + bob);
+          if (sway !== 0) {
+            const cut = Math.floor(s.sprite.height * 0.6);
+            b.drawImage(
+              s.sprite,
+              0,
+              0,
+              s.sprite.width,
+              cut,
+              s.x - camX + sway,
+              s.y - camY,
+              s.sprite.width,
+              cut,
+            );
+            b.drawImage(
+              s.sprite,
+              0,
+              cut,
+              s.sprite.width,
+              s.sprite.height - cut,
+              s.x - camX,
+              s.y - camY + cut,
+              s.sprite.width,
+              s.sprite.height - cut,
+            );
+          } else {
+            b.drawImage(s.sprite, s.x - camX, s.y - camY + bob);
+          }
           b.globalAlpha = 1;
         },
       });
@@ -929,6 +1135,19 @@ export class BRRenderer {
         dy = -8 + Math.round(Math.sin(now / 300 + id) * 1.2);
       }
       const rarity = kind === 3 && top >= 0 ? top % 3 : 0;
+      // Los cofres cerrados dan un resplandor suave para encontrarlos aunque el piso sea del mismo color.
+      if (!opened && (kind === 0 || kind === 1 || kind === 4)) {
+        const pulse = 0.5 + 0.5 * Math.sin(now / 420 + id);
+        const color = kind === 4 ? '#c8e07a' : kind === 1 ? '#ffd24a' : '#ffcd75';
+        this.glow(
+          b,
+          Math.round(x - camX),
+          Math.round(y - camY) + 3,
+          kind === 1 ? 15 : 11,
+          color,
+          (kind === 1 ? 0.5 : 0.3) + pulse * 0.12,
+        );
+      }
       const golden = kind === 1 && !opened;
       if (golden && Math.random() < dt * 2.2)
         this.fx.star(x + (Math.random() - 0.5) * 12, y - 8, C.yellow, 0.6, -10);

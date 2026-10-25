@@ -805,14 +805,16 @@ function buildBosque(rng: Rng, seed: number): BRMap {
 function buildCasa(rng: Rng, seed: number): BRMap {
   const b = new Builder(rng, 'casa', seed, 90, 62);
   const { w, h } = b.m;
+  const wallX = [Math.floor(w / 3), Math.floor((w * 2) / 3)];
+  // Tres cuartos con piso distinto: sala de madera clara, cocina de azulejos y dormitorio oscuro.
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      b.setGround(x, y, (x + y) % 2 === 0 || hash2(x, y, seed) < 0.1 ? G.WOOD : G.WOOD2);
+      const room = x < (wallX[0] as number) ? G.WOOD : x < (wallX[1] as number) ? G.TILE : G.WOOD2;
+      b.setGround(x, y, room);
     }
   }
   b.border(G.WALLTOP);
   // Paredes interiores con puertas amplias.
-  const wallX = [Math.floor(w / 3), Math.floor((w * 2) / 3)];
   for (const wx of wallX) {
     const gapA = rng.int(8, h - 18);
     const gapB = rng.int(gapA + 14, h - 8);
