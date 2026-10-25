@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/GatoGroZero/cybergrid-breach-sync/actions/workflows/ci.yml)
 
-Battle royale multijugador de gatos en pixeles, en tiempo real. Doce gatos por partida (tú y hasta 11 más, los lugares libres los llenan bots) caen a un mapa con cofres, armas, casas y una **ola de agua** que se cierra por zonas. Gana el último gato en pie. Canvas 2D, WebSockets y servidor autoritativo.
+Juego multijugador de gatos en pixeles, en tiempo real, con **cuatro modos**: un battle royale de hasta 12 gatos con una **ola de agua** que cierra el mapa, duelos por rondas sobre un tejado bajo la tormenta, equipos de hasta 5 contra 5 que se disputan los patios de un barrio y una **aventura roguelike** cooperativa por un bosque encantado con jefes. Todo con trajes de Halloween, día que cae hasta la noche y mezclador de sonido. Canvas 2D, WebSockets y servidor autoritativo.
 
 |                      |                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------- |
@@ -83,15 +83,13 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Cofres:** son la única fuente de armas, balas, botiquines, escudos y mini muros. Los cofres dorados traen más y mejor. Al caer un gato deja una lápida con huella que se puede saquear.
 - **Armas** (el daño es por rareza: gris, verde, morada con aura):
 
-  | Arma     | Daño (gris / verde / morada) | Cómo dispara |
-  | -------- | ---------------------------- | ------------ |
-  | Arma     | Daño (gris / verde / morada) | Cargador     | Alcance | Cómo dispara                               |
-  | -------- | ---------------------------- | --------     | ------- | ------------------------------------------ |
-  | Pistola  | 5 / 10 / 15                  | 30           | 260 px  | 1 bala por clic                            |
-  | Escopeta | 10 / 20 / 30 por perdigón    | 5            | 130 px  | 2 cartuchos por disparo, varios perdigones |
-  | Fusil    | 10 / 15 / 20                 | 30           | 320 px  | Ráfaga automática                          |
-  | Sniper   | 40 / 70 / 80                 | 3            | 520 px  | 1 bala por clic, muy larga distancia       |
-  | Bazuca   | 40 / 70 / 90                 | 1            | 360 px  | Misil con explosión en área                |
+  | Arma     | Daño (gris / verde / morada) | Cargador | Alcance | Cómo dispara                               |
+  | -------- | ---------------------------- | -------- | ------- | ------------------------------------------ |
+  | Pistola  | 5 / 10 / 15                  | 30       | 260 px  | 1 bala por clic                            |
+  | Escopeta | 10 / 20 / 30 por perdigón    | 5        | 130 px  | 2 cartuchos por disparo, varios perdigones |
+  | Fusil    | 10 / 15 / 20                 | 30       | 320 px  | Ráfaga automática                          |
+  | Sniper   | 40 / 70 / 80                 | 3        | 520 px  | 1 bala por clic, muy larga distancia       |
+  | Bazuca   | 40 / 70 / 90                 | 1        | 360 px  | Misil con explosión en área                |
 
   Cada arma tiene su propio proyectil (bala dorada, trazadora verde, perdigones, rayo cian, misil con llama) y las raras llevan un halo verde o morado.
 
@@ -119,6 +117,48 @@ Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) c
 - **Salas:** cualquiera crea una sala con nombre, mapa y bots. Las públicas aparecen en la lista con su anfitrión, personas y bots, y la lista se actualiza sola. Las privadas se comparten con el código de 5 caracteres o con el enlace de invitación (`/?sala=ABCDE`).
 - **Bots en la sala:** el anfitrión elige "Llenar con bots" (completa hasta 12 gatos) o una cantidad exacta de 0 a 11 (por ejemplo, 4 amigos y 8 bots). Con bots exactos se reserva su lugar: 8 bots dejan espacio para 4 personas. Sin bots hacen falta al menos 2 personas.
 - **Ajustes e inicio:** solo el anfitrión cambia mapa, privacidad y bots (cada cambio quita el Listo a todos) y puede pulsar "Iniciar ya" sin esperar a que todos marquen Listo.
+
+## Modos de juego
+
+El lobby ofrece cuatro modos. Cada sala elige uno, y el anfitrión lo puede cambiar mientras nadie haya empezado. Todo lo que decide el resultado (daño, zonas, rondas, enemigos, vidas) se calcula en el servidor.
+
+| Modo                  | Jugadores                  | Mapas                                | En una frase                                                                              |
+| --------------------- | -------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **Battle Royale**     | 1 a 12 (el resto, bots)    | Bosque, Casa de gatitos, Piscina     | El último gato en pie, con cofres y una ola de agua que cierra el mapa.                   |
+| **Pelea en el techo** | 1 contra 1 o 2 contra 2    | Tejado a dos aguas, Azotea, Mansarda | Eliges un kit, peleas sobre un tejado bajo la lluvia y gana quien se lleve 2 rondas.      |
+| **Territorio**        | De 1 contra 1 a 5 contra 5 | Calle del barrio, Patios traseros    | Dominen los tres patios 18 segundos seguidos; mejor de 3 rondas.                          |
+| **Aventura**          | 1 a 4, sin bots            | Bosque encantado (23 claros)         | Roguelike cooperativo: 5 minijefes, un jefe final, reliquias, armadura y mejoras eternas. |
+
+### Pelea en el techo
+
+- Antes de cada ronda hay 14 segundos para elegir uno de **cuatro kits** (con las teclas 1 a 4 o tocando la tarjeta): **Cazador** (fusil, el más parejo), **Acechador** (escopeta, de cerca), **Vigía** (sniper, de lejos) y **Bombardero** (bazuca, daño en área). Todos llevan botiquines, escudos y muros distintos. Se equilibraron con partidas simuladas de bots (`scripts/sim-kits.ts`): cada uno gana entre 48 % y 53 % de las rondas.
+- Las rondas empiezan con una cuenta regresiva en la que nadie se mueve. Mejor de 3: gana el primer equipo que se lleve 2 rondas.
+- **La zona es una tormenta**: llueve, cae el rayo y el borde del tejado se vuelve el peligro. Los tres tejados (teja, azotea con antenas y mansarda de pizarra) son chicos, con coberturas (chimeneas, tanques, antenas, tragaluces) y se generan simétricos para que ningún lado tenga ventaja.
+
+### Territorio
+
+- Equipos de 1 a 5 gatos por lado; los lugares libres los llenan bots. Cada persona elige su equipo en la sala antes de empezar.
+- Los mapas son una **calle de barrio** y unos **patios traseros**, más grandes que los de los techos, con coches, bancas, cercas y jardineras como cobertura.
+- Hay tres patios (A, B y C) que se capturan quedándose dentro; el equipo que los domina todos durante 18 segundos gana la ronda. Una **inundación** cierra el mapa para romper los empates. Mejor de 3 rondas.
+
+### Aventura
+
+Un roguelike de 1 a 4 gatos por un **bosque encantado** de 23 claros unidos por senderos, que se recorre en serpiente de la sala 1 a la 23.
+
+- **Salas:** claro de inicio, combates con oleadas, salas del tesoro (cofres dorados y una reliquia), lugares de descanso (la fuente de leche de luna cura al grupo), cinco **guaridas de minijefe** y el **trono del jefe final**. Al entrar a un combate las **puertas de enredadera** se cierran y solo se abren al ganar.
+- **Enemigos de cada acto:** ratones, murciélagos, búhos que lanzan plumas, perros que embisten, hongos que escupen esporas, zorros, guardianes de piedra y sombras. Su vida y daño crecen con cada acto y con cada amigo que se suma, y avisan sus ataques con círculos y franjas rojas en el suelo.
+- **Jefes:** La Reina de los Ratones, El Búho Anciano, Mamá Hongo, El Perro Guardián y El Zorro Espectral (los cinco minijefes, cada uno con su fase furiosa) y, al final, **El Rey Gato de las Sombras**, con tres fases. Cada minijefe derrotado suelta armadura y una reliquia.
+- **Cosas de gatos:** 7 vidas compartidas del grupo (2 más por cada amigo): cuando un gato cae, se levanta solo a los 6 segundos junto a sus compañeros mientras queden vidas. La **voltereta** (tecla **Q**, o su botón en el móvil) lo hace esquivar con un instante de invulnerabilidad. Hay pociones de **hierba gatera** (más daño y velocidad) y de **valeriana** (más rápido y con la voltereta casi sin espera).
+- **Equipo:** 14 **reliquias** que se apilan (más daño, vida, velocidad, balas que no se gastan, regeneración, golpe doble...), 3 casillas de **armadura** con tres calidades y las armas de los cofres. La pistola nunca se queda sin balas.
+- **Esencia lunar y Santuario:** cada partida deja esencia según las salas superadas, los jefes y las bajas (y mucho más si se gana). Se gasta en el **Santuario de la luna**, en el lobby, en 7 mejoras permanentes: más vida, garras de acero, balas y botiquines iniciales, más esencia, vidas extra y una reliquia de regalo al empezar. Perder también deja esencia, así que cada intento hace más fuerte al siguiente. El progreso se guarda en tu navegador (el servidor gratuito no conserva archivos) y cada mejora tiene su nivel máximo, que el servidor hace cumplir; como es un modo cooperativo y nadie compite por puestos, no hace falta más.
+- **Equilibrio:** un jugador automático (`scripts/adventure-bot.ts`, se corre con `npx tsx scripts/sim-aventura.ts 16 1`) recorre el bosque entero con los mismos controles que una persona; con 1, 2 y 4 gatos gana alrededor de la mitad de las veces, y a una persona le sale mejor porque esquiva con más cabeza.
+- **El cielo avanza contigo:** empiezas de día y, a medida que cruzas las salas, cae la tarde y llega la noche; el jefe final se pelea de noche cerrada, con las luciérnagas y los cristales encendidos.
+
+### Trajes, clima y sonido
+
+- **Trajes de Halloween:** 10 conjuntos (bruja, calabaza, fantasma, vampiro, momia, esqueleto, pirata, murciélago, diablillo y Frankenstein) que se eligen en el pintor, aparte del color y la pintura, y que ven todos en la partida. Las calabazas alumbran de noche.
+- **Día, atardecer y noche:** cada partida avanza sola de día a noche (el reloj del cielo está arriba), con velo de color, luces en casas, lámparas y calabazas, luciérnagas, murciélagos y rayos de sol, y sonidos que cambian de pájaros a grillos y búhos.
+- **Mezclador de sonido** en **Ajustes, Sonido**: volumen general, ambiente, armas y explosiones, golpes y daño, pasos y avisos y menús, cada uno aparte.
 
 ## API de prueba
 
@@ -172,26 +212,30 @@ npm run test:cov    # con cobertura
 npm run test:e2e    # E2E con Playwright (necesita npm run build antes)
 ```
 
-| Área que pide el PDF                        | Archivo                                                          |
-| ------------------------------------------- | ---------------------------------------------------------------- |
-| Generador procedural de mapas               | `tests/unit/br-map.test.ts`                                      |
-| Fórmulas de daño, escudo y escalado         | `tests/unit/br-combat.test.ts`, `tests/unit/br-items.test.ts`    |
-| Esquemas Zod del payload                    | `tests/unit/schemas.test.ts`                                     |
-| Interpolación de posiciones de jugadores    | `tests/unit/interp.test.ts`                                      |
-| Bucle a 60 FPS por delta time               | `tests/unit/timing.test.ts`                                      |
-| Física y colisiones                         | `tests/unit/br-physics.test.ts`                                  |
-| Reglas de la partida, bots y autoridad      | `tests/unit/br-game.test.ts`                                     |
-| Endpoints `/api/test/*` y rendimiento       | `tests/unit/api.test.ts`                                         |
-| Autenticación y latencia ping/pong          | `tests/unit/auth-sockets.test.ts`                                |
-| Lobbies y protección de salas               | `tests/unit/lobby.test.ts`, `tests/unit/rooms.test.ts`           |
-| Acceso: Google, correo, invitado, apodo     | `tests/unit/auth-providers.test.ts`, `tests/unit/mailer.test.ts` |
-| Geometría de los controles táctiles         | `tests/unit/controls.test.ts`                                    |
-| E2E 1: autenticación y salas protegidas     | `tests/e2e/1-autenticacion.spec.ts`                              |
-| E2E 2: lobbies, estado Listo y sockets      | `tests/e2e/2-lobby.spec.ts`                                      |
-| E2E 6: acceso con Google, correo e invitado | `tests/e2e/6-acceso.spec.ts`                                     |
-| E2E 3: canvas, controles y coordenadas      | `tests/e2e/3-canvas.spec.ts`                                     |
-| E2E extra: cofres, inventario y pintor      | `tests/e2e/4-botin.spec.ts`                                      |
-| E2E móvil: joystick táctil y giro           | `tests/e2e/movil.spec.ts`                                        |
+| Área que pide el PDF                        | Archivo                                                                                                                                                    |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generador procedural de mapas               | `tests/unit/br-map.test.ts`                                                                                                                                |
+| Fórmulas de daño, escudo y escalado         | `tests/unit/br-combat.test.ts`, `tests/unit/br-items.test.ts`                                                                                              |
+| Esquemas Zod del payload                    | `tests/unit/schemas.test.ts`                                                                                                                               |
+| Interpolación de posiciones de jugadores    | `tests/unit/interp.test.ts`                                                                                                                                |
+| Bucle a 60 FPS por delta time               | `tests/unit/timing.test.ts`                                                                                                                                |
+| Física y colisiones                         | `tests/unit/br-physics.test.ts`                                                                                                                            |
+| Reglas de la partida, bots y autoridad      | `tests/unit/br-game.test.ts`                                                                                                                               |
+| Endpoints `/api/test/*` y rendimiento       | `tests/unit/api.test.ts`                                                                                                                                   |
+| Autenticación y latencia ping/pong          | `tests/unit/auth-sockets.test.ts`                                                                                                                          |
+| Lobbies y protección de salas               | `tests/unit/lobby.test.ts`, `tests/unit/rooms.test.ts`                                                                                                     |
+| Acceso: Google, correo, invitado, apodo     | `tests/unit/auth-providers.test.ts`, `tests/unit/mailer.test.ts`                                                                                           |
+| Geometría de los controles táctiles         | `tests/unit/controls.test.ts`                                                                                                                              |
+| E2E 1: autenticación y salas protegidas     | `tests/e2e/1-autenticacion.spec.ts`                                                                                                                        |
+| E2E 2: lobbies, estado Listo y sockets      | `tests/e2e/2-lobby.spec.ts`                                                                                                                                |
+| E2E 6: acceso con Google, correo e invitado | `tests/e2e/6-acceso.spec.ts`                                                                                                                               |
+| E2E 3: canvas, controles y coordenadas      | `tests/e2e/3-canvas.spec.ts`                                                                                                                               |
+| E2E extra: cofres, inventario y pintor      | `tests/e2e/4-botin.spec.ts`                                                                                                                                |
+| E2E móvil: joystick táctil y giro           | `tests/e2e/movil.spec.ts`                                                                                                                                  |
+| E2E trajes, volumen y modos por rondas      | `tests/e2e/8-trajes.spec.ts`, `tests/e2e/9-modos.spec.ts`                                                                                                  |
+| E2E Aventura: Santuario, reliquias y final  | `tests/e2e/10-aventura.spec.ts`                                                                                                                            |
+| Aventura: enemigos, jefes, vidas, mejoras   | `tests/unit/br-aventura.test.ts`, `tests/unit/br-encantado.test.ts`                                                                                        |
+| Techos, calles, kits, rondas y salas        | `tests/unit/br-roofs.test.ts`, `tests/unit/br-calles.test.ts`, `tests/unit/br-pvp.test.ts`, `tests/unit/br-kits.test.ts`, `tests/unit/lobby-modos.test.ts` |
 
 ## Correrlo en local
 
@@ -205,16 +249,16 @@ npm start            # http://localhost:3000 (entra como invitado, o con demo1 /
 
 Para desarrollar con recarga: `npm run dev:server` y, en otra terminal, `npm run dev:client` (http://localhost:5173). `npm run verify` corre revisión de texto, tipos, lint, pruebas y compilación. `npx tsx scripts/sim-br.ts 8 todos` simula partidas completas de bots para revisar el balance.
 
-Variables de entorno: `INTRO_SECONDS` (cuenta regresiva del inicio, 5 por defecto; 0 la quita), `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `PASSWORD_AUTH`, `GUEST_LOGIN`, `SESSION_DAYS`, `PUBLIC_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_PROVIDER` (`resend`, `brevo` o `console` solo fuera de producción), `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit` y `dev:finish`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
+Variables de entorno: `INTRO_SECONDS` (cuenta regresiva del inicio, 5 por defecto; 0 la quita), `PORT`, `SESSION_SECRET` (obligatoria en producción), `DB_PATH`, `ENABLE_TEST_ENDPOINTS`, `DEMO_ACCOUNTS`, `PASSWORD_AUTH`, `GUEST_LOGIN`, `SESSION_DAYS`, `PUBLIC_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_PROVIDER` (`resend`, `brevo` o `console` solo fuera de producción), `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `TRUST_PROXY`, `COUNTDOWN_SECONDS` y `ZONE_TIME_SCALE` y `PICK_SECONDS` (tiempo para elegir kit) y `TEST_KIT` (solo para pruebas: acelera la ola, por ejemplo 40, y habilita los eventos `dev:kit`, `dev:finish`, `dev:round`, `dev:room`, `dev:arm` y `dev:win`, que nunca funcionan con `NODE_ENV=production`). Si abres el juego con `?debug` en la URL, el navegador expone el estado local para las pruebas E2E.
 
 ## Estructura
 
 ```
-src/shared   Lógica común y determinista: armas, botín, mapas, física, ola, esquemas Zod
-src/server   Express, Socket.IO, simulación de la partida, bots, SQLite, endpoints de prueba
-src/client   Canvas, arte en pixeles, entrada, predicción, HUD, inventario, pintor
+src/shared   Lógica común y determinista: armas, botín, mapas, física, zonas, modos, hora del día, Aventura, esquemas Zod
+src/server   Express, Socket.IO, simulación de la partida, bots, enemigos y jefes, SQLite, endpoints de prueba
+src/client   Canvas, arte en pixeles, sonido, entrada, predicción, HUD, inventario, pintor, Santuario
 tests        Unitarias e integración (Vitest) y E2E (Playwright)
-scripts      Auditoría de producción, simulador de partidas, revisión de texto
+scripts      Auditoría de producción, simuladores de partidas (battle royale, kits y Aventura), revisión de texto
 ```
 
 ## Notas de despliegue
