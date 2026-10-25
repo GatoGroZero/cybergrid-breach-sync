@@ -16,6 +16,14 @@ export function surfaceFor(ground: number): Surface {
     case G.WOOD:
     case G.WOOD2:
       return 'wood';
+    case G.ASFALTO:
+    case G.ASFALTO2:
+    case G.CEBRA:
+    case G.RAYA:
+    case G.ACERA:
+    case G.ADOQUIN:
+    case G.PATIO:
+      return 'stone';
     case G.DECK:
     case G.DECK2:
       return 'deck';
@@ -202,6 +210,16 @@ export class Sfx {
   /** El render avisa la hora en cada cuadro; los sonidos de ambiente la leen cuando les toca sonar. */
   setDaytime(p: number): void {
     this.dayP = Math.max(0, Math.min(1, p));
+  }
+
+  /** Un patio cambia de dueno: acorde que sube si es de tu equipo y baja si te lo quitaron. */
+  capture(mine: boolean): void {
+    this.ch = 'ui';
+    const notes = mine ? [523, 659, 784, 1047] : [392, 311, 262, 208];
+    notes.forEach((f, i) =>
+      this.tone(f, 0.22, mine ? 'triangle' : 'sawtooth', 0.08, undefined, 0, i * 0.08),
+    );
+    if (!mine) this.noise(0.3, 0.07, 700);
   }
 
   /** Trueno lejano: un retumbo grave que llega unos instantes despues del relampago. */
@@ -770,6 +788,44 @@ export class Sfx {
         this.tone(rand(1800, 2700), 0.035, 'sine', 0.018, rand(900, 1300), p);
       });
       later(12, 26, () => this.thunder(rand(0.2, 1.4), 0.8));
+    } else if (kind === 'calle' || kind === 'patios') {
+      // el barrio: zumbido lejano de la ciudad, viento entre las casas, un perro y un gato por ahi
+      layer('lowpass', 190, 0.1, 0.05, 0.05);
+      layer('bandpass', 900, 0.025, 0.015, 0.14, 0.7);
+      later(2.5, 7, () => {
+        if (Math.random() > sunLeft()) return;
+        const p = pan();
+        const base = rand(2400, 3500);
+        for (let i = 0; i < 3; i++)
+          this.tone(
+            base * rand(0.92, 1.12),
+            0.07,
+            'sine',
+            0.026,
+            base * rand(1.1, 1.4),
+            p,
+            i * 0.11,
+          );
+      });
+      later(14, 30, () => {
+        // un coche pasa a lo lejos
+        const p = pan();
+        this.noise(1.6, 0.05, 520, p, 'bandpass', 0.6);
+        this.tone(95, 1.4, 'sawtooth', 0.02, 140, p);
+      });
+      later(18, 40, () => {
+        // ladrido lejano
+        const p = pan();
+        this.tone(330, 0.1, 'sawtooth', 0.04, 220, p);
+        this.tone(300, 0.1, 'sawtooth', 0.035, 200, p, 0.22);
+      });
+      later(8, 18, () => {
+        const p = pan();
+        if (Math.random() < 0.5) {
+          this.tone(560, 0.16, 'triangle', 0.03, 820, p);
+          this.tone(820, 0.2, 'triangle', 0.026, 470, p, 0.15);
+        }
+      });
     } else if (kind === 'casa') {
       layer('lowpass', 210, 0.12, 0.04, 0.07);
       layer('bandpass', 700, 0.012, 0.008, 0.17, 0.8);

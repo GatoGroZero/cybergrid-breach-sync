@@ -1,4 +1,5 @@
 import type { DayName, Daylight } from '../../shared/br/daytime';
+import { TEAM_COLORS } from '../../shared/br/modes';
 import { drawPvpHud } from './hudpvp';
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
@@ -86,7 +87,32 @@ const GROUND_COLOR: Record<number, string> = {
   [G.CANALON]: '#8a98ad',
   [G.PARAPETO]: '#8c6a5c',
   [G.CUMBRERA]: '#a8402b',
+  [G.ASFALTO]: '#4a4f5e',
+  [G.ASFALTO2]: '#575c6c',
+  [G.ACERA]: '#c4c0b8',
+  [G.CEBRA]: '#e8e9ee',
+  [G.RAYA]: '#f0c448',
+  [G.ADOQUIN]: '#9a948a',
+  [G.PATIO]: '#b9b6ae',
+  [G.CESPED]: '#4a9b49',
 };
+/** Coberturas de los techos y las calles: se ven como puntos grises en el minimapa. */
+const MINI_COVER = new Set([
+  'chimney',
+  'tank',
+  'antenna',
+  'vent',
+  'ac',
+  'dormer',
+  'dome',
+  'shed',
+  'car',
+  'dumpster',
+  'lamp',
+  'busstop',
+  'planter',
+  'fence',
+]);
 const ROOF_COLOR = ['#b13e53', '#3b5dc9', '#38b764', '#ef7d57'];
 
 export function text(
@@ -168,10 +194,12 @@ function buildMiniBase(map: BRMap): HTMLCanvasElement {
             ? '#257179'
             : p.kind === 'rock'
               ? '#94b0c2'
-              : null;
+              : MINI_COVER.has(p.kind)
+                ? '#8b93a6'
+                : null;
     if (!col) continue;
     c.fillStyle = col;
-    c.fillRect(p.x, p.y, 1, 1);
+    c.fillRect(p.x, p.y, Math.min(p.w, 2), Math.min(p.h, 2));
   }
   for (const h of map.houses) {
     c.fillStyle =
@@ -615,12 +643,13 @@ export class Hud {
       ctx.beginPath();
       ctx.rect(r.x, r.y, r.w, r.h);
       ctx.arc(r.x + z.cx * k, r.y + z.cy * k, Math.max(0, z.r * k), 0, Math.PI * 2, true);
-      ctx.fillStyle = 'rgba(37,113,121,0.62)';
+      const storm = g.mode === 'techo';
+      ctx.fillStyle = storm ? 'rgba(24,32,66,0.7)' : 'rgba(37,113,121,0.62)';
       ctx.fill('evenodd');
       ctx.beginPath();
       ctx.arc(r.x + z.cx * k, r.y + z.cy * k, Math.max(0, z.r * k), 0, Math.PI * 2);
       ctx.lineWidth = big ? 3 : 2;
-      ctx.strokeStyle = C.cyan;
+      ctx.strokeStyle = storm ? '#aac4ff' : C.cyan;
       ctx.stroke();
       if (z.nr > 0 && z.phase < 4) {
         ctx.beginPath();
@@ -632,6 +661,22 @@ export class Hud {
         ctx.setLineDash([]);
       }
       ctx.restore();
+    }
+    // Territorio: los patios con el color de su dueno
+    const pts = map.points;
+    const ps = g.pvp?.points;
+    if (pts && ps) {
+      pts.forEach((p, i) => {
+        const [owner] = ps[i] ?? [-1];
+        const mx = Math.round(r.x + p.x * k);
+        const my = Math.round(r.y + p.y * k);
+        const sz = big ? 12 : 8;
+        ctx.fillStyle = C.black;
+        ctx.fillRect(mx - sz / 2 - 1, my - sz / 2 - 1, sz + 2, sz + 2);
+        ctx.fillStyle = owner >= 0 ? (TEAM_COLORS[owner as 0 | 1] as string) : '#e8ecf4';
+        ctx.fillRect(mx - sz / 2, my - sz / 2, sz, sz);
+        if (big) text(ctx, ['A', 'B', 'C'][i] ?? '', mx, my + 1, 15, C.black, 'center', PIX, null);
+      });
     }
     if (big) {
       for (const l of map.landmarks) {

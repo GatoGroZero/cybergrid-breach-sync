@@ -25,7 +25,8 @@ export type BREvent =
   | { e: 'splash'; x: number; y: number }
   | { e: 'heal'; x: number; y: number; kind: 'hp' | 'shield' }
   | { e: 'zone'; phase: number; shrinking: boolean }
-  | { e: 'claw'; x: number; y: number; a: number };
+  | { e: 'claw'; x: number; y: number; a: number }
+  | { e: 'capture'; x: number; y: number; team: number; i: number };
 
 export interface MeState {
   x: number;

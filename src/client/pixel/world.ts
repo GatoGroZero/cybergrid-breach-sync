@@ -363,6 +363,89 @@ function paintRoofEdges(c: Ctx, map: BRMap): void {
   }
 }
 
+// ------------------------------------------------------------------ calles y patios
+
+/**
+ * Detalles de la calle: bordillos con sombra donde la acera toca el asfalto, tapas de alcantarilla,
+ * manchas de aceite y el emblema pintado de cada equipo en su base.
+ */
+function paintStreet(c: Ctx, map: BRMap): void {
+  const seed = map.seed & 0xffff;
+  const road = (id: number): boolean =>
+    id === G.ASFALTO || id === G.ASFALTO2 || id === G.CEBRA || id === G.RAYA;
+  for (let ty = 0; ty < map.h; ty++) {
+    for (let tx = 0; tx < map.w; tx++) {
+      const id = groundAt(map, tx, ty);
+      const X = tx * T;
+      const Y = ty * T;
+      if (id === G.ACERA) {
+        // bordillo: una linea clara en el borde y una sombra sobre el asfalto
+        if (road(groundAt(map, tx, ty + 1))) {
+          fill(c, X, Y + T - 2, T, 2, '#e4e0d8');
+          fill(c, X, Y + T, T, 3, 'rgba(10,12,24,0.28)');
+        }
+        if (road(groundAt(map, tx, ty - 1))) {
+          fill(c, X, Y, T, 2, '#e4e0d8');
+          fill(c, X, Y - 3, T, 3, 'rgba(10,12,24,0.28)');
+        }
+        if (road(groundAt(map, tx + 1, ty))) fill(c, X + T - 2, Y, 2, T, '#e4e0d8');
+        if (road(groundAt(map, tx - 1, ty))) fill(c, X, Y, 2, T, '#e4e0d8');
+      } else if (road(id) && hash(tx, ty, seed + 12) < 0.012) {
+        // tapa de alcantarilla
+        fill(c, X + 4, Y + 4, 8, 8, '#2e323e');
+        fill(c, X + 5, Y + 5, 6, 6, '#464c5c');
+        fill(c, X + 6, Y + 8, 4, 1, '#2e323e');
+        fill(c, X + 8, Y + 6, 1, 4, '#2e323e');
+      } else if (road(id) && hash(tx, ty, seed + 31) < 0.025) {
+        fill(c, X + 3, Y + 5, 7, 4, 'rgba(20,22,30,0.35)');
+        fill(c, X + 5, Y + 4, 4, 1, 'rgba(20,22,30,0.35)');
+      } else if (id === G.CESPED && hash(tx, ty, seed + 18) < 0.01) {
+        // un charco de tierra en el pasto
+        fill(c, X + 4, Y + 6, 8, 4, '#7d5a3c');
+        fill(c, X + 5, Y + 5, 6, 1, '#7d5a3c');
+      }
+    }
+  }
+  paintTeamBases(c, map);
+}
+
+/** La base de cada equipo: un recuadro de rayas del color del equipo y una franja al centro. */
+function paintTeamBases(c: Ctx, map: BRMap): void {
+  const teams = map.teamSpawns;
+  if (!teams) return;
+  const colors = ['rgba(239,125,87,0.8)', 'rgba(65,166,246,0.8)'];
+  teams.forEach((spots, t) => {
+    const xs = spots.map((s) => s.x);
+    const ys = spots.map((s) => s.y);
+    const x0 = Math.round(Math.min(...xs) - 56);
+    const x1 = Math.round(Math.max(...xs) + 56);
+    const y0 = Math.round(Math.min(...ys) - 26);
+    const y1 = Math.round(Math.max(...ys) + 26);
+    c.fillStyle = colors[t] as string;
+    // recuadro de rayas de 6 px con una pausa de 4
+    for (let x = x0; x <= x1; x += 10) {
+      c.fillRect(x, y0, Math.min(6, x1 - x + 1), 2);
+      c.fillRect(x, y1, Math.min(6, x1 - x + 1), 2);
+    }
+    for (let y = y0; y <= y1; y += 10) {
+      c.fillRect(x0, y, 2, Math.min(6, y1 - y + 1));
+      c.fillRect(x1, y, 2, Math.min(6, y1 - y + 1));
+    }
+    // un lugar pintado para cada gato
+    for (const sp of spots) {
+      for (let k = 0; k < 14; k++) {
+        const a = (k / 14) * Math.PI * 2;
+        c.fillRect(
+          Math.round(sp.x + Math.cos(a) * 10),
+          Math.round(sp.y + 6 + Math.sin(a) * 4),
+          1,
+          1,
+        );
+      }
+    }
+  });
+}
+
 /** Charcos y manchas de humedad sobre el alquitran y las tejas (la lluvia no perdona). */
 function paintRoofPuddles(c: Ctx, map: BRMap): void {
   const seed = map.seed & 0xffff;
@@ -388,6 +471,11 @@ export function paintWorld(c: Ctx, map: BRMap): void {
   if (map.kind === 'tejado' || map.kind === 'azotea' || map.kind === 'mansarda') {
     paintRoofEdges(c, map);
     paintRoofPuddles(c, map);
+    return;
+  }
+  if (map.kind === 'calle' || map.kind === 'patios') {
+    paintBoards(c, map);
+    paintStreet(c, map);
     return;
   }
   paintGrassPatches(c, map);

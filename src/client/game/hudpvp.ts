@@ -1,4 +1,5 @@
 import { KITS, KIT_IDS, MAX_ROUNDS, TEAM_COLORS, TEAM_NAMES } from '../../shared/br/modes';
+import { HOLD_TO_WIN_S } from '../../shared/br/modes';
 import type { Assets } from '../pixel/art';
 import { C } from '../pixel/draw';
 import { keyLabel } from './input';
@@ -61,6 +62,60 @@ function drawScoreboard(f: HudFrame, top: number): void {
     text(ctx, TEAM_NAMES[team] as string, cx, y0 + 14, 17, color, align, VT);
   });
   text(ctx, `RONDA ${pvp.round}`, x0 + half, y0 + 14, 15, C.white, 'center', PIX, null);
+  drawDominion(f, y0 + 34);
+}
+
+/** Territorio: los tres patios (A, B, C) con su dueno y la cuenta de quien los domina todos. */
+function drawDominion(f: HudFrame, y: number): void {
+  const { ctx, g, w } = f;
+  const pvp = g.pvp;
+  const pts = pvp?.points;
+  if (!pvp || !pts) return;
+  const size = 26;
+  const gap = 8;
+  const total = pts.length * size + (pts.length - 1) * gap;
+  const x0 = Math.round(w / 2 - total / 2);
+  pts.forEach(([owner, prog, cap], i) => {
+    const x = x0 + i * (size + gap);
+    const col = owner >= 0 ? (TEAM_COLORS[owner as 0 | 1] as string) : '#566c86';
+    panel(ctx, x, y, size, size, 'rgba(26,28,44,0.86)', C.black);
+    ctx.fillStyle = col;
+    ctx.globalAlpha = owner >= 0 ? 0.85 : 0.35;
+    ctx.fillRect(x + 2, y + 2, size - 4, size - 4);
+    ctx.globalAlpha = 1;
+    if (owner < 0 && prog > 0) {
+      // avance de la captura: sube desde abajo con el color de quien captura
+      ctx.fillStyle = cap >= 0 ? (TEAM_COLORS[cap as 0 | 1] as string) : C.white;
+      const hh = Math.round(((size - 4) * prog) / 100);
+      ctx.fillRect(x + 2, y + size - 2 - hh, size - 4, hh);
+    }
+    text(ctx, ['A', 'B', 'C'][i] ?? '', x + size / 2, y + size / 2 + 1, 15, C.white, 'center', PIX);
+  });
+  const hold = pvp.hold ?? [0, 0];
+  const lead: number = hold[0] > 0 ? 0 : hold[1] > 0 ? 1 : -1;
+  if (lead >= 0) {
+    const t = hold[lead as 0 | 1];
+    text(
+      ctx,
+      `${TEAM_NAMES[lead as 0 | 1]} domina: ${t}/${HOLD_TO_WIN_S} s`,
+      w / 2,
+      y + size + 14,
+      18,
+      TEAM_COLORS[lead as 0 | 1] as string,
+      'center',
+      VT,
+    );
+    const bw = 150;
+    ctx.fillStyle = C.black;
+    ctx.fillRect(Math.round(w / 2 - bw / 2) - 1, y + size + 24, bw + 2, 8);
+    ctx.fillStyle = TEAM_COLORS[lead as 0 | 1] as string;
+    ctx.fillRect(
+      Math.round(w / 2 - bw / 2),
+      y + size + 25,
+      Math.round((bw * Math.min(t, HOLD_TO_WIN_S)) / HOLD_TO_WIN_S),
+      6,
+    );
+  }
 }
 
 /** Eleccion de kit: cuatro tarjetas con su arma, su estilo y cuatro barritas. */
