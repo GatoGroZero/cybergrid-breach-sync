@@ -1155,7 +1155,11 @@ export class Hud {
     ctx.font = `${size}px ${PIX}`;
     const tw = Math.min(w - 24, ctx.measureText(b.text).width + 24);
     const ph = small ? 26 : 32;
-    const y = Math.round(h * (small ? 0.2 : 0.22));
+    // debajo de la barra del jefe si la hay (y de la linea de FPS y ping)
+    const y = Math.max(
+      Math.round(h * (small ? 0.2 : 0.22)),
+      g.mode === 'aventura' ? this.advHud.bossBottom + ph / 2 + 6 : 0,
+    );
     ctx.globalAlpha = a * 0.92;
     panel(ctx, Math.round(w / 2 - tw / 2), y - ph / 2, tw, ph, 'rgba(26,28,44,0.8)', C.black);
     ctx.globalAlpha = a;

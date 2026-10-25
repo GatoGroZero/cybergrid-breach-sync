@@ -100,12 +100,17 @@ function wrap(
   return n;
 }
 
+/** Donde termina (en px) la linea de FPS y ping del HTML: nada del HUD de lienzo debe quedar debajo de ella. */
+export const STATS_BOTTOM = 68;
+
 /** Pedazos del HUD que solo existen en la Aventura. */
 export class AdvHud {
   /** El mayor tiempo de espera de la voltereta que se ha visto (para llenar el circulo). */
   private dashMax: number = DASH.cooldown;
   /** Donde termina el panel de arriba, para colgarle el reloj del cielo y la barra del jefe. */
   topBox = { x: 0, y: 0, w: 0, h: 30 };
+  /** Hasta donde llega la barra del jefe en este cuadro (0 si no hay jefe): los carteles se acomodan debajo. */
+  bossBottom = 0;
 
   /** Panel superior: vidas del grupo, nombre y avance de la sala, y el camino por el bosque. */
   drawTop(f: HudFrame, assets: Assets): void {
@@ -180,6 +185,7 @@ export class AdvHud {
   /** Barra de vida del jefe en pantalla, con sus fases. */
   drawBoss(f: HudFrame): void {
     const { ctx, g, w } = f;
+    this.bossBottom = 0;
     const boss = g.adv?.boss;
     if (!boss) return;
     const def = mobDef(boss.kind);
@@ -187,9 +193,11 @@ export class AdvHud {
     const small = g.input.mode === 'touch' || f.h < 520;
     const bw = small ? clamp(w * 0.34, 150, 260) : clamp(w * 0.4, 220, 380);
     const x = Math.round(w / 2 - bw / 2);
-    const y = this.topBox.y + this.topBox.h + (small ? 8 : 12);
+    // por debajo de la linea de FPS y ping (que va en el HTML, a 46 px del borde)
+    const y = Math.max(this.topBox.y + this.topBox.h + (small ? 8 : 12), STATS_BOTTOM + 4);
     const fs = small ? 13 : 15;
     const bh = small ? 5 : 7;
+    this.bossBottom = y + fs + bh + 6;
     ctx.globalAlpha = 0.9;
     panel(ctx, x - 5, y - 4, bw + 10, fs + bh + 9, 'rgba(26,28,44,0.7)');
     ctx.globalAlpha = 1;
@@ -530,8 +538,9 @@ export class AdvHud {
     const a = age < 200 ? age / 200 : age > life - 400 ? (life - age) / 400 : 1;
     ctx.globalAlpha = clamp(a, 0, 1);
     const small = g.input.mode === 'touch' || h < 520;
-    const y = Math.round(h * (small ? 0.27 : 0.24));
     const size = Math.round(clamp(w * 0.016, 10, 15));
+    // si hay barra de jefe, el cartel baja debajo de ella para no taparla
+    const y = Math.max(Math.round(h * (small ? 0.27 : 0.24)), this.bossBottom + size + 8);
     const col = b.tone === 'bad' ? C.red : b.tone === 'good' ? C.lime : C.yellow;
     text(ctx, plain(b.title), w / 2, y, size, col, 'center', PIX);
     if (b.sub) {

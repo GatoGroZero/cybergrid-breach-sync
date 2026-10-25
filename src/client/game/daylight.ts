@@ -32,6 +32,37 @@ interface Bat {
   amp: number;
 }
 
+interface Butterfly {
+  x: number;
+  y: number;
+  /** Rumbo en radianes; cambia de a poco para que vuele en curvas. */
+  head: number;
+  speed: number;
+  phase: number;
+  color: number;
+}
+
+interface Leaf {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  phase: number;
+  color: string;
+}
+
+/** Colores de las alas de las mariposas (cada una lleva dos tonos). */
+const WING_COLORS: readonly [string, string][] = [
+  ['#ffcd75', '#ef7d57'],
+  ['#9cd0ff', '#4a86d8'],
+  ['#f5a3c7', '#b13e66'],
+  ['#fff2a8', '#ffb347'],
+  ['#d6b8ff', '#7e57c2'],
+];
+const LEAF_COLORS = ['#a7f070', '#6bbf4a', '#d9b24a', '#ef7d57', '#c4742f'];
+/** Mapas al aire libre donde vuelan mariposas y caen hojas. */
+const OUTDOOR = new Set(['bosque', 'piscina', 'encantado']);
+
 const BAT_UP = ['B.....B', 'BB.B.BB', 'BBBBBBB', '.B.B.B.'];
 const BAT_DOWN = ['..BBB..', '.BBBBB.', 'B.BBB.B', 'B..B..B'];
 
@@ -49,6 +80,8 @@ export class DaylightFx {
   private readonly glows = new Map<string, HTMLCanvasElement>();
   private readonly flies: Firefly[] = [];
   private readonly bats: Bat[] = [];
+  private readonly butterflies: Butterfly[] = [];
+  private readonly leaves: Leaf[] = [];
   private batAt = 0;
   /** Brillo minimo de las luciernagas (el bosque encantado las tiene siempre). */
   private baseGlow = 0;
@@ -154,6 +187,8 @@ export class DaylightFx {
       if (out || this.flies.length > want) this.flies.splice(i, 1);
     }
 
+    this.updateDayLife(dt, kind, cam);
+
     // murcielagos: cruzan la pantalla al atardecer y de noche
     const batLevel = Math.max(l.dusk, l.night * 0.7);
     if (batLevel > 0.15) {
@@ -180,11 +215,102 @@ export class DaylightFx {
     }
   }
 
+  /** Mariposas de dia y hojas que caen: le dan vida a los mapas al aire libre. */
+  private updateDayLife(
+    dt: number,
+    kind: string,
+    cam: { x: number; y: number; w: number; h: number },
+  ): void {
+    const l = this.light;
+    const outdoor = OUTDOOR.has(kind);
+    const wantFlies =
+      outdoor && kind !== 'piscina' ? Math.round(l.sun * 7) : outdoor ? Math.round(l.sun * 4) : 0;
+    while (this.butterflies.length < wantFlies) {
+      this.butterflies.push({
+        x: cam.x + Math.random() * cam.w,
+        y: cam.y + Math.random() * cam.h,
+        head: Math.random() * Math.PI * 2,
+        speed: 11 + Math.random() * 8,
+        phase: Math.random() * 6.28,
+        color: Math.floor(Math.random() * WING_COLORS.length),
+      });
+    }
+    for (let i = this.butterflies.length - 1; i >= 0; i--) {
+      const f = this.butterflies[i] as Butterfly;
+      f.phase += dt * 14;
+      f.head += (Math.random() - 0.5) * 7 * dt + Math.sin(f.phase * 0.05) * dt;
+      f.x += Math.cos(f.head) * f.speed * dt;
+      f.y += Math.sin(f.head) * f.speed * 0.6 * dt;
+      const out =
+        f.x < cam.x - 40 ||
+        f.x > cam.x + cam.w + 40 ||
+        f.y < cam.y - 40 ||
+        f.y > cam.y + cam.h + 40;
+      if (out || this.butterflies.length > wantFlies) this.butterflies.splice(i, 1);
+    }
+
+    const wantLeaves = kind === 'bosque' || kind === 'encantado' ? 9 : 0;
+    while (this.leaves.length < wantLeaves) {
+      this.leaves.push({
+        x: cam.x + Math.random() * cam.w,
+        y: cam.y - 6 - Math.random() * 40,
+        vx: 6 + Math.random() * 8,
+        vy: 9 + Math.random() * 8,
+        phase: Math.random() * 6.28,
+        color: LEAF_COLORS[Math.floor(Math.random() * LEAF_COLORS.length)] as string,
+      });
+    }
+    for (let i = this.leaves.length - 1; i >= 0; i--) {
+      const f = this.leaves[i] as Leaf;
+      f.phase += dt * 3;
+      f.x += (f.vx + Math.sin(f.phase) * 9) * dt;
+      f.y += f.vy * dt;
+      const out = f.y > cam.y + cam.h + 10 || f.x > cam.x + cam.w + 40 || f.x < cam.x - 60;
+      if (out) this.leaves.splice(i, 1);
+    }
+  }
+
   // ------------------------------------------------------------------ dibujo
 
   /** Luciernagas y murcielagos (van antes del velo, asi la noche tambien los cubre). */
   drawCreatures(b: Ctx, camX: number, camY: number, now: number): void {
     const l = this.light;
+    for (const f of this.butterflies) {
+      const [light, dark] = WING_COLORS[f.color] as [string, string];
+      const sx = Math.round(f.x - camX);
+      const sy = Math.round(f.y + Math.sin(f.phase * 0.3) * 2 - camY);
+      // sombrita en el suelo
+      b.globalAlpha = 0.14;
+      b.fillStyle = '#000';
+      b.fillRect(sx, sy + 9, 3, 1);
+      b.globalAlpha = 1;
+      const open = Math.sin(f.phase) > -0.2;
+      b.fillStyle = dark;
+      b.fillRect(sx + 1, sy, 1, 3);
+      b.fillStyle = light;
+      if (open) {
+        b.fillRect(sx - 2, sy - 1, 3, 3);
+        b.fillRect(sx + 2, sy - 1, 3, 3);
+        b.fillStyle = dark;
+        b.fillRect(sx - 2, sy + 1, 1, 1);
+        b.fillRect(sx + 4, sy + 1, 1, 1);
+      } else {
+        b.fillRect(sx, sy - 1, 1, 3);
+        b.fillRect(sx + 2, sy - 1, 1, 3);
+      }
+    }
+    for (const lf of this.leaves) {
+      const sx = Math.round(lf.x - camX);
+      const sy = Math.round(lf.y - camY);
+      b.fillStyle = lf.color;
+      if (Math.sin(lf.phase * 1.7) > 0) {
+        b.fillRect(sx, sy, 3, 2);
+        b.fillRect(sx + 1, sy + 2, 1, 1);
+      } else {
+        b.fillRect(sx, sy, 2, 3);
+        b.fillRect(sx + 2, sy + 1, 1, 1);
+      }
+    }
     if (this.flies.length > 0) {
       const prev = b.globalCompositeOperation;
       for (const f of this.flies) {

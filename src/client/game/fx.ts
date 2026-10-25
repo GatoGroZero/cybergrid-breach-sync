@@ -1,7 +1,7 @@
 type Ctx = CanvasRenderingContext2D;
 
-/** 0 cuadrito, 1 anillo que se expande, 2 destello en cruz. */
-export type ParticleKind = 0 | 1 | 2;
+/** 0 cuadrito, 1 anillo que se expande, 2 destello en cruz, 3 signo de mas (curacion). */
+export type ParticleKind = 0 | 1 | 2 | 3;
 
 export interface Particle {
   x: number;
@@ -82,6 +82,11 @@ export class Fx {
     this.add({ x, y, vx: 0, vy, life, max: life, color, size: 1, grav: 0, kind: 2, r: 0 });
   }
 
+  /** Un "+" que sube y se desvanece: la señal de que algo te cura. */
+  plus(x: number, y: number, color: string, life = 0.8, vy = -22): void {
+    this.add({ x, y, vx: 0, vy, life, max: life, color, size: 1, grav: 0, kind: 3, r: 0 });
+  }
+
   float(x: number, y: number, text: string, color: string): void {
     this.floaters.push({ x, y, text, color, life: 0.9, max: 0.9 });
     if (this.floaters.length > 40) this.floaters.shift();
@@ -130,6 +135,14 @@ export class Fx {
             1,
           );
         }
+      } else if (p.kind === 3) {
+        // "+" con borde oscuro para que se lea sobre cualquier suelo
+        ctx.fillStyle = '#1a1c2c';
+        ctx.fillRect(sx - 3, sy - 1, 7, 3);
+        ctx.fillRect(sx - 1, sy - 3, 3, 7);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(sx - 2, sy, 5, 1);
+        ctx.fillRect(sx, sy - 2, 1, 5);
       } else {
         ctx.fillRect(sx, sy - 1, 1, 3);
         ctx.fillRect(sx - 1, sy, 3, 1);
