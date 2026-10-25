@@ -1,6 +1,8 @@
 import { SKIN_CELLS, SKIN_H, SKIN_W } from '../../shared/br/constants';
-import { BASE_COATS, PAINT_PALETTE, type Skin } from '../../shared/br/skin';
+import { OUTFIT_PAD } from '../../shared/br/outfits';
+import { BASE_COATS, PAINT_PALETTE, outfitOf, type Skin } from '../../shared/br/skin';
 import { C, disc, flipH, line, make, outline, px, shade, type Ctx } from './draw';
+import { drawOutfit } from './outfits';
 
 /** Roles de cada pixel del gato: lo pintable es 1 (pelaje) y 2 (sombra); el resto es fijo. */
 export const ROLE = { none: 0, coat: 1, shade: 2, ear: 3, eye: 4, nose: 5 } as const;
@@ -208,8 +210,13 @@ export function pixelColor(skin: Skin, role: number, paintCell: number): string 
   }
 }
 
-function render(skin: Skin, frame: Frame): HTMLCanvasElement {
-  const [canvas, c] = make(SKIN_W, SKIN_H);
+function render(skin: Skin, frame: Frame, index: number): HTMLCanvasElement {
+  const outfit = outfitOf(skin);
+  // El lienzo sube OUTFIT_PAD pixeles para que quepan sombreros y cuernos.
+  const [canvas, c] = make(SKIN_W, SKIN_H + OUTFIT_PAD);
+  c.translate(0, OUTFIT_PAD);
+  const pose = { frame: index, dy: index === 4 ? -1 : 0 };
+  if (outfit > 0) drawOutfit(outfit, 'back', c, pose);
   for (let y = 0; y < SKIN_H; y++) {
     for (let x = 0; x < SKIN_W; x++) {
       const i = idx(x, y);
@@ -224,6 +231,7 @@ function render(skin: Skin, frame: Frame): HTMLCanvasElement {
       }
     }
   }
+  if (outfit > 0) drawOutfit(outfit, 'front', c, pose);
   return outline(canvas, C.black);
 }
 
@@ -237,7 +245,9 @@ export interface CatSprites {
 }
 
 export const CAT_W = SKIN_W + 2;
-export const CAT_H = SKIN_H + 2;
+export const CAT_H = SKIN_H + 2 + OUTFIT_PAD;
+/** Pixeles de aire sobre el gato dentro de su lienzo (para sombreros). */
+export const CAT_PAD = OUTFIT_PAD;
 
 function silhouette(src: HTMLCanvasElement): HTMLCanvasElement {
   const [out, c] = make(src.width, src.height);
@@ -251,10 +261,10 @@ function silhouette(src: HTMLCanvasElement): HTMLCanvasElement {
 const cache = new Map<string, CatSprites>();
 
 export function catSprites(skin: Skin): CatSprites {
-  const key = `${skin.base}:${skin.paint}`;
+  const key = `${skin.base}:${skin.paint}:${outfitOf(skin)}`;
   let hit = cache.get(key);
   if (!hit) {
-    const right = FRAMES.map((f) => render(skin, f));
+    const right = FRAMES.map((f, i) => render(skin, f, i));
     const left = right.map(flipH);
     hit = {
       right,

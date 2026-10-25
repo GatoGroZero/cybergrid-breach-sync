@@ -250,7 +250,7 @@ hr {
 
 .auth-cat {
   width: 104px;
-  height: 72px;
+  height: 100px;
   margin: 0 auto 8px;
   display: block;
 }
@@ -718,7 +718,7 @@ input::placeholder {
   right: 6px;
   top: 6px;
   width: 78px;
-  height: 54px;
+  height: 75px;
   background: var(--bg);
   border: 3px solid var(--black);
   opacity: 0.96;
@@ -764,6 +764,45 @@ input::placeholder {
   border-color: var(--text);
   box-shadow: 0 0 0 3px var(--yellow);
   z-index: 1;
+}
+
+.outfits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.outfit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px 3px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--dim);
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+}
+
+.outfit canvas {
+  width: 52px;
+  height: 50px;
+  image-rendering: pixelated;
+}
+
+.outfit[aria-checked='true'] {
+  color: var(--black);
+  background: var(--yellow);
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px var(--orange);
+}
+
+.outfit:hover:not([aria-checked='true']) {
+  border-color: var(--cyan);
+  color: var(--text);
 }
 
 .swatch.erase {

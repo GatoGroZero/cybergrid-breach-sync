@@ -1,5 +1,6 @@
 import type { Rng } from '../rng';
 import { SKIN_CELLS, SKIN_H, SKIN_W } from './constants';
+import { OUTFIT_COUNT, isValidOutfit } from './outfits';
 
 /** Paleta del pincel. El indice 0 borra (se ve el color base del gato). Basada en Sweetie 16. */
 export const PAINT_PALETTE = [
@@ -57,6 +58,8 @@ export interface Skin {
   base: number;
   /** SKIN_CELLS caracteres hexadecimales: 0 sin pintar, 1 a f indice de PAINT_PALETTE. */
   paint: string;
+  /** Traje de Halloween (0 o ausente = ninguno). Aparte del pelaje: se combina con cualquier pintura. */
+  outfit?: number;
 }
 
 export const EMPTY_PAINT = '0'.repeat(SKIN_CELLS);
@@ -74,8 +77,15 @@ export function isValidSkin(skin: unknown): skin is Skin {
     (s.base as number) >= 0 &&
     (s.base as number) < BASE_COATS.length &&
     typeof s.paint === 'string' &&
-    PAINT_PATTERN.test(s.paint)
+    PAINT_PATTERN.test(s.paint) &&
+    isValidOutfit(s.outfit)
   );
+}
+
+/** Traje de un pelaje (0 si no lleva), siempre dentro de rango. */
+export function outfitOf(skin: Skin | undefined | null): number {
+  const o = skin?.outfit ?? 0;
+  return Number.isInteger(o) && o >= 0 && o <= OUTFIT_COUNT ? o : 0;
 }
 
 export const paintIndex = (x: number, y: number): number => y * SKIN_W + x;
@@ -113,5 +123,7 @@ export function randomSkin(rng: Rng): Skin {
     for (let x = 2; x < SKIN_W / 2; x++) for (let y = 3; y < SKIN_H - 3; y++) cells.push([x, y]);
   }
   paint = paintCells(paint, cells, color);
-  return { base, paint };
+  // En esta temporada casi todos los bots andan disfrazados.
+  const outfit = rng.chance(0.75) ? rng.int(1, OUTFIT_COUNT) : 0;
+  return { base, paint, outfit };
 }
