@@ -191,3 +191,36 @@ test.describe('Flujo 4c: ajustes', () => {
     await expect(page.getByTestId('settings')).toBeHidden();
   });
 });
+
+test.describe('Flujo 4d: mezclador de volumen', () => {
+  test('cada canal tiene su control, se recuerda al recargar y se puede restaurar', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_vol'));
+    await page.getByTestId('btn-settings').click();
+    await page.locator('#set-tab-sound').click();
+    await expect(page.getByTestId('volume-list').locator('input[type=range]')).toHaveCount(6);
+
+    const ambient = page.getByTestId('volume-ambient');
+    await expect(ambient).toHaveValue('100');
+    await ambient.fill('35');
+    await page.getByTestId('volume-damage').fill('60');
+    const saved = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('cg_volumes') ?? '{}'),
+    );
+    expect(saved.ambient).toBeCloseTo(0.35, 2);
+    expect(saved.damage).toBeCloseTo(0.6, 2);
+    expect(saved.master).toBe(1);
+
+    await page.reload();
+    await expect(page.getByTestId('screen-lobby')).toBeVisible();
+    await page.getByTestId('btn-settings').click();
+    await page.locator('#set-tab-sound').click();
+    await expect(page.getByTestId('volume-ambient')).toHaveValue('35');
+    await expect(page.getByTestId('volume-damage')).toHaveValue('60');
+
+    await page.getByTestId('volume-reset').click();
+    await expect(page.getByTestId('volume-ambient')).toHaveValue('100');
+    await expect(page.getByTestId('volume-damage')).toHaveValue('100');
+  });
+});
