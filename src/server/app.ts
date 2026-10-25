@@ -83,7 +83,13 @@ export function createApp(deps: AppDeps): Express {
       }),
     );
     const indexFile = join(config.staticDir, 'index.html');
-    app.get(/^\/(?!api\/|socket\.io\/).*/, (_req, res) => {
+    app.get(/^\/(?!api\/|socket\.io\/).*/, (req, res) => {
+      // Las rutas del juego no llevan extension. Pedir un archivo que no existe (.env, .git, .map...)
+      // es un 404 de verdad, no la pagina principal con un 200 que confunde a los escaneres.
+      if (/(^|\/)\.[^/]|\.[A-Za-z0-9]{1,8}$/.test(req.path)) {
+        res.status(404).type('text/plain').send('No encontrado');
+        return;
+      }
       res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(indexFile);
     });

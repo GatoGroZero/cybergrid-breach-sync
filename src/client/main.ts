@@ -436,6 +436,12 @@ function wireNet(n: Net): void {
     disconnect();
     showAuth('Abriste tu sesión en otra pestaña');
   });
+  s.on('room:closed', () => {
+    // el servidor cierra las salas que llevan mucho rato quietas en el lobby
+    room = null;
+    renderRoom();
+    toast('La sala se cerró por inactividad');
+  });
   s.on('rooms:update', (list: PublicRoom[]) => {
     if (!room) renderRoomList(list);
   });

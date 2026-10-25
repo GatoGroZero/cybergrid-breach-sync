@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
-import { Server } from 'socket.io';
+import { isIP } from 'node:net';
+import { Server, type Socket } from 'socket.io';
 import { pingSchema, type PongPayload } from '../shared/br/protocol';
 import { sessionFromHeader } from './auth';
 import type { Config } from './config';
@@ -19,6 +20,15 @@ export interface Realtime {
   lobby: Lobby;
   runtime(): RuntimeInfo;
   close(): Promise<void>;
+}
+
+/** La IP del cliente de un socket: detras de Cloudflare viene en CF-Connecting-IP, que el borde reescribe siempre. */
+export function socketIp(socket: Socket, trustCloudflare: boolean): string {
+  if (trustCloudflare) {
+    const real = socket.handshake.headers['cf-connecting-ip'];
+    if (typeof real === 'string' && isIP(real.trim()) !== 0) return real.trim();
+  }
+  return socket.handshake.address;
 }
 
 export function createRealtime(http: HttpServer, deps: RealtimeDeps): Realtime {
@@ -49,6 +59,22 @@ export function createRealtime(http: HttpServer, deps: RealtimeDeps): Realtime {
     const user = await sessionFromHeader(config.sessionSecret, socket.request.headers.cookie);
     if (!user) return next(new Error('unauthorized'));
     socket.data.user = user;
+    next();
+  });
+
+  // Tope de conexiones abiertas por IP: sin el, una sola maquina con cientos de invitados llenaria
+  // el servidor (un socket por cuenta) y dejaria sin sala a todos los demas.
+  const perIp = new Map<string, number>();
+  io.use((socket, next) => {
+    const ip = socketIp(socket, config.trustCloudflare);
+    const open = perIp.get(ip) ?? 0;
+    if (open >= config.limits.socketsPerIp) return next(new Error('demasiadas_conexiones'));
+    perIp.set(ip, open + 1);
+    socket.once('disconnect', () => {
+      const left = (perIp.get(ip) ?? 1) - 1;
+      if (left <= 0) perIp.delete(ip);
+      else perIp.set(ip, left);
+    });
     next();
   });
 

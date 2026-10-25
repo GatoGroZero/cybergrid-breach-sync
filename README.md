@@ -221,6 +221,7 @@ La pantalla de acceso ofrece solo lo que el servidor tiene activo (`GET /api/aut
 - Sesión en cookie `httpOnly`, `SameSite=Lax` y `Secure` en producción. El socket se autentica en el handshake: sin sesión no hay conexión ni salas.
 - Límite de intentos de login, validación de todo lo que entra con Zod, cabeceras de Helmet y una política de contenido estricta (sin scripts ni estilos en línea).
 - El servidor no confía en el cliente: recorta los vectores de movimiento, limita cuántos pasos puede avanzar un jugador por tick (contra aceleración), valida que el objeto exista en su inventario y su distancia al cofre, y descarta cualquier campo de más. Cada cliente solo recibe lo que está cerca de su gato.
+- Contra el abuso: tope de 30 conexiones de WebSocket abiertas por IP (`LIMIT_SOCKETS_PER_IP`; la IP real viene de Cloudflare y no se puede falsear), hasta 200 invitados por hora por IP, cada acción del socket pasa por un cubo de fichas (quien insiste se desconecta), las salas que llevan 30 minutos quietas en el lobby se cierran solas (`ROOM_IDLE_SECONDS`) para que nadie ocupe los 40 lugares del servidor, y la memoria que guarda pelajes y mejoras por jugador tiene tope. Pedir un archivo oculto o inexistente (`/.env`, `/.git/config`, `*.map`) devuelve 404 y no la página principal.
 - Las salas privadas no aparecen en la lista y exigen el código de 5 caracteres. Los ajustes (`room:settings`) y el inicio (`room:start`) solo los acepta el servidor si vienen del anfitrión, validados con Zod, y el cupo de personas lo calcula siempre el servidor.
 
 ## Pruebas
