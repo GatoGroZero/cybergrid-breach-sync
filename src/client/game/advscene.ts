@@ -1,4 +1,12 @@
-import { HAZARD, HOSTILE_SHOT, MOB_FLAG, POWERS, mobDef } from '../../shared/br/adventure';
+import {
+  HAZARD,
+  HOSTILE_SHOT,
+  MOB_FLAG,
+  POWERS,
+  mobDef,
+  powerEffect,
+  type MobDef,
+} from '../../shared/br/adventure';
 import { ITEM_KINDS } from '../../shared/br/items';
 import { TILE } from '../../shared/br/constants';
 import type { BREvent } from '../../shared/br/types';
@@ -9,7 +17,11 @@ import { flashed, flippedOf, hostileShotSprite, mobSprite } from '../pixel/art-m
 import { pickupSprite } from '../pixel/art-items';
 import { C, ell, make, type Ctx } from '../pixel/draw';
 import type { Fx } from './fx';
+import { MOB_EVENT, MobAnimator } from './mobanim';
 import type { ClientBR, MobView } from './state';
+
+/** Habilidades con efecto continuo en el gato (el resto es una explosion unica). */
+const AURA_IDS: ReadonlySet<number> = new Set([0, 1, 4, 7]);
 
 const T = TILE;
 const DEG = Math.PI / 180;
@@ -67,6 +79,9 @@ export class AdvScene {
   private readonly teles: Tele[] = [];
   private readonly gateAt = new Map<number, number>();
   private readonly moved = new Map<number, { x: number; y: number; at: number }>();
+  private readonly anim = new MobAnimator();
+  private meX = 0;
+  private meY = 0;
   private readonly gates = [0, 1, 2, 3].map(vineGateTile);
 
   constructor(
@@ -450,12 +465,16 @@ export class AdvScene {
     const vw = b.canvas.width;
     const vh = b.canvas.height;
     const seen = new Set<number>();
+    this.meX = g.x;
+    this.meY = g.y;
+    this.anim.beginFrame();
     for (const m of mobs.values()) {
       if (m.x < camX - 60 || m.y < camY - 60 || m.x > camX + vw + 60 || m.y > camY + vh + 60)
         continue;
       seen.add(m.id);
       this.pushMob(list, b, m, camX, camY, now);
     }
+    this.anim.endFrame();
     for (const id of this.moved.keys())
       if (!seen.has(id) && this.moved.size > 120) this.moved.delete(id);
     // botin del suelo
@@ -547,14 +566,34 @@ export class AdvScene {
     if (sp.sided && left) spr = flippedOf(spr);
     const hurt = (m.flags & MOB_FLAG.hurt) !== 0;
     const windup = (m.flags & MOB_FLAG.windup) !== 0;
+    const pose = this.anim.pose(m, def, now, walking);
+    if (pose.events !== 0) this.mobEvents(m, def, pose.events);
     const shake = windup && (def.boss || def.size >= 20) ? Math.round(Math.sin(now / 28) * 1) : 0;
-    const x = Math.round(m.x - spr.width / 2) + shake;
-    const y = Math.round(m.y + def.half + 3 - spr.height);
+    // el dibujo se estira o aplasta desde los pies, centrado en el cuerpo
+    const dw = Math.max(2, Math.round(spr.width * pose.sx));
+    const dh = Math.max(2, Math.round(spr.height * pose.sy));
+    const x = Math.round(m.x - dw / 2 + pose.offX) + shake;
+    const y = Math.round(m.y + def.half + 3 - dh + pose.offY);
     const sortY = m.y + def.half;
     const boss = (m.flags & MOB_FLAG.boss) !== 0;
+    const put = (img: HTMLCanvasElement, ox = 0, oy = 0): void =>
+      b.drawImage(img, 0, 0, img.width, img.height, x - camX + ox, y - camY + oy, dw, dh);
     list.push({
       y: sortY,
       draw: () => {
+        if (pose.lift > 0.6) {
+          // sombra en el suelo: mas chica y clara cuanto mas arriba
+          b.globalAlpha = Math.max(0.12, 0.3 - pose.lift * 0.025);
+          ell(
+            b,
+            m.x - camX,
+            m.y + def.half + 2 - camY,
+            Math.max(3, def.size * 0.32 - pose.lift * 0.4),
+            Math.max(1.4, def.size * 0.1),
+            C.black,
+          );
+          b.globalAlpha = 1;
+        }
         if (boss) {
           // aura que late en el suelo; mas intensa en las fases dificiles
           const col = BOSS_AURA[m.kind] ?? '#ffffff';
@@ -573,22 +612,18 @@ export class AdvScene {
             );
         }
         if ((m.flags & MOB_FLAG.dashing) !== 0) {
-          // estela de velocidad
-          b.globalAlpha = 0.3;
-          const dx = Math.cos(m.ang) * (left ? 1 : -1) * 0;
-          void dx;
-          b.drawImage(
-            spr,
-            x - Math.round(Math.cos(m.ang) * 6),
-            y - Math.round(Math.sin(m.ang) * 3) - camY,
-          );
+          // estela de velocidad: dos imagenes desvanecidas detras
+          for (let k = 1; k <= 2; k++) {
+            b.globalAlpha = 0.28 / k;
+            put(spr, -Math.round(Math.cos(m.ang) * 6 * k), -Math.round(Math.sin(m.ang) * 3 * k));
+          }
           b.globalAlpha = 1;
         }
-        b.drawImage(hurt ? flashed(spr) : spr, x - camX, y - camY);
+        put(hurt ? flashed(spr) : spr);
         if (windup && !hurt) {
           // se tiñe de rojo y parpadea: viene un golpe
           b.globalAlpha = 0.28 + 0.2 * Math.sin(now / 45);
-          b.drawImage(flashed(spr, '#ff2a3a'), x - camX, y - camY);
+          put(flashed(spr, '#ff2a3a'));
           b.globalAlpha = 1;
           b.fillStyle = '#ff4d5e';
           const ex = Math.round(m.x - camX);
@@ -631,6 +666,57 @@ export class AdvScene {
         }
       },
     });
+  }
+
+  /** Polvo, chispas y soplidos que acompanan lo que hace un enemigo (aparecer, ser golpeado, atacar, pisar). */
+  private mobEvents(m: MobView, def: MobDef, ev: number): void {
+    const fx = this.fx;
+    const colors = DEATH_COLORS[m.kind] ?? (DEATH_COLORS[0] as string[]);
+    const feetY = m.y + def.half + 2;
+    const dust = ['#6b5240', '#8a6f55', '#c9b48c'];
+    if ((ev & MOB_EVENT.spawn) !== 0) {
+      fx.burst(m.x, feetY, def.boss ? 18 : 7, {
+        colors: dust,
+        speed: 38,
+        life: 0.5,
+        grav: 60,
+        angle: -Math.PI / 2,
+        spread: 2.2,
+      });
+      fx.ring(m.x, feetY, def.size * 0.5, '#c9b48c', 0.4);
+    }
+    if ((ev & MOB_EVENT.hit) !== 0) {
+      fx.burst(m.x, m.y - def.size * 0.3, 3, {
+        colors: ['#ffffff', colors[2] as string],
+        speed: 45,
+        life: 0.25,
+        grav: 40,
+      });
+    }
+    if ((ev & MOB_EVENT.lunge) !== 0) {
+      const a = m.ang;
+      fx.burst(m.x + Math.cos(a) * def.half, m.y + Math.sin(a) * def.half * 0.5, def.boss ? 9 : 5, {
+        colors,
+        speed: 70,
+        life: 0.3,
+        angle: a,
+        spread: 0.7,
+        size: def.boss ? 2 : 1,
+      });
+      if (def.boss || def.behavior === 'charger' || def.behavior === 'brute')
+        fx.ring(m.x, feetY, def.size * 0.45, colors[1] as string, 0.3);
+    }
+    if ((ev & MOB_EVENT.stomp) !== 0) {
+      fx.burst(m.x, feetY, def.boss ? 6 : 4, {
+        colors: dust,
+        speed: 26,
+        life: 0.4,
+        grav: -8,
+        angle: -Math.PI / 2,
+        spread: 2.6,
+      });
+      if (Math.hypot(m.x - this.meX, m.y - this.meY) < 150) this.hooks.shake(def.boss ? 1.6 : 1);
+    }
   }
 
   private readonly itemArt = new Map<string, HTMLCanvasElement>();
@@ -689,29 +775,126 @@ export class AdvScene {
     if (ev.id === 3 || ev.id === 5) this.hooks.shake(ev.id === 5 ? 4 : 3);
     const s = spatial(x - g.x, y - g.y, 420);
     if (s.v > 0.05) this.sfx.power(ev.id, Math.max(0.35, s.v), s.pan);
+    if (AURA_IDS.has(ev.id)) {
+      const dur = (POWERS[ev.id]?.duration ?? 0) * powerEffect(ev.lvl);
+      if (dur > 0) this.auras.set(ev.who, { id: ev.id, until: performance.now() + dur * 1000 });
+    }
     if (ev.who === g.you) this.hooks.say(`${POWERS[ev.id]?.name ?? 'Habilidad'}`, 'good', 1100);
   }
 
-  /** Halo bajo el gato mientras una habilidad suya sigue activa. */
-  drawPlayerAura(b: Ctx, g: ClientBR, camX: number, camY: number, now: number): void {
-    const list = g.adv?.powers ?? [];
-    let col: string | null = null;
-    for (const [id, , , act] of list) {
-      if (act <= 0) continue;
-      col = id === 0 ? '#ef7d57' : id === 1 ? '#ffd25e' : id === 4 ? '#73eff7' : col;
+  /** Quien tiene una habilidad con duracion activa y hasta cuando (lo ven todos los gatos cercanos). */
+  private readonly auras = new Map<number, { id: number; until: number }>();
+
+  /** Efecto visible mientras una habilidad sigue activa: llamas, mirada dorada, estela espectral o maullido. */
+  drawAuras(
+    b: Ctx,
+    g: ClientBR,
+    cats: Map<number, { x: number; y: number }>,
+    camX: number,
+    camY: number,
+    now: number,
+  ): void {
+    const active: { x: number; y: number; id: number }[] = [];
+    if (g.alive) {
+      for (const [id, , , act] of g.adv?.powers ?? [])
+        if (act > 0 && AURA_IDS.has(id)) active.push({ x: g.drawX, y: g.drawY, id });
     }
-    if (!col) return;
-    const x = g.drawX - camX;
-    const y = g.drawY - camY;
-    b.globalAlpha = 0.35 + 0.2 * Math.sin(now / 90);
-    ell(b, x, y + 5, 13, 5.2, col);
-    b.globalAlpha = 0.6;
-    for (let k = 0; k < 4; k++) {
-      const a = now / 220 + (k * Math.PI) / 2;
-      b.fillStyle = col;
-      b.fillRect(Math.round(x + Math.cos(a) * 11), Math.round(y + Math.sin(a) * 4 + 1), 2, 2);
+    for (const [who, a] of this.auras) {
+      if (a.until <= now) {
+        this.auras.delete(who);
+        continue;
+      }
+      if (who === g.you) continue;
+      const cat = cats.get(who);
+      if (cat) active.push({ x: cat.x, y: cat.y, id: a.id });
     }
-    b.globalAlpha = 1;
+    for (const a of active) this.aura(b, a.x, a.y, a.id, camX, camY, now);
+  }
+
+  private aura(
+    b: Ctx,
+    wx: number,
+    wy: number,
+    id: number,
+    camX: number,
+    camY: number,
+    now: number,
+  ): void {
+    const x = Math.round(wx - camX);
+    const y = Math.round(wy - camY);
+    if (id === 0) {
+      // furia felina: llamitas que bailan en los pies y el aire caliente sube
+      b.globalAlpha = 0.3 + 0.15 * Math.sin(now / 80);
+      ell(b, x, y + 5, 13, 5, '#ef7d57');
+      b.globalAlpha = 1;
+      for (let i = 0; i < 6; i++) {
+        const fx0 = x - 10 + i * 4;
+        const hgt = 3 + Math.round((Math.sin(now / 65 + i * 2.1) + 1) * 3);
+        b.fillStyle = i % 2 ? '#ffcd75' : '#ef7d57';
+        b.fillRect(fx0, y + 6 - hgt, 2, hgt);
+        b.fillStyle = '#ffe9a8';
+        b.fillRect(fx0, y + 6 - hgt, 1, 1);
+      }
+      if (Math.random() < 0.35)
+        this.fx.burst(wx + (Math.random() - 0.5) * 14, wy + 2, 1, {
+          colors: ['#ffcd75', '#ef7d57'],
+          speed: 16,
+          life: 0.5,
+          grav: -50,
+          angle: -Math.PI / 2,
+          spread: 0.8,
+        });
+    } else if (id === 1) {
+      // mirada de buho: un aro dorado y destellos que giran alrededor de la cabeza
+      b.globalAlpha = 0.25 + 0.12 * Math.sin(now / 120);
+      ell(b, x, y + 5, 13, 5, '#ffd25e');
+      b.globalAlpha = 1;
+      for (let k = 0; k < 3; k++) {
+        const a = now / 260 + (k * Math.PI * 2) / 3;
+        const px = Math.round(x + Math.cos(a) * 10);
+        const py = Math.round(y - 12 + Math.sin(a) * 3);
+        b.fillStyle = '#fff2a8';
+        b.fillRect(px, py - 1, 1, 3);
+        b.fillRect(px - 1, py, 3, 1);
+      }
+    } else if (id === 4) {
+      // paso espectral: estela celeste y un velo que lo hace ver intocable
+      b.globalAlpha = 0.28 + 0.12 * Math.sin(now / 100);
+      ell(b, x, y - 2, 11, 12, '#73eff7');
+      b.globalAlpha = 1;
+      if (Math.random() < 0.7)
+        this.fx.burst(wx + (Math.random() - 0.5) * 12, wy + (Math.random() - 0.5) * 12, 1, {
+          colors: ['#73eff7', '#bfe9ff', '#ffffff'],
+          speed: 10,
+          life: 0.4,
+          grav: -26,
+          size: 2,
+        });
+    } else if (id === 7) {
+      // maullido hipnotico: ondas que se alejan y notas que suben
+      for (let k = 0; k < 2; k++) {
+        const t = ((now + k * 450) % 900) / 900;
+        b.globalAlpha = (1 - t) * 0.7;
+        b.strokeStyle = '#e0a8ff';
+        b.lineWidth = 1;
+        b.beginPath();
+        b.ellipse(x, y + 2, 6 + t * 40, 3 + t * 22, 0, 0, Math.PI * 2);
+        b.stroke();
+      }
+      b.globalAlpha = 1;
+      for (let k = 0; k < 2; k++) {
+        const t = (now / 1000 + k * 0.5) % 1;
+        const nx = Math.round(x + (k ? 9 : -9) + Math.sin(t * 6) * 3);
+        const ny = Math.round(y - 8 - t * 22);
+        b.globalAlpha = 1 - t;
+        b.fillStyle = '#f4d9ff';
+        b.fillRect(nx, ny + 4, 3, 2);
+        b.fillRect(nx + 2, ny, 1, 5);
+        b.fillRect(nx + 3, ny, 2, 1);
+        b.fillRect(nx + 4, ny + 1, 1, 1);
+      }
+      b.globalAlpha = 1;
+    }
   }
 
   // ------------------------------------------------------------------ balas enemigas

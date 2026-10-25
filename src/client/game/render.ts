@@ -120,6 +120,9 @@ export class BRRenderer {
   private wavePattern: CanvasPattern | null = null;
   private shake = 0;
   private lastHealFx = 0;
+  /** Cuando empezo el golpe de cada gato (para aplastarlo un instante) y quienes siguen golpeados. */
+  private readonly hurtAt = new Map<number, number>();
+  private readonly stillHurt = new Set<number>();
   private lastStepFx = 0;
   private lastStepSfx = 0;
   /** Cuando se oyo la ultima pisada de cada gato ajeno (para no sonar todas a la vez). */
@@ -708,7 +711,20 @@ export class BRRenderer {
         });
         break;
       }
-      case 'heal':
+      case 'heal': {
+        // cada tic de curacion: un "+" que sube, un anillo en el suelo y un resplandor
+        const col = ev.kind === 'hp' ? '#a7f070' : C.cyan;
+        fx.plus(ev.x + (Math.random() - 0.5) * 10, ev.y - 8, col, 0.85, -24);
+        fx.ring(ev.x, ev.y + 4, 11, col, 0.5);
+        fx.burst(ev.x, ev.y + 2, 3, {
+          colors: [col, C.white],
+          speed: 20,
+          life: 0.5,
+          grav: -30,
+          angle: -Math.PI / 2,
+          spread: 1.6,
+        });
+        this.addLight(ev.x, ev.y, 34, col, 0.45);
         if (g && Math.hypot(ev.x - g.x, ev.y - g.y) < 10) {
           const now = performance.now();
           if (now - this.lastHealFx > 450) {
@@ -717,6 +733,7 @@ export class BRRenderer {
           }
         }
         break;
+      }
       case 'zone':
         this.sfx.warn();
         break;
@@ -913,7 +930,7 @@ export class BRRenderer {
     this.collectBoxes(list, g, camX, camY, now, dt);
     this.collectCats(list, g, cats, camX, camY, now, dt);
     this.adv?.collect(list, b, g, mobs, camX, camY, now);
-    if (g.alive) this.adv?.drawPlayerAura(b, g, camX, camY, now);
+    this.adv?.drawAuras(b, g, cats, camX, camY, now);
     list.sort((p, q) => p.y - q.y);
     for (const d of list) d.draw();
     this.drawAim(b, g, cats, camX, camY, now);
@@ -1546,7 +1563,13 @@ export class BRRenderer {
       : moving
         ? 1 + (Math.floor(now / 115 + id) & 1)
         : 0;
-    const flash = (flags & FLAG.hurt) !== 0 && Math.floor(now / 65) % 2 === 0;
+    const hurtNow = (flags & FLAG.hurt) !== 0;
+    if (hurtNow && !this.stillHurt.has(id)) this.hurtAt.set(id, now);
+    if (hurtNow) this.stillHurt.add(id);
+    else this.stillHurt.delete(id);
+    // el golpe lo aplasta de lado y rebota
+    const squash = Math.max(0, 1 - (now - (this.hurtAt.get(id) ?? -9999)) / 210);
+    const flash = hurtNow && Math.floor(now / 65) % 2 === 0;
     const set =
       facing === 1
         ? flash
@@ -1635,6 +1658,16 @@ export class BRRenderer {
             b.globalAlpha = 1;
           }
         }
+        if ((flags & FLAG.healing) !== 0 && !wet) {
+          // curandose: halo verde (o celeste si es escudo) que late bajo el gato
+          const col = isMe && g.me?.healKind === 'shield' ? C.cyan : '#a7f070';
+          b.globalAlpha = 0.28 + 0.14 * Math.sin(now / 110);
+          ell(b, sx, sy + 5, 14, 5.4, col);
+          b.globalAlpha = 0.12 + 0.06 * Math.sin(now / 110);
+          b.fillStyle = col;
+          b.fillRect(sx - 6, sy - 24, 12, 28);
+          b.globalAlpha = 1;
+        }
         if (dim) b.globalAlpha = 0.45;
         const dx = sx - 13;
         const dy = sy - 11 - CAT_PAD + hop;
@@ -1646,6 +1679,12 @@ export class BRRenderer {
           b.fillRect(sx - w, sy + 3, w * 2, 1);
           b.fillStyle = 'rgba(244,244,244,0.6)';
           b.fillRect(sx - w + 2, sy + 5, w * 2 - 4, 1);
+        } else if (squash > 0) {
+          const w = sprite.width;
+          const h = sprite.height;
+          const dw = Math.round(w * (1 + 0.2 * squash));
+          const dh = Math.round(h * (1 - 0.16 * squash));
+          b.drawImage(sprite, 0, 0, w, h, dx - Math.round((dw - w) / 2), dy + (h - dh), dw, dh);
         } else {
           b.drawImage(sprite, dx, dy);
         }
