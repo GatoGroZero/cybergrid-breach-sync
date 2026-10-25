@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOSS_ORDER,
+  BOSS_POWER,
   DASH,
+  POWERS,
+  POWER_SLOTS,
   MOB,
   RELICS,
   REVIVE_S,
@@ -9,9 +12,11 @@ import {
   squadLives,
   computeMods,
   mobDef,
+  powerOffer,
 } from '../../src/shared/br/adventure';
+import { createRng } from '../../src/shared/rng';
 import { TICK_DT, TILE } from '../../src/shared/br/constants';
-import { magOf } from '../../src/shared/br/items';
+import { WEAPONS, magOf } from '../../src/shared/br/items';
 import { defaultSkin } from '../../src/shared/br/skin';
 import { AdventureGame } from '../../src/server/br/AdventureGame';
 import type { Mob } from '../../src/server/br/mobs';
@@ -397,5 +402,284 @@ describe('aventura: voltereta, vidas y reliquias', () => {
     expect(g.lives).toBe(SQUAD_LIVES + 2);
     expect(g.snapshotFor(1)!.adv!.choice).toHaveLength(3);
     void MOB;
+  });
+});
+
+/** Le da una habilidad al gato como si un jefe se la hubiera ensenado. */
+function teach(g: AdventureGame, catId: number, id: number, level = 1): void {
+  g.stateOf(catId)!.powers.push({ id, level, readyAt: 0 });
+}
+
+/** Pide usar la habilidad de una casilla (1 a 3) y avanza un tick. */
+function press(g: AdventureGame, catId: number, slot: 1 | 2 | 3): void {
+  g.pushInput(catId, {
+    seq: 100 + Math.round(g.time * 30),
+    mx: 0,
+    my: 0,
+    aim: 0,
+    fire: false,
+    pw: slot,
+  });
+  g.step();
+}
+
+describe('aventura: habilidades de jefe', () => {
+  it('un jefe ofrece tres habilidades distintas y siempre la suya; con las casillas llenas, subir de nivel', () => {
+    const rng = createRng(5);
+    for (const boss of Object.keys(BOSS_POWER).map(Number)) {
+      const offer = powerOffer(rng, [], boss);
+      expect(offer).toHaveLength(3);
+      expect(new Set(offer).size).toBe(3);
+      expect(offer).toContain(BOSS_POWER[boss]);
+    }
+    const full = [0, 1, 2].map((id) => ({ id, level: 1 }));
+    expect(powerOffer(rng, full, 13).sort()).toEqual([0, 1, 2]);
+    const maxed = full.map((o) => ({ ...o, level: 3 }));
+    expect(powerOffer(rng, maxed, 13)).toEqual([]);
+    expect(POWERS).toHaveLength(8);
+    expect(POWER_SLOTS).toBe(3);
+  });
+
+  it('al caer un minijefe se elige una habilidad (nueva o de nivel superior)', () => {
+    const g = make(1);
+    const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
+    g.debugTeleport(first);
+    run(g, 3.5);
+    g.damageMob(
+      alive(g).find((m) => m.def.boss)!,
+      99_999,
+      g.cat(1)!,
+    );
+    run(g, 0.5);
+    const adv = g.snapshotFor(1)!.adv!;
+    expect(adv.pchoice).toHaveLength(3);
+    expect(adv.pchoice).toContain(BOSS_POWER[BOSS_ORDER[0] as number]);
+    const pick = adv.pchoice![0] as number;
+    expect(g.choosePower(1, 0)).toBe(true);
+    expect(g.snapshotFor(1)!.adv!.powers.map((p) => p[0])).toEqual([pick]);
+    expect(g.snapshotFor(1)!.adv!.pchoice).toBeNull();
+    expect(g.choosePower(1, 0)).toBe(false);
+  });
+
+  it('Furia felina acorta la espera entre disparos y Mirada de búho sube el daño y el alcance', () => {
+    const g = make(1);
+    run(g, 0.5);
+    const cat = g.cat(1)!;
+    teach(g, 1, 0);
+    teach(g, 1, 1);
+    const base = WEAPONS.pistol.cooldown;
+    g.fireControl(cat, 0, true);
+    expect(cat.cooldownUntil - g.time).toBeCloseTo(base, 2);
+    g.fireControl(cat, 0, false);
+    run(g, 1);
+    press(g, 1, 1);
+    expect(g.snapshotFor(1)!.adv!.powers[0]![3]).toBeGreaterThan(4);
+    g.fireControl(cat, 0, true);
+    expect(cat.cooldownUntil - g.time).toBeCloseTo(base * 0.5, 2);
+    // la habilidad entra en espera
+    expect(g.snapshotFor(1)!.adv!.powers[0]![2]).toBeGreaterThan(20);
+    const prot = g as unknown as {
+      shotDamage(c: unknown, b: number): number;
+      shotRange(c: unknown, b: number): number;
+    };
+    const plain = prot.shotDamage(cat, 10);
+    press(g, 1, 2);
+    expect(prot.shotDamage(cat, 10)).toBeGreaterThanOrEqual(plain * 1.7);
+    expect(prot.shotRange(cat, 100)).toBeGreaterThan(125);
+  });
+
+  it('Rugido guardián daña y aturde; Maullido hipnótico ralentiza; Nova de fuego quema', () => {
+    const g = make(1);
+    g.debugTeleport(1);
+    run(g, 2.4);
+    const cat = g.cat(1)!;
+    wipe(g);
+    teach(g, 1, 3);
+    teach(g, 1, 7);
+    teach(g, 1, 5);
+    const rata = g.spawnMob(MOB.rata, cat.x + 24, cat.y, 1)!;
+    rata.hp = rata.maxHp = 999;
+    run(g, 0.6);
+    press(g, 1, 1);
+    expect(rata.hp).toBeLessThan(999);
+    expect(rata.stunUntil).toBeGreaterThan(g.time);
+    const hpAfterRoar = rata.hp;
+    press(g, 1, 2);
+    expect(rata.slowUntil).toBeGreaterThan(g.time + 3);
+    press(g, 1, 3);
+    expect(rata.hp).toBeLessThan(hpAfterRoar);
+    expect(g.snapshotFor(1)!.ev.some((e) => e.e === 'power')).toBe(true);
+  });
+
+  it('Esporas curativas cura al grupo dentro de la nube, y Escudo de luna da escudo', () => {
+    const g = make(2);
+    run(g, 1);
+    const [a, b] = [g.cat(1)!, g.cat(2)!];
+    teach(g, 1, 2);
+    teach(g, 1, 6);
+    a.hp = 30;
+    b.x = a.x + 20;
+    b.y = a.y;
+    b.hp = 30;
+    press(g, 1, 1);
+    expect(g.perils.some((h) => h.kind === 5)).toBe(true);
+    run(g, 3);
+    expect(a.hp).toBeGreaterThan(50);
+    expect(b.hp).toBeGreaterThan(50);
+    press(g, 1, 2);
+    expect(a.shield).toBeGreaterThanOrEqual(55);
+    expect(b.shield).toBeGreaterThanOrEqual(55);
+  });
+
+  it('Paso espectral deja pasar los golpes y acelera', () => {
+    const g = make(1);
+    run(g, 3);
+    const cat = g.cat(1)!;
+    teach(g, 1, 4);
+    press(g, 1, 1);
+    expect(g.snapshotFor(1)!.me.spd).toBeCloseTo(1.4, 2);
+    const hp = cat.hp;
+    g.damageCat(cat, 50, null);
+    expect(cat.hp).toBe(hp);
+    run(g, 4);
+    g.damageCat(cat, 10, null);
+    expect(cat.hp).toBeLessThan(hp);
+  });
+});
+
+describe('aventura: botin de jefe y escala por grupo', () => {
+  const lootOf = (n: number): { weapons: number; medkits: number; shields: number } => {
+    const g = make(n);
+    const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
+    g.debugTeleport(first);
+    run(g, 3.5);
+    g.damageMob(
+      alive(g).find((m) => m.def.boss)!,
+      999_999,
+      g.cat(1)!,
+    );
+    const items = g.pickups.filter((p) => p.kind === 4).map((p) => p.item!.kind);
+    return {
+      weapons: items.filter((k) => k !== 'medkit' && k !== 'shield').length,
+      medkits: items.filter((k) => k === 'medkit').length,
+      shields: items.filter((k) => k === 'shield').length,
+    };
+  };
+
+  it('un jefe suelta armas, curas y escudos: mas generoso en solitario y mas grande con amigos', () => {
+    const solo = lootOf(1);
+    expect(solo.weapons).toBeGreaterThanOrEqual(2);
+    expect(solo.medkits).toBeGreaterThanOrEqual(2);
+    expect(solo.shields).toBeGreaterThanOrEqual(2);
+    const four = lootOf(4);
+    expect(four.weapons).toBeGreaterThanOrEqual(4);
+    expect(four.medkits).toBeGreaterThanOrEqual(5);
+    expect(four.shields).toBeGreaterThanOrEqual(4);
+  });
+
+  it('el arma del jefe se recoge caminando y trae sus balas', () => {
+    const g = make(1);
+    const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
+    g.debugTeleport(first);
+    run(g, 3.5);
+    g.damageMob(
+      alive(g).find((m) => m.def.boss)!,
+      999_999,
+      g.cat(1)!,
+    );
+    const cat = g.cat(1)!;
+    const weapon = g.pickups.find(
+      (p) => p.kind === 4 && p.item && WEAPONS[p.item.kind as 'rifle'],
+    )!;
+    cat.x = weapon.x;
+    cat.y = weapon.y;
+    run(g, 0.2);
+    expect(cat.inv.some((it) => it?.kind === weapon.item!.kind)).toBe(true);
+    expect(g.snapshotFor(1)!.pk!.every((t) => t[3] !== 4 || typeof t[4] === 'number')).toBe(true);
+  });
+
+  it('las salas de combate dejan curas y, a veces, armas', () => {
+    let medkits = 0;
+    let weapons = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const g = make(1, 700 + seed);
+      clearRoom(g, 1);
+      for (const p of g.pickups) {
+        if (p.kind !== 4) continue;
+        if (p.item!.kind === 'medkit') medkits++;
+        else if (p.item!.kind !== 'shield') weapons++;
+      }
+    }
+    expect(medkits).toBeGreaterThanOrEqual(5);
+    expect(weapons).toBeGreaterThanOrEqual(1);
+  });
+
+  it('con amigos los jefes aguantan mucho mas que en solitario', () => {
+    const hp = (n: number): number => {
+      const g = make(n);
+      const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
+      g.debugTeleport(first);
+      run(g, 3.5);
+      return alive(g).find((m) => m.def.boss)!.maxHp;
+    };
+    const solo = hp(1);
+    const two = hp(2);
+    expect(solo).toBe(mobDef(BOSS_ORDER[0] as number).hp);
+    expect(two).toBeGreaterThan(solo * 1.7);
+  });
+});
+
+describe('aventura: revivir al terminar la zona', () => {
+  it('quien cae sin vidas vuelve al superar la sala si queda alguien de pie', () => {
+    const g = make(2);
+    run(g, 1);
+    const [a, b] = [g.cat(1)!, g.cat(2)!];
+    g.lives = 0;
+    g.damageCat(a, 9999, null);
+    expect(a.alive).toBe(false);
+    run(g, REVIVE_S + 2);
+    expect(a.alive).toBe(false);
+    // mientras tanto el compañero ve el aviso y el caido sabe que volvera
+    expect(g.snapshotFor(1)!.adv!.fallen).toBe(-1);
+    clearRoom(g, 1);
+    run(g, 0.3);
+    expect(a.alive).toBe(true);
+    expect(b.alive).toBe(true);
+    expect(g.lives).toBe(0);
+    expect(a.hp).toBeGreaterThan(30);
+    expect(g.over).toBe(false);
+  });
+
+  it('en una sala de descanso o de tesoro tambien se levantan', () => {
+    const g = make(2);
+    run(g, 1);
+    const a = g.cat(1)!;
+    g.lives = 0;
+    g.damageCat(a, 9999, null);
+    const rest = g.rooms.findIndex((r) => r.def.kind === 'tesoro');
+    g.debugTeleport(rest);
+    run(g, 0.5);
+    expect(a.alive).toBe(true);
+  });
+
+  it('si nadie queda de pie la aventura termina y nadie revive', () => {
+    const g = make(2);
+    run(g, 1);
+    const [a, b] = [g.cat(1)!, g.cat(2)!];
+    g.lives = 0;
+    g.damageCat(a, 9999, null);
+    g.damageCat(b, 9999, null);
+    run(g, 0.3);
+    expect(g.over).toBe(true);
+    expect(g.ending).toBe('defeat');
+  });
+
+  it('en solitario sin vidas no hay quien levante: se acaba', () => {
+    const g = make(1);
+    run(g, 1);
+    g.lives = 0;
+    g.damageCat(g.cat(1)!, 9999, null);
+    run(g, 0.3);
+    expect(g.over).toBe(true);
   });
 });

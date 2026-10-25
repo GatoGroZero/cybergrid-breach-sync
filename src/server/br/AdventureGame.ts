@@ -1,12 +1,16 @@
 import {
   ARMOR_SLOTS,
   BOSS_ORDER,
+  BOSS_POWER,
   DASH,
   HAZARD,
   MINIBOSSES,
   MOB,
   NO_META,
   POTION,
+  POWERS,
+  POWER_MAX_LEVEL,
+  POWER_SLOTS,
   RELICS,
   REVIVE_S,
   squadLives,
@@ -16,6 +20,9 @@ import {
   essenceFor,
   hpScale,
   mobDef,
+  powerCooldown,
+  powerEffect,
+  powerOffer,
   wavePlan,
   type Equip,
   type MetaLevels,
@@ -26,6 +33,8 @@ import { CAT, TICK_DT, TILE } from '../../shared/br/constants';
 import { addAmmo, giveItem, takeOne } from '../../shared/br/inventory';
 import {
   CLAWS,
+  ITEM_KINDS,
+  WEAPONS,
   isArmor,
   isWeapon,
   rollAmmoCrate,
@@ -86,6 +95,18 @@ interface PlayerAdv {
   lastHurt: number;
   regenAcc: number;
   essence: number;
+  /** Habilidades de jefe que lleva y cuando vuelve a estar lista cada una. */
+  powers: { id: number; level: number; readyAt: number }[];
+  /** Ofertas de habilidad por elegir (una por jefe caido). */
+  powerOffers: number[][];
+  furyUntil: number;
+  furyEff: number;
+  gazeUntil: number;
+  gazeEff: number;
+  ghostUntil: number;
+  /** Cayo sin vidas: se levanta al terminar la zona si queda alguien de pie. */
+  zoneRevive: boolean;
+  healAcc: number;
 }
 
 interface Hazard {
@@ -108,7 +129,7 @@ interface Pickup {
   id: number;
   x: number;
   y: number;
-  /** 0 corazon, 1 balas, 2 pocion, 3 armadura. */
+  /** 0 corazon, 1 balas, 2 pocion, 3 armadura, 4 objeto (arma, cura...). */
   kind: number;
   item?: Item;
   until: number;
@@ -204,6 +225,15 @@ export class AdventureGame extends BRGame {
         lastHurt: -99,
         regenAcc: 0,
         essence: 0,
+        powers: [],
+        powerOffers: [],
+        furyUntil: 0,
+        furyEff: 1,
+        gazeUntil: 0,
+        gazeEff: 1,
+        ghostUntil: 0,
+        zoneRevive: false,
+        healAcc: 0,
       };
       this.state.set(cat.id, st);
       extraLives = Math.max(extraLives, meta.vidas);
@@ -230,7 +260,9 @@ export class AdventureGame extends BRGame {
       qty: 60 + 25 * st.meta.municion,
       rarity: 0,
     });
-    giveItem(cat.inv, cat.ammo, { kind: 'medkit', qty: 1 + st.meta.botiquin, rarity: 0 });
+    // en solitario se empieza con un botiquin de mas: nadie te cura si te hieren
+    const solo = this.cats.length === 1 ? 1 : 0;
+    giveItem(cat.inv, cat.ammo, { kind: 'medkit', qty: 1 + solo + st.meta.botiquin, rarity: 0 });
     cat.sel = 0;
     cat.invDirty = true;
   }
@@ -479,7 +511,9 @@ export class AdventureGame extends BRGame {
     const def = mobDef(kind);
     const act = (this.rooms[room]?.def.act ?? this.act()) as number;
     const n = this.squadSize();
-    const scale = def.boss ? 1 + 0.42 * (n - 1) : hpScale(act, n);
+    // en solitario todo es un poco mas manso; con amigos los jefes aguantan mas y atacan mas seguido
+    const solo = n === 1;
+    const scale = def.boss ? (solo ? 1 : 1 + 0.78 * (n - 1)) : hpScale(act, n) * (solo ? 0.95 : 1);
     const hp = Math.round(def.hp * scale);
     const mob: Mob = {
       id: this.nextId++,
@@ -500,8 +534,10 @@ export class AdventureGame extends BRGame {
       dvx: 0,
       dvy: 0,
       invuln: 0,
+      slowUntil: 0,
+      hard: n - 1,
       phase: 1,
-      dmgScale: dmgScale(act),
+      dmgScale: dmgScale(act) * (solo ? 0.95 : 1 + 0.12 * (n - 1)),
       script: null,
       targetId: 0,
       retargetAt: 0,
@@ -620,12 +656,12 @@ export class AdventureGame extends BRGame {
 
   // ---------------------------------------------------------------- botin
 
-  private addPickup(x: number, y: number, kind: number, item?: Item): void {
+  private addPickup(x: number, y: number, kind: number, item?: Item, spread = 6): void {
     if (this.pickups.length > 120) this.pickups.shift();
     this.pickups.push({
       id: this.nextId++,
-      x: x + this.runRng.range(-6, 6),
-      y: y + this.runRng.range(-6, 6),
+      x: x + this.runRng.range(-spread, spread),
+      y: y + this.runRng.range(-spread, spread),
       kind,
       ...(item ? { item } : {}),
       until: this.time + 90,
@@ -635,14 +671,10 @@ export class AdventureGame extends BRGame {
   private dropFrom(m: Mob): void {
     const r = this.runRng;
     if (m.def.boss) {
-      for (let i = 0; i < 4; i++) this.addPickup(m.x, m.y, 0);
-      for (let i = 0; i < 3; i++) this.addPickup(m.x, m.y, 1);
-      if (m.kind !== MOB.reyGato) {
-        const room = this.rooms[m.room] as RoomRt;
-        this.addPickup(m.x, m.y, 3, this.rollArmor(r, room.def.act + 1));
-      }
+      this.bossLoot(m);
       return;
     }
+    if (r.chance(0.06)) this.addPickup(m.x, m.y, 4, { kind: 'medkit', qty: 1, rarity: 0 });
     if (r.chance(0.17)) this.addPickup(m.x, m.y, 0);
     if (r.chance(0.26)) this.addPickup(m.x, m.y, 1);
     if (r.chance(0.025))
@@ -651,6 +683,186 @@ export class AdventureGame extends BRGame {
         qty: 1,
         rarity: 0,
       });
+  }
+
+  /** Arma para el botin de la Aventura: casi nunca pistola (esa ya la llevas). */
+  private rollLootWeapon(act: number, golden: boolean): Item {
+    const w = rollWeapon(this.runRng, golden ? 'golden' : 'normal');
+    if (w.kind === 'pistol' && this.runRng.chance(0.8)) {
+      const alt = this.runRng.pick(['shotgun', 'rifle', 'rifle', 'sniper', 'bazooka'] as const);
+      return { kind: alt, qty: 1, rarity: w.rarity, mag: WEAPONS[alt].magazine };
+    }
+    void act;
+    return w;
+  }
+
+  /**
+   * Premio de un jefe: armas, curas, balas, corazones y armadura. Crece con el grupo (cada gato
+   * recibe lo suyo) y en solitario es mas generoso para que no sea tan cuesta arriba.
+   */
+  private bossLoot(m: Mob): void {
+    const n = this.squadSize();
+    const solo = n === 1;
+    const room = this.rooms[m.room] as RoomRt;
+    const act = room.def.act;
+    const drops: { kind: number; item?: Item }[] = [];
+    for (let i = 0; i < (solo ? 2 : n); i++)
+      drops.push({ kind: 4, item: this.rollLootWeapon(act, true) });
+    for (let i = 0; i < (solo ? 2 : n + 1); i++)
+      drops.push({ kind: 4, item: { kind: 'medkit', qty: 1, rarity: 0 } });
+    for (let i = 0; i < (solo ? 2 : n); i++)
+      drops.push({ kind: 4, item: { kind: 'shield', qty: 1, rarity: 0 } });
+    for (let i = 0; i < 3 + n; i++) drops.push({ kind: 0 });
+    for (let i = 0; i < 3 + 2 * n; i++) drops.push({ kind: 1 });
+    if (m.kind !== MOB.reyGato)
+      for (let i = 0; i < (n >= 3 ? 2 : 1); i++)
+        drops.push({ kind: 3, item: this.rollArmor(this.runRng, act + 1) });
+    // se reparte en un circulo alrededor del jefe para que se vea y cada gato alcance lo suyo
+    drops.forEach((d, i) => {
+      const a = (i / drops.length) * Math.PI * 2 + 0.3;
+      const rad = 22 + (i % 2) * 12;
+      this.addPickup(m.x + Math.cos(a) * rad, m.y + Math.sin(a) * rad, d.kind, d.item, 2);
+    });
+  }
+
+  // ---------------------------------------------------------------- habilidades de jefe
+
+  /** Ofrece las habilidades de un jefe caido a cada gato que sigue de pie. */
+  private offerPowers(boss: number): void {
+    for (const c of this.cats) {
+      if (!c.alive) continue;
+      const st = this.state.get(c.id) as PlayerAdv;
+      const offer = powerOffer(this.runRng, st.powers, boss);
+      if (offer.length > 0) st.powerOffers.push(offer);
+      c.invDirty = true;
+    }
+  }
+
+  /** Elige una de las habilidades ofrecidas: una nueva o subir de nivel una que ya llevas. */
+  choosePower(catId: number, index: number): boolean {
+    const cat = this.cat(catId);
+    const st = this.state.get(catId);
+    if (!cat || !st || !Number.isInteger(index)) return false;
+    const offer = st.powerOffers[0];
+    const id = offer?.[index];
+    if (id === undefined) return false;
+    const own = st.powers.find((p) => p.id === id);
+    if (own) own.level = Math.min(POWER_MAX_LEVEL, own.level + 1);
+    else if (st.powers.length < POWER_SLOTS)
+      st.powers.push({ id, level: 1, readyAt: this.time + 2 });
+    else return false;
+    st.powerOffers.shift();
+    this.emit({ e: 'relic', x: Math.round(cat.x), y: Math.round(cat.y) });
+    return true;
+  }
+
+  private usePower(cat: Cat, slot: number): void {
+    const st = this.state.get(cat.id) as PlayerAdv;
+    const p = st.powers[slot];
+    if (!p || !cat.alive || this.time < p.readyAt) return;
+    const def = POWERS[p.id];
+    if (!def) return;
+    const eff = powerEffect(p.level);
+    const dur = def.duration * eff;
+    p.readyAt = this.time + powerCooldown(def, p.level);
+    const near = (r: number): Mob[] =>
+      [...this.mobs.values()].filter(
+        (m) => m.hp > 0 && dist(cat.x, cat.y, m.x, m.y) <= r + m.def.half,
+      );
+    const push = (m: Mob, d: number): void => {
+      const a = Math.atan2(m.y - cat.y, m.x - cat.x);
+      const next = moveBox(this.map, m.x, m.y, Math.cos(a) * d, Math.sin(a) * d, m.def.half);
+      m.x = next.x;
+      m.y = next.y;
+    };
+    switch (p.id) {
+      case 0:
+        st.furyUntil = this.time + dur;
+        st.furyEff = eff;
+        break;
+      case 1:
+        st.gazeUntil = this.time + dur;
+        st.gazeEff = eff;
+        break;
+      case 2:
+        this.addHealZone(cat.x, cat.y, 62 + 8 * p.level, 11 * eff, dur, cat.id);
+        break;
+      case 3:
+        for (const m of near(82 + 10 * (p.level - 1))) {
+          this.damageMob(m, 22 * eff * st.mods.dmg * (m.def.boss ? 0.6 : 1), cat);
+          if (!m.def.boss) {
+            m.stunUntil = Math.max(m.stunUntil, this.time + 1.4 + 0.3 * (p.level - 1));
+            push(m, 30);
+          }
+        }
+        break;
+      case 4:
+        st.ghostUntil = this.time + dur;
+        st.invulnUntil = Math.max(st.invulnUntil, this.time + dur);
+        break;
+      case 5:
+        for (const m of near(105 + 8 * (p.level - 1))) {
+          this.damageMob(m, 36 * eff * st.mods.dmg, cat);
+          if (!m.def.boss) push(m, 18);
+        }
+        this.emit({ e: 'boom', x: Math.round(cat.x), y: Math.round(cat.y), r: 70 });
+        break;
+      case 6:
+        for (const c of this.cats) {
+          if (!c.alive || dist(c.x, c.y, cat.x, cat.y) > 92) continue;
+          c.shield = Math.min(this.capsOf(c).shield, c.shield + 55 * eff);
+          c.invDirty = true;
+        }
+        break;
+      default:
+        for (const m of near(150)) m.slowUntil = Math.max(m.slowUntil, this.time + dur);
+    }
+    this.emit({
+      e: 'power',
+      id: p.id,
+      x: Math.round(cat.x),
+      y: Math.round(cat.y),
+      who: cat.id,
+      lvl: p.level,
+    });
+  }
+
+  /** Nube de esporas que cura a quien se queda dentro. */
+  private addHealZone(
+    x: number,
+    y: number,
+    r: number,
+    hps: number,
+    life: number,
+    owner: number,
+  ): void {
+    this.perils.push({
+      id: this.nextId++,
+      x,
+      y,
+      r,
+      kind: HAZARD.espora,
+      dmg: 0,
+      dps: hps,
+      start: this.time,
+      until: this.time + life,
+      fired: false,
+      hit: new Set(),
+      owner,
+      grow: 0,
+    });
+    if (this.perils.length > 60) this.perils.shift();
+  }
+
+  /** Los que cayeron sin vidas vuelven (con medio gato de vida) si queda alguien que los levante. */
+  private reviveFallen(): void {
+    if (!this.cats.some((c) => c.alive)) return;
+    for (const c of this.cats) {
+      const st = this.state.get(c.id) as PlayerAdv;
+      if (c.alive || !st.zoneRevive) continue;
+      st.zoneRevive = false;
+      this.revive(c);
+    }
   }
 
   private collectPickups(): void {
@@ -696,6 +908,17 @@ export class AdventureGame extends BRGame {
     }
     if (p.kind === 3 && p.item) {
       this.equipItem(cat, p.item);
+      return true;
+    }
+    if (p.kind === 4 && p.item) {
+      const left = giveItem(cat.inv, cat.ammo, { ...p.item });
+      if (left) return false;
+      // un arma nueva viene con balas para empezar a usarla
+      if (isWeapon(p.item.kind)) {
+        const kind = `ammo_${p.item.kind}` as AmmoKind;
+        addAmmo(cat.ammo, kind, Math.round((AMMO_DROP[p.item.kind] ?? 12) * 2 * st.mods.lootAmmo));
+      }
+      cat.invDirty = true;
       return true;
     }
     return true;
@@ -776,6 +999,7 @@ export class AdventureGame extends BRGame {
   ): { mx: number; my: number; mul: number } {
     const st = this.state.get(cat.id);
     if (!st) return { mx: input.mx, my: input.my, mul };
+    if (input.pw) this.usePower(cat, input.pw - 1);
     if (input.dash && st.dashLeft <= 0 && this.time >= st.dashReadyAt && cat.alive) {
       const len = Math.hypot(input.mx, input.my);
       const dx = len > 0.1 ? input.mx / len : Math.cos(input.aim);
@@ -799,14 +1023,21 @@ export class AdventureGame extends BRGame {
     }
     const swift = this.time < st.swiftUntil ? POTION.valerian.speed : 1;
     const rage = this.time < st.rageUntil ? POTION.catnip.speed : 1;
-    return { mx: input.mx, my: input.my, mul: mul * st.mods.speed * swift * rage };
+    const ghost = this.time < st.ghostUntil ? 1.4 : 1;
+    return { mx: input.mx, my: input.my, mul: mul * st.mods.speed * swift * rage * ghost };
   }
 
   protected override shotDamage(cat: Cat, base: number): number {
     const st = this.state.get(cat.id) as PlayerAdv;
     const rage = this.time < st.rageUntil ? POTION.catnip.dmg : 1;
     const crit = this.runRng.chance(st.mods.crit) ? 2 : 1;
-    return Math.max(1, Math.round(base * st.mods.dmg * rage * crit));
+    const gaze = this.time < st.gazeUntil ? 1 + 0.8 * st.gazeEff : 1;
+    return Math.max(1, Math.round(base * st.mods.dmg * rage * crit * gaze));
+  }
+
+  protected override shotCooldown(cat: Cat, base: number): number {
+    const st = this.state.get(cat.id) as PlayerAdv;
+    return this.time < st.furyUntil ? base * (0.5 / st.furyEff) : base;
   }
 
   protected override reloadTime(cat: Cat, base: number): number {
@@ -814,7 +1045,9 @@ export class AdventureGame extends BRGame {
   }
 
   protected override shotRange(cat: Cat, base: number): number {
-    return base * this.modsOf(cat).range;
+    const st = this.state.get(cat.id) as PlayerAdv;
+    const gaze = this.time < st.gazeUntil ? 1 + 0.3 * st.gazeEff : 1;
+    return base * this.modsOf(cat).range * gaze;
   }
 
   protected override spendsAmmo(cat: Cat): boolean {
@@ -832,7 +1065,9 @@ export class AdventureGame extends BRGame {
       this.lives--;
       st.reviveAt = this.time + REVIVE_S;
     } else {
+      // sin vidas: se levanta al terminar la zona, si todavia queda alguien de pie
       st.reviveAt = Infinity;
+      st.zoneRevive = true;
     }
   }
 
@@ -913,6 +1148,8 @@ export class AdventureGame extends BRGame {
       room.offered = true;
       for (const c of this.cats) if (c.alive) this.offerRelics(c);
     }
+    // llegar a un lugar seguro tambien levanta a los que cayeron sin vidas
+    if (room.def.kind === 'tesoro' || room.def.kind === 'descanso') this.reviveFallen();
   }
 
   private activate(room: RoomRt): void {
@@ -1060,6 +1297,15 @@ export class AdventureGame extends BRGame {
     if (def.kind === 'combate') {
       for (let i = 0; i < 2 + (this.squadSize() > 2 ? 1 : 0); i++) this.addPickup(cx, cy, 0);
       for (let i = 0; i < 2; i++) this.addPickup(cx, cy, 1);
+      // las salas dejan curas y, a veces, un arma: nadie debe llegar al jefe solo con la pistola
+      const solo = this.squadSize() === 1;
+      if (this.runRng.chance(solo ? 0.55 : 0.45))
+        this.addPickup(cx, cy, 4, { kind: 'medkit', qty: 1, rarity: 0 }, 22);
+      if (this.runRng.chance(solo ? 0.35 : 0.25))
+        this.addPickup(cx, cy, 4, { kind: 'shield', qty: 1, rarity: 0 }, 22);
+      // en el primer acto casi siempre cae un arma: el primer jefe no se pelea solo con la pistola
+      if (this.runRng.chance(act === 0 ? 0.6 : solo ? 0.3 : 0.22))
+        this.addPickup(cx, cy, 4, this.rollLootWeapon(act, false), 22);
       if (this.runRng.chance(0.28))
         this.addPickup(cx, cy, 2, {
           kind: this.runRng.chance(0.5) ? 'potion_catnip' : 'potion_valerian',
@@ -1070,7 +1316,10 @@ export class AdventureGame extends BRGame {
     } else {
       this.bossesDown++;
       // un minijefe regala una reliquia a cada gato (el jefe final cierra la aventura)
-      if (def.kind === 'minijefe') for (const c of this.cats) if (c.alive) this.offerRelics(c);
+      if (def.kind === 'minijefe') {
+        for (const c of this.cats) if (c.alive) this.offerRelics(c);
+        this.offerPowers(def.boss ?? -1);
+      }
       if (def.kind === 'jefe') this.victory();
     }
     // los caidos se levantan al terminar la pelea sin gastar tiempo de espera
@@ -1078,6 +1327,8 @@ export class AdventureGame extends BRGame {
       const st = this.state.get(c.id) as PlayerAdv;
       if (!c.alive && st.reviveAt !== Infinity && st.reviveAt > 0) st.reviveAt = this.time + 0.4;
     }
+    // y los que se quedaron sin vidas regresan con la zona superada (si queda alguien de pie)
+    this.reviveFallen();
   }
 
   // ---------------------------------------------------------------- final de la partida
@@ -1209,6 +1460,17 @@ export class AdventureGame extends BRGame {
             this.damageCat(c, whole, null);
           }
         }
+      } else if (h.kind === HAZARD.espora) {
+        for (const c of this.cats) {
+          if (!c.alive || dist(c.x, c.y, h.x, h.y) > h.r) continue;
+          const cst = this.state.get(c.id) as PlayerAdv;
+          cst.healAcc += h.dps * TICK_DT;
+          if (cst.healAcc >= 1) {
+            const whole = Math.floor(cst.healAcc);
+            cst.healAcc -= whole;
+            c.hp = Math.min(this.capsOf(c).hp, c.hp + whole);
+          }
+        }
       } else if (h.kind === HAZARD.onda) {
         const radius = h.r + (this.time - h.start) * h.grow;
         for (const c of this.cats) {
@@ -1239,7 +1501,8 @@ export class AdventureGame extends BRGame {
     me.maxShield = st.mods.maxShield;
     const swift = this.time < st.swiftUntil ? POTION.valerian.speed : 1;
     const rage = this.time < st.rageUntil ? POTION.catnip.speed : 1;
-    me.spd = Math.round(st.mods.speed * swift * rage * 1000) / 1000;
+    const ghost = this.time < st.ghostUntil ? 1.4 : 1;
+    me.spd = Math.round(st.mods.speed * swift * rage * ghost * 1000) / 1000;
 
     // lo que se ve cerca de quien mira (o de a quien esta mirando si cayo)
     const focus = cat.alive ? cat : (this.cat(cat.spectate ?? -1) ?? cat);
@@ -1274,7 +1537,11 @@ export class AdventureGame extends BRGame {
     snap.haz = haz;
     const pk: PickupTuple[] = [];
     for (const p of this.pickups)
-      if (near(p.x, p.y)) pk.push([p.id, Math.round(p.x), Math.round(p.y), p.kind]);
+      if (near(p.x, p.y)) {
+        const base: PickupTuple = [p.id, Math.round(p.x), Math.round(p.y), p.kind];
+        if (p.kind === 4 && p.item) base.push(ITEM_KINDS.indexOf(p.item.kind) * 3 + p.item.rarity);
+        pk.push(base);
+      }
     snap.pk = pk;
 
     const room = this.rooms[this.currentRoom] as RoomRt;
@@ -1300,10 +1567,33 @@ export class AdventureGame extends BRGame {
       relics: st.relics,
       equip: [st.equip[0], st.equip[1], st.equip[2]],
       choice: st.offers[0] ?? null,
-      fallen:
-        !cat.alive && st.reviveAt !== Infinity
+      pchoice: st.powerOffers[0] ?? null,
+      powers: st.powers.map((p) => [
+        p.id,
+        p.level,
+        Math.max(0, Math.round((p.readyAt - this.time) * 10) / 10),
+        Math.max(
+          0,
+          Math.round(
+            ((p.id === 0
+              ? st.furyUntil
+              : p.id === 1
+                ? st.gazeUntil
+                : p.id === 4
+                  ? st.ghostUntil
+                  : 0) -
+              this.time) *
+              10,
+          ) / 10,
+        ),
+      ]),
+      fallen: cat.alive
+        ? 0
+        : st.reviveAt !== Infinity
           ? Math.max(0, Math.ceil(st.reviveAt - this.time))
-          : 0,
+          : st.zoneRevive && this.cats.some((c) => c.alive)
+            ? -1
+            : 0,
       buffs: [
         Math.max(0, Math.ceil(st.rageUntil - this.time)),
         Math.max(0, Math.ceil(st.swiftUntil - this.time)),

@@ -48,6 +48,10 @@ export interface Mob {
   dvx: number;
   dvy: number;
   invuln: number;
+  /** Ralentizado (maullido hipnotico) hasta este momento. */
+  slowUntil: number;
+  /** Cuantos amigos mas hay en el grupo: los jefes atacan mas seguido y traen mas ayudantes. */
+  hard: number;
   phase: number;
   dmgScale: number;
   script: Script | null;
@@ -115,7 +119,7 @@ function probe(ctx: MobCtx, m: Mob, angle: number, step: number): number {
 
 /** Camina hacia un angulo y, si una roca o un tronco le cierra el paso, la rodea por un lado. */
 function walk(ctx: MobCtx, m: Mob, angle: number, speed: number): number {
-  const step = speed * ctx.dt;
+  const step = speed * ctx.dt * (ctx.time < m.slowUntil ? 0.4 : 1);
   let a = angle;
   const circling = ctx.time < (m.data.sideUntil ?? 0);
   if (circling || probe(ctx, m, a, step) < step * 0.55) {
@@ -419,7 +423,7 @@ const BOSS_ATTACKS: Record<number, Attack[]> = {
       );
     },
     (ctx, m) => {
-      const n = m.phase >= 2 ? 5 : 3;
+      const n = (m.phase >= 2 ? 5 : 3) + Math.min(3, m.hard);
       const spots = Array.from({ length: n }, () => around(ctx, m, m.x, m.y, 60));
       for (const s of spots) ctx.tele(s.x, s.y, 10, 0.7, 0);
       return script(
@@ -571,7 +575,7 @@ const BOSS_ATTACKS: Record<number, Attack[]> = {
       );
     },
     (ctx, m) => {
-      const n = m.phase >= 2 ? 3 : 2;
+      const n = (m.phase >= 2 ? 3 : 2) + (m.hard >= 2 ? 1 : 0);
       const spots = Array.from({ length: n }, () => around(ctx, m, m.x, m.y, 70));
       for (const s of spots) ctx.tele(s.x, s.y, 12, 0.8, 0);
       return script(
@@ -714,7 +718,9 @@ const BOSS_ATTACKS: Record<number, Attack[]> = {
     },
     (ctx, m) => {
       m.invuln = ctx.time + 0.4;
-      const spots = Array.from({ length: 3 }, () => around(ctx, m, m.x, m.y, 70));
+      const spots = Array.from({ length: 3 + (m.hard >= 2 ? 1 : 0) }, () =>
+        around(ctx, m, m.x, m.y, 70),
+      );
       for (const s of spots) ctx.tele(s.x, s.y, 12, 0.7, 0);
       const away = around(ctx, m, m.x, m.y, 90);
       return script(
@@ -786,7 +792,7 @@ const BOSS_ATTACKS: Record<number, Attack[]> = {
       return script(ctx, steps, true, 0.5 + waves * 0.7 + 0.4);
     },
     (ctx, m) => {
-      const n = m.phase >= 2 ? 4 : 3;
+      const n = (m.phase >= 2 ? 4 : 3) + (m.hard >= 1 ? 1 : 0);
       const spots = Array.from({ length: n }, () => around(ctx, m, m.x, m.y, 80));
       for (const s of spots) ctx.tele(s.x, s.y, 12, 0.8, 0);
       return script(
@@ -879,7 +885,9 @@ function boss(ctx: MobCtx, m: Mob, t: Target): void {
     if (ctx.time >= s.end) {
       m.script = null;
       const rate = phase >= 2 ? 0.7 : 1;
-      m.cd = ctx.time + m.def.cooldown * rate * (m.kind === MOB.reyGato && phase === 3 ? 0.7 : 1);
+      const tempo = 1 - 0.07 * m.hard;
+      m.cd =
+        ctx.time + m.def.cooldown * rate * tempo * (m.kind === MOB.reyGato && phase === 3 ? 0.7 : 1);
     }
     if (m.script?.still) return;
   }
@@ -956,5 +964,6 @@ export function mobFlags(m: Mob, time: number): number {
   if (time < m.invuln) f |= MOB_FLAG.shielded;
   if (m.phase >= 2) f |= MOB_FLAG.phase2;
   if (m.phase >= 3) f |= MOB_FLAG.phase3;
+  if (time < m.slowUntil) f |= MOB_FLAG.slowed;
   return f;
 }

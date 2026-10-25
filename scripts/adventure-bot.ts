@@ -12,6 +12,8 @@ import type { Mob } from '../src/server/br/mobs';
 const PREFERRED: WeaponKind[] = ['rifle', 'shotgun', 'sniper', 'pistol', 'bazooka'];
 /** Reliquias en orden de preferencia: supervivencia primero. */
 const RELIC_ORDER = [10, 5, 6, 0, 3, 13, 8, 2, 4, 11, 9, 7, 1, 12];
+/** Habilidades en orden de preferencia. */
+const POWER_ORDER = [1, 0, 3, 5, 6, 2, 7, 4];
 
 interface Tele {
   x: number;
@@ -49,6 +51,9 @@ export class AutoPlayer {
   private strafe = 1;
   private strafeUntil = 0;
   private openedChests = new Set<number>();
+  /** Botin que no se pudo recoger (mochila llena): se deja ahi. */
+  private skipped = new Set<number>();
+  private chasing: { id: number; since: number } | null = null;
   private healCooldown = 0;
   private lastX = 0;
   private lastY = 0;
@@ -108,6 +113,14 @@ export class AutoPlayer {
       )[0] as number;
       g.chooseRelic(this.catId, offer.indexOf(best));
     }
+    // habilidad nueva de un jefe
+    const po = st.powerOffers[0];
+    if (po) {
+      const best = [...po].sort(
+        (a, b) => POWER_ORDER.indexOf(a) - POWER_ORDER.indexOf(b),
+      )[0] as number;
+      g.choosePower(this.catId, po.indexOf(best));
+    }
     this.pickWeapon();
 
     const room =
@@ -126,6 +139,7 @@ export class AutoPlayer {
     let aim = cat.aim;
     let fire = false;
     let dash = false;
+    let pw: 1 | 2 | 3 | undefined;
 
     // 1) fuera de las zonas de aviso
     for (const t of this.teles) {
@@ -230,7 +244,29 @@ export class AutoPlayer {
       mx /= len;
       my /= len;
     }
-    g.pushInput(this.catId, { seq: this.seq++, mx, my, aim, fire, hold: fire, run: false, dash });
+    // habilidades: las de pelea cuando hay enemigos serios, las de cura cuando hace falta
+    st.powers.forEach((p, i) => {
+      if (pw || now < p.readyAt) return;
+      const fighting = target !== null && (threats.length >= 3 || target.def.boss === true);
+      const heal = (p.id === 2 || p.id === 6) && cat.hp < 60 && threats.length > 0;
+      const defend = p.id === 4 && (inDanger || cat.hp < 35) && threats.length > 0;
+      const close =
+        target !== null &&
+        dist(cat.x, cat.y, target.x, target.y) < (p.id === 3 || p.id === 5 ? 80 : 200);
+      if ((fighting && close && p.id !== 2 && p.id !== 6 && p.id !== 4) || heal || defend)
+        pw = (i + 1) as 1 | 2 | 3;
+    });
+    g.pushInput(this.catId, {
+      seq: this.seq++,
+      mx,
+      my,
+      aim,
+      fire,
+      hold: fire,
+      run: false,
+      dash,
+      ...(pw ? { pw } : {}),
+    });
     void now;
   }
 
@@ -356,11 +392,22 @@ export class AutoPlayer {
     // botin en el suelo
     let near: { x: number; y: number } | null = null;
     let nearD = 160;
+    let nearId = -1;
     for (const p of g.pickups) {
+      if (this.skipped.has(p.id)) continue;
       const d = dist(cat.x, cat.y, p.x, p.y);
       if (d < nearD) {
         nearD = d;
         near = p;
+        nearId = p.id;
+      }
+    }
+    // si lleva un rato encima de algo y no lo recoge, es que no le cabe
+    if (near && nearD < 14) {
+      if (this.chasing?.id !== nearId) this.chasing = { id: nearId, since: g.time };
+      else if (g.time - this.chasing.since > 1.5) {
+        this.skipped.add(nearId);
+        near = null;
       }
     }
     if (near) return this.go(near.x, near.y, `p${near.x | 0},${near.y | 0}`);
