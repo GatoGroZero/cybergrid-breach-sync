@@ -42,6 +42,41 @@ export function spatial(dx: number, dy: number, hearing = 420): { v: number; pan
   };
 }
 
+/** Canales del mezclador: cada familia de sonidos tiene su propio volumen. */
+export type Channel = 'ambient' | 'weapons' | 'damage' | 'steps' | 'ui';
+export const CHANNELS: readonly Channel[] = ['ambient', 'weapons', 'damage', 'steps', 'ui'];
+export const CHANNEL_LABELS: Record<Channel, string> = {
+  ambient: 'Ambiente',
+  weapons: 'Armas y explosiones',
+  damage: 'Golpes y daño',
+  steps: 'Pasos',
+  ui: 'Avisos y menús',
+};
+export type Volumes = Record<Channel | 'master', number>;
+export const DEFAULT_VOLUMES: Volumes = {
+  master: 1,
+  ambient: 1,
+  weapons: 1,
+  damage: 1,
+  steps: 1,
+  ui: 1,
+};
+const VOLUMES_KEY = 'cg_volumes';
+
+/** Lee los volumenes guardados, ignorando lo que no sea un numero de 0 a 1. */
+export function parseVolumes(raw: unknown): Volumes {
+  const out: Volumes = { ...DEFAULT_VOLUMES };
+  if (typeof raw !== 'object' || raw === null) return out;
+  for (const key of Object.keys(out) as (keyof Volumes)[]) {
+    const v = (raw as Record<string, unknown>)[key];
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = Math.max(0, Math.min(1, v));
+  }
+  return out;
+}
+
+/** El oido percibe el volumen de forma logaritmica: la curva cuadratica hace que el control se sienta parejo. */
+export const gainOf = (v: number): number => v * v;
+
 const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 /** Tope de sonidos al mismo tiempo: con 12 gatos peleando no se debe saturar el audio. */
 const MAX_VOICES = 56;
@@ -50,6 +85,10 @@ const MAX_VOICES = 56;
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private readonly buses = new Map<Channel, GainNode>();
+  /** Canal al que pertenece el sonido que se esta creando ahora mismo. */
+  private ch: Channel = 'ui';
+  volumes: Volumes = { ...DEFAULT_VOLUMES };
   private noiseBuffer: AudioBuffer | null = null;
   private brownBuffer: AudioBuffer | null = null;
   private voices = 0;
@@ -60,6 +99,7 @@ export class Sfx {
   constructor() {
     try {
       this.muted = window.localStorage.getItem('cg_muted') === '1';
+      this.volumes = parseVolumes(JSON.parse(window.localStorage.getItem(VOLUMES_KEY) ?? 'null'));
     } catch {
       this.muted = false;
     }
@@ -74,8 +114,14 @@ export class Sfx {
       if (!Ctor) return;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.35;
+      this.master.gain.value = this.masterGain();
       this.master.connect(this.ctx.destination);
+      for (const channel of CHANNELS) {
+        const bus = this.ctx.createGain();
+        bus.gain.value = gainOf(this.volumes[channel]);
+        bus.connect(this.master);
+        this.buses.set(channel, bus);
+      }
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     if (this.pendingAmbient) {
@@ -87,12 +133,56 @@ export class Sfx {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.master) this.master.gain.value = muted ? 0 : 0.35;
+    if (this.master) this.master.gain.value = this.masterGain();
     try {
       window.localStorage.setItem('cg_muted', muted ? '1' : '0');
     } catch {
       // sin almacenamiento disponible: no pasa nada
     }
+  }
+
+  private masterGain(): number {
+    return this.muted ? 0 : 0.35 * gainOf(this.volumes.master);
+  }
+
+  /** Cambia el volumen de un canal (0 a 1) y lo recuerda. */
+  setVolume(channel: Channel | 'master', value: number): void {
+    const v = Math.max(0, Math.min(1, value));
+    this.volumes[channel] = v;
+    if (channel === 'master') {
+      if (this.master) this.master.gain.value = this.masterGain();
+    } else {
+      const bus = this.buses.get(channel);
+      if (bus) bus.gain.value = gainOf(v);
+    }
+    try {
+      window.localStorage.setItem(VOLUMES_KEY, JSON.stringify(this.volumes));
+    } catch {
+      // sin almacenamiento disponible: no pasa nada
+    }
+  }
+
+  /** Un sonido de muestra para oir como queda un canal al mover su control. */
+  preview(channel: Channel | 'master'): void {
+    switch (channel) {
+      case 'weapons':
+        return this.shot('rifle');
+      case 'damage':
+        return this.hitDealt(false);
+      case 'steps':
+        return this.step('wood', false);
+      case 'ambient':
+        return this.chirp();
+      default:
+        return this.node();
+    }
+  }
+
+  /** Piar corto de muestra para el control del ambiente. */
+  private chirp(): void {
+    this.ch = 'ambient';
+    this.tone(2600, 0.07, 'sine', 0.05, 3300);
+    this.tone(2900, 0.08, 'sine', 0.045, 2300, 0, 0.1);
   }
 
   // ------------------------------------------------------------------ piezas basicas
@@ -101,15 +191,20 @@ export class Sfx {
     return this.ctx !== null && this.master !== null && !this.muted && this.voices < MAX_VOICES;
   }
 
+  /** Bus del canal actual (o la salida general si todavia no existe). */
+  private output(): AudioNode {
+    return this.buses.get(this.ch) ?? (this.master as GainNode);
+  }
+
   /** Conecta una voz a la salida, con su lado si hace falta, y la cuenta hasta que termine. */
   private route(node: AudioNode, last: AudioScheduledSourceNode, pan: number): void {
     const ctx = this.ctx as AudioContext;
     if (pan !== 0 && typeof ctx.createStereoPanner === 'function') {
       const p = ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan));
-      node.connect(p).connect(this.master as GainNode);
+      node.connect(p).connect(this.output());
     } else {
-      node.connect(this.master as GainNode);
+      node.connect(this.output());
     }
     this.voices++;
     last.onended = () => {
@@ -186,6 +281,7 @@ export class Sfx {
 
   /** Cada arma suena distinto; `v` baja el volumen con la distancia y `pan` lo mueve a un lado. */
   shot(weapon = 'pistol', v = 1, pan = 0): void {
+    this.ch = 'weapons';
     switch (weapon) {
       case 'rifle':
         this.tone(760, 0.05, 'square', 0.05 * v, 280, pan);
@@ -215,6 +311,7 @@ export class Sfx {
 
   /** Recargar: cada arma tiene sus propios clics y golpes. */
   reload(weapon: string, v = 1, pan = 0): void {
+    this.ch = 'weapons';
     const click = (delay: number, f = 520, vol = 0.05): void =>
       this.tone(f, 0.025, 'square', vol * v, f * 0.6, pan, delay);
     const thud = (delay: number, vol = 0.07): void =>
@@ -255,11 +352,13 @@ export class Sfx {
 
   /** Terminaste de recargar: un clic corto de confirmacion. */
   reloadDone(): void {
+    this.ch = 'weapons';
     this.tone(880, 0.05, 'square', 0.035, 1200);
   }
 
   /** Cargador vacio y sin balas de repuesto. */
   dry(v = 1, pan = 0): void {
+    this.ch = 'weapons';
     this.tone(320, 0.03, 'square', 0.05 * v, 180, pan);
   }
 
@@ -267,6 +366,7 @@ export class Sfx {
 
   /** Tu disparo le pego a alguien: un "tic" brillante y un golpe seco. */
   hitDealt(kill: boolean): void {
+    this.ch = 'damage';
     this.tone(1500, 0.05, 'square', 0.06, 900);
     this.noise(0.07, 0.09, 1600);
     if (kill) {
@@ -279,6 +379,7 @@ export class Sfx {
 
   /** Te hirieron: golpe grave y un maullido corto de dolor. */
   hurt(): void {
+    this.ch = 'damage';
     this.tone(150, 0.2, 'sawtooth', 0.1, 55);
     this.noise(0.14, 0.08, 800);
     this.tone(760, 0.12, 'triangle', 0.06, 420, 0, 0.02);
@@ -287,18 +388,21 @@ export class Sfx {
 
   /** Alguien cerca recibe dano: se escucha el golpe, mas flojo y de su lado. */
   hitNear(v: number, pan: number): void {
+    this.ch = 'damage';
     this.tone(190, 0.1, 'triangle', 0.07 * v, 100, pan);
     this.noise(0.08, 0.06 * v, 900, pan);
   }
 
   /** Un gato cercano cae. */
   kill(v = 1, pan = 0): void {
+    this.ch = 'damage';
     this.noise(0.24, 0.15 * v, 2400, pan);
     this.tone(320, 0.2, 'square', 0.055 * v, 80, pan);
   }
 
   /** Impacto contra un muro de madera. */
   wallHit(v = 1, pan = 0): void {
+    this.ch = 'damage';
     this.noise(0.07, 0.08 * v, 1400, pan);
     this.tone(210, 0.07, 'square', 0.04 * v, 120, pan);
   }
@@ -307,6 +411,7 @@ export class Sfx {
 
   /** Pisada segun el piso. Al correr suena mas rapida y fuerte; `v` y `pan` ubican a quien camina. */
   step(surface: Surface = 'grass', running = false, v = 1, pan = 0): void {
+    this.ch = 'steps';
     const k = (running ? 1.35 : 1) * v;
     const wobble = rand(0.9, 1.12);
     switch (surface) {
@@ -341,99 +446,118 @@ export class Sfx {
 
   /** Se puso un muro. */
   place(): void {
+    this.ch = 'weapons';
     this.noise(0.08, 0.1, 500);
     this.tone(150, 0.12, 'square', 0.06, 90);
   }
 
   /** Un muro se rompe. */
   wallBreak(v = 1, pan = 0): void {
+    this.ch = 'damage';
     this.noise(0.3, 0.14 * v, 800, pan);
     this.tone(110, 0.2, 'sawtooth', 0.06 * v, 50, pan);
   }
 
   /** Sin aire: el gato resopla. */
   huff(): void {
+    this.ch = 'steps';
     this.noise(0.16, 0.05, 1200);
     this.tone(210, 0.14, 'sine', 0.03, 140);
   }
 
   /** Poca vida: latido. */
   heartbeat(): void {
+    this.ch = 'damage';
     this.tone(70, 0.1, 'sine', 0.12, 50);
     this.tone(60, 0.12, 'sine', 0.09, 45, 0, 0.14);
   }
 
   /** Salto del gato al atravesar una puerta o algo parecido: reservado. */
   drop(): void {
+    this.ch = 'ui';
     this.tone(260, 0.08, 'triangle', 0.06, 160);
   }
 
   /** Clic de interfaz. */
   click(): void {
+    this.ch = 'ui';
     this.tone(520, 0.04, 'square', 0.025, 380);
   }
 
   /** Estallido de un fuego artificial. */
   pop(v = 1): void {
+    this.ch = 'ui';
     this.tone(1300, 0.1, 'triangle', 0.05 * v, 300);
     this.noise(0.25, 0.1 * v, 2600);
   }
 
   boom(v = 1, pan = 0): void {
+    this.ch = 'weapons';
     this.noise(0.5, 0.2 * v, 1300, pan);
     this.tone(95, 0.4, 'sawtooth', 0.1 * v, 35, pan);
     this.tone(55, 0.5, 'sine', 0.1 * v, 30, pan);
   }
 
   chest(): void {
+    this.ch = 'ui';
     [523, 659, 880].forEach((f, i) =>
       this.tone(f, 0.12, 'triangle', 0.07, undefined, 0, i * 0.055),
     );
   }
 
   warn(): void {
+    this.ch = 'ui';
     this.tone(520, 0.22, 'square', 0.06);
     this.tone(390, 0.3, 'square', 0.06, undefined, 0, 0.23);
   }
 
   hit(v = 1): void {
+    this.ch = 'damage';
     this.tone(220, 0.05, 'triangle', 0.06 * v, 140);
   }
 
   pickup(): void {
+    this.ch = 'ui';
     this.tone(660, 0.07, 'sine', 0.08);
     this.tone(990, 0.1, 'sine', 0.08, undefined, 0, 0.06);
   }
 
   use(): void {
+    this.ch = 'ui';
     this.tone(300, 0.25, 'sawtooth', 0.07, 900);
   }
 
   node(): void {
+    this.ch = 'ui';
     [392, 523, 659, 784].forEach((f, i) =>
       this.tone(f, 0.18, 'triangle', 0.09, undefined, 0, i * 0.08),
     );
   }
 
   death(): void {
+    this.ch = 'damage';
     this.tone(260, 0.5, 'sawtooth', 0.1, 40);
     this.noise(0.4, 0.1, 600);
   }
 
   respawn(): void {
+    this.ch = 'ui';
     this.tone(200, 0.3, 'sine', 0.09, 800);
   }
 
   tick(): void {
+    this.ch = 'ui';
     this.tone(740, 0.08, 'square', 0.05);
   }
 
   go(): void {
+    this.ch = 'ui';
     this.tone(1100, 0.25, 'square', 0.06);
   }
 
   /** Cuenta regresiva del inicio: cada segundo suena un poco mas alto. */
   introTick(n: number): void {
+    this.ch = 'ui';
     const f = 330 + (5 - Math.min(5, Math.max(1, n))) * 70;
     this.tone(f, 0.14, 'square', 0.07, f * 0.85);
     this.tone(f / 2, 0.2, 'sine', 0.06, f / 2.4);
@@ -441,6 +565,7 @@ export class Sfx {
 
   /** "A jugar": acorde que sube con un golpe de aire. */
   introGo(): void {
+    this.ch = 'ui';
     [392, 523, 659, 784, 1047].forEach((f, i) =>
       this.tone(f, 0.32, 'triangle', 0.09, undefined, 0, i * 0.045),
     );
@@ -449,12 +574,14 @@ export class Sfx {
   }
 
   win(): void {
+    this.ch = 'ui';
     [523, 659, 784, 1047].forEach((f, i) =>
       this.tone(f, 0.28, 'triangle', 0.1, undefined, 0, i * 0.12),
     );
   }
 
   lose(): void {
+    this.ch = 'ui';
     [392, 330, 262, 196].forEach((f, i) =>
       this.tone(f, 0.3, 'sawtooth', 0.07, undefined, 0, i * 0.16),
     );
@@ -497,7 +624,7 @@ export class Sfx {
     const bus = ctx.createGain();
     bus.gain.setValueAtTime(0, ctx.currentTime);
     bus.gain.linearRampToValueAtTime(1, ctx.currentTime + 2);
-    bus.connect(this.master);
+    bus.connect(this.buses.get('ambient') ?? this.master);
     const buffer = this.brown();
     if (!buffer) return;
     const nodes: AudioScheduledSourceNode[] = [];
@@ -538,6 +665,7 @@ export class Sfx {
       window.setTimeout(
         () => {
           if (stopped) return;
+          this.ch = 'ambient';
           fn();
           later(min, max, fn);
         },
@@ -565,6 +693,7 @@ export class Sfx {
       layer('lowpass', 210, 0.12, 0.04, 0.07);
       layer('bandpass', 700, 0.012, 0.008, 0.17, 0.8);
       clockId = window.setInterval(() => {
+        this.ch = 'ambient';
         clockTick = !clockTick;
         this.tone(clockTick ? 1700 : 1350, 0.02, 'square', 0.018, 900, 0.55);
       }, 1000);

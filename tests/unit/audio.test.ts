@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { G } from '../../src/shared/br/map';
-import { spatial, surfaceFor } from '../../src/client/audio';
+import {
+  CHANNELS,
+  DEFAULT_VOLUMES,
+  gainOf,
+  parseVolumes,
+  spatial,
+  surfaceFor,
+} from '../../src/client/audio';
 
 describe('pisadas segun el piso', () => {
   it('cada terreno suena como lo que es', () => {
@@ -45,5 +52,31 @@ describe('sonido espacial', () => {
     expect(spatial(0, 200).pan).toBe(0);
     expect(spatial(-9999, 0).pan).toBe(-1);
     expect(spatial(9999, 0).pan).toBe(1);
+  });
+});
+
+describe('mezclador de volumen', () => {
+  it('sin nada guardado todo suena al maximo', () => {
+    expect(parseVolumes(null)).toEqual(DEFAULT_VOLUMES);
+    expect(parseVolumes('basura')).toEqual(DEFAULT_VOLUMES);
+    expect(parseVolumes({})).toEqual(DEFAULT_VOLUMES);
+  });
+
+  it('conserva lo valido y limita lo demas entre 0 y 1', () => {
+    const v = parseVolumes({ master: 0.5, ambient: -3, weapons: 9, damage: 'alto', steps: NaN });
+    expect(v.master).toBe(0.5);
+    expect(v.ambient).toBe(0);
+    expect(v.weapons).toBe(1);
+    expect(v.damage).toBe(1);
+    expect(v.steps).toBe(1);
+    expect(v.ui).toBe(1);
+  });
+
+  it('hay un control por familia de sonidos y la curva es creciente', () => {
+    expect(CHANNELS).toEqual(['ambient', 'weapons', 'damage', 'steps', 'ui']);
+    expect(gainOf(0)).toBe(0);
+    expect(gainOf(1)).toBe(1);
+    expect(gainOf(0.5)).toBeLessThan(0.5);
+    expect(gainOf(0.8)).toBeGreaterThan(gainOf(0.4));
   });
 });

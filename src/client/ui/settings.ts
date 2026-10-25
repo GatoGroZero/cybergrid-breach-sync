@@ -1,4 +1,4 @@
-import type { Sfx } from '../audio';
+import { CHANNELS, CHANNEL_LABELS, DEFAULT_VOLUMES, type Channel, type Sfx } from '../audio';
 import {
   ACTIONS,
   ACTION_LABELS,
@@ -53,6 +53,12 @@ export class Settings {
     const sound = $<HTMLInputElement>('sound-toggle');
     sound.checked = !sfx.muted;
     sound.addEventListener('change', () => this.sfx.setMuted(!sound.checked));
+    this.buildVolumes();
+    $('volume-reset').addEventListener('click', () => {
+      for (const key of Object.keys(DEFAULT_VOLUMES) as (Channel | 'master')[])
+        this.sfx.setVolume(key, DEFAULT_VOLUMES[key]);
+      this.syncVolumes();
+    });
     this.syncFireMode();
     for (const btn of document.querySelectorAll<HTMLButtonElement>('#fire-mode button')) {
       btn.addEventListener('click', () => {
@@ -90,6 +96,7 @@ export class Settings {
     this.returnTo = document.activeElement as HTMLElement | null;
     this.root.hidden = false;
     ($('sound-toggle') as HTMLInputElement).checked = !this.sfx.muted;
+    this.syncVolumes();
     this.showTab(tab);
     $('settings-close').focus({ preventScroll: true });
   }
@@ -99,6 +106,45 @@ export class Settings {
     this.root.hidden = true;
     this.returnTo?.focus?.({ preventScroll: true });
     this.onClose();
+  }
+
+  /** Un control deslizante por cada canal del mezclador, con un sonido de muestra al soltarlo. */
+  private buildVolumes(): void {
+    const list = $('volume-list');
+    const rows: [Channel | 'master', string][] = [
+      ['master', 'Volumen general'],
+      ...CHANNELS.map((c): [Channel, string] => [c, CHANNEL_LABELS[c]]),
+    ];
+    for (const [key, label] of rows) {
+      const row = el('label', 'volume');
+      const name = el('span', '', label);
+      const range = el('input');
+      range.type = 'range';
+      range.min = '0';
+      range.max = '100';
+      range.step = '5';
+      range.dataset.channel = key;
+      range.setAttribute('data-testid', `volume-${key}`);
+      range.setAttribute('aria-label', label);
+      const out = el('output', '', '');
+      range.addEventListener('input', () => {
+        this.sfx.setVolume(key, Number(range.value) / 100);
+        out.textContent = `${range.value}%`;
+      });
+      range.addEventListener('change', () => this.sfx.preview(key));
+      row.append(name, range, out);
+      list.append(row);
+    }
+    this.syncVolumes();
+  }
+
+  private syncVolumes(): void {
+    for (const range of document.querySelectorAll<HTMLInputElement>('#volume-list input')) {
+      const key = range.dataset.channel as Channel | 'master';
+      range.value = String(Math.round(this.sfx.volumes[key] * 100));
+      const out = range.parentElement?.querySelector('output');
+      if (out) out.textContent = `${range.value}%`;
+    }
   }
 
   /** Marca el modo de disparo elegido y explica que hace. */
