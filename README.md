@@ -67,17 +67,21 @@ El mapa se genera con una semilla determinista que comparten cliente y servidor 
 
 ### Mediciones reales
 
-Medidas el 24 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) con `scripts/audit-prod.mjs`. La latencia depende de la distancia: Render no tiene región en México y el tráfico pasa por Cloudflare.
+Medidas el 25 de octubre de 2026 desde Jiutepec, Morelos, contra Render (Ohio) con `scripts/auditoria.mjs` (versión 3.1.0). La latencia depende de la distancia: Render no tiene región en México y el tráfico pasa por Cloudflare, así que quien mida desde otro lugar verá números distintos en los puntos que son de red.
 
-| Medición                                                                | Resultado                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------ |
-| Tiempo de proceso de la telemetría en el servidor                       | ~1 ms (consulta SQL ~0.7 ms, con 1 000 partidas) |
-| `ping`/`pong` por WebSocket (40 muestras)                               | mediana entre 96 y 100 ms, mínimo ~85 ms         |
-| `GET /api/test/telemetry` con conexión reutilizada                      | ~92 ms                                           |
-| `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos) | ~180 a 200 ms                                    |
-| FPS del juego (Chromium, monitor de 60 Hz)                              | 60 (el dibujo tarda ~2 ms por cuadro)            |
-| Instantáneas del servidor                                               | 30 por segundo                                   |
-| CPU del servidor por partida de 12 gatos                                | ~0.1 ms por tick (hay 33 ms disponibles)         |
+| Medición                                                                  | Resultado                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------ |
+| Tiempo de proceso de la telemetría en el servidor                         | ~1 ms (consulta SQL ~0.5 ms, con 1 000 partidas) |
+| `ping`/`pong` por WebSocket (60 muestras)                                 | mediana entre 83 y 96 ms, mínimo ~82 ms          |
+| `GET /api/test/telemetry` con conexión reutilizada                        | ~98 ms                                           |
+| `GET /api/test/telemetry` con conexión nueva (DNS, TCP y TLS incluidos)   | ~170 a 180 ms                                    |
+| `POST /api/test/seed` con 100 y con 1 000 partidas (conexión reutilizada) | ~95 y ~117 ms en total                           |
+| FPS del juego (Chromium, escritorio y celular emulado)                    | 60 (el dibujo tarda ~2 ms por cuadro)            |
+| Misma distancia caminada a 60 FPS y con el navegador 4 veces más lento    | razón 0.97 a 1.03 (tiempo delta)                 |
+| Instantáneas del servidor                                                 | 30 por segundo                                   |
+| CPU del servidor por partida de 12 gatos                                  | ~0.1 ms por tick (hay 33 ms disponibles)         |
+
+La auditoría estricta califica los cinco módulos del PDF (red 25, canvas 25, endpoints 20, pruebas 15, despliegue 15) con comprobaciones repetibles: WebSocket real sin sondeo, cliente tramposo que no puede acelerar ni teletransportarse, 60 FPS y tiempo delta, joystick abajo a la izquierda y botón de acción abajo a la derecha en el emulador de celular, teclas que mueven al gato en PC, tiempos de los endpoints, pruebas y CI, certificado y disponibilidad.
 
 ## Cómo se juega
 
