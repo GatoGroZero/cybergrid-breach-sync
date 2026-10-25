@@ -1,6 +1,6 @@
 import { CAT, TICK_DT } from '../../shared/br/constants';
 import { cloneItem, emptyAmmo, emptyInventory, giveItem } from '../../shared/br/inventory';
-import { AMMO_KINDS, rollAmmoCrate, type AmmoKind } from '../../shared/br/items';
+import { AMMO_KINDS, isWeapon, rollAmmoCrate, type AmmoKind } from '../../shared/br/items';
 import {
   KITS,
   HOLD_TO_WIN_S,
@@ -32,9 +32,23 @@ export interface PvpOptions extends GameOptions {
 /** Mas alla de la linea de tiempo de la zona, la ronda se decide por vida restante. */
 const ROUND_CAP_EXTRA_S = 12;
 /** Cuanto cuesta capturar un patio estando solo (segundos) y cuanto ayuda cada companero extra. */
-const CAPTURE_SECONDS = 6;
+const CAPTURE_SECONDS = 4.5;
 /** Curacion por segundo de quien esta dentro de un patio que es de su equipo. */
 const POINT_HEAL = 4;
+/** Territorio: segundos para reaparecer y de proteccion al salir. */
+const RESPAWN_S = 4;
+const SPAWN_PROTECT_S = 1.8;
+/** Territorio: las balas de repuesto nunca bajan de esto (municion infinita). */
+const INFINITE_AMMO = 90;
+/** Territorio: tiempo que toma neutralizar un patio ajeno, mas rapido que tomarlo de cero. */
+const NEUTRALIZE_BOOST = 1.7;
+
+interface RespawnState {
+  /** Momento en que reaparece, o Infinity si no puede hasta que su equipo recupere un patio. */
+  at: number;
+  /** Ya gasto su ultima vida: si cae otra vez sin patios, queda eliminado. */
+  lastLife: boolean;
+}
 
 interface PointState {
   owner: number;
@@ -68,6 +82,8 @@ export class PvpGame extends BRGame {
   private fightTotal = 0;
   private points: PointState[] = [];
   private hold: [number, number] = [0, 0];
+  /** Territorio: quien esta esperando para reaparecer. */
+  private readonly respawn = new Map<number, RespawnState>();
 
   constructor(options: PvpOptions) {
     super({ ...options, introSeconds: 0, graceSeconds: options.graceSeconds ?? 1.2 });
@@ -243,6 +259,8 @@ export class PvpGame extends BRGame {
         );
     }
     this.kits.clear();
+    this.respawn.clear();
+    for (const cat of this.cats) cat.protectUntil = 0;
     this.hold = [0, 0];
     this.initPoints();
     this.roundWinner = null;
@@ -257,12 +275,16 @@ export class PvpGame extends BRGame {
     if (this.phase !== 'fight') return;
     this.fightTotal += dt;
     this.updatePoints(dt);
+    if (this.points.length > 0) {
+      this.processRespawns();
+      this.refillAmmo();
+    }
   }
 
   protected override checkEnd(): void {
     if (this.phase !== 'fight') return;
-    const a0 = this.teamAlive(0);
-    const a1 = this.teamAlive(1);
+    const a0 = this.teamAlive(0) + this.teamWaiting(0);
+    const a1 = this.teamAlive(1) + this.teamWaiting(1);
     // Si todas las personas se fueron, no tiene caso seguir
     const humans = this.cats.filter((c) => !c.bot);
     if (humans.length > 0 && humans.every((c) => !c.connected)) return this.finishMatch(null);
@@ -362,6 +384,7 @@ export class PvpGame extends BRGame {
 
   private updatePoints(dt: number): void {
     const defs = this.map.points ?? [];
+    const ownedBefore: [number, number] = [this.ownedBy(0).length, this.ownedBy(1).length];
     for (let i = 0; i < defs.length; i++) {
       const def = defs[i] as NonNullable<typeof this.map.points>[number];
       const st = this.points[i] as PointState;
@@ -379,15 +402,21 @@ export class PvpGame extends BRGame {
       if (n0 > 0 && n1 > 0) continue; // disputado: nadie avanza
       const team = n0 > 0 ? 0 : n1 > 0 ? 1 : -1;
       if (team < 0) {
-        // sin nadie, la captura a medias se va deshaciendo
+        // sin nadie, la captura a medias se va deshaciendo y el patio que era de alguien se recompone
         if (st.owner < 0 && st.prog > 0) st.prog = Math.max(0, st.prog - 10 * dt);
+        else if (st.owner >= 0 && st.prog < 100) st.prog = Math.min(100, st.prog + 22 * dt);
         continue;
       }
-      if (st.owner === team) continue;
+      if (st.owner === team) {
+        // el dueno que vuelve recompone lo que le habian bajado
+        if (st.prog < 100) st.prog = Math.min(100, st.prog + 40 * dt);
+        continue;
+      }
       const crowd = Math.min(3, team === 0 ? n0 : n1);
       const rate = (100 / CAPTURE_SECONDS) * (1 + 0.45 * (crowd - 1));
       if (st.capTeam !== team) {
-        st.prog = Math.max(0, st.prog - rate * dt);
+        const boost = st.owner >= 0 && st.owner !== team ? NEUTRALIZE_BOOST : 1;
+        st.prog = Math.max(0, st.prog - rate * boost * dt);
         if (st.prog <= 0) {
           st.capTeam = team;
           if (st.owner >= 0 && st.owner !== team) st.owner = -1;
@@ -403,6 +432,8 @@ export class PvpGame extends BRGame {
         }
       }
     }
+    for (const t of [0, 1] as const)
+      if (ownedBefore[t] === 0 && this.ownedBy(t).length > 0) this.teamGainedPoint(t);
     // dominio: todos los patios de un mismo equipo
     if (defs.length > 0) {
       const owner = this.points[0]?.owner ?? -1;
@@ -411,6 +442,134 @@ export class PvpGame extends BRGame {
         all && owner === 0 ? this.hold[0] + dt : 0,
         all && owner === 1 ? this.hold[1] + dt : 0,
       ];
+    }
+  }
+
+  // ---------------------------------------------------------------- reaparecer (territorio)
+
+  /** Gatos de un equipo que esperan reaparecer (los eliminados del todo no cuentan). */
+  private teamWaiting(team: number): number {
+    if (this.points.length === 0) return 0;
+    return this.cats.filter(
+      (c) => !c.alive && c.team === team && (this.respawn.get(c.id)?.at ?? Infinity) !== Infinity,
+    ).length;
+  }
+
+  /** Indices de los patios que son de un equipo. */
+  private ownedBy(team: number): number[] {
+    const out: number[] = [];
+    this.points.forEach((p, i) => {
+      if (p.owner === team) out.push(i);
+    });
+    return out;
+  }
+
+  /** El patio mas seguro de un equipo (el mas lejos de los enemigos vivos), o -1 si no tiene. */
+  private spawnPoint(team: number): number {
+    const owned = this.ownedBy(team);
+    if (owned.length === 0) return -1;
+    const defs = this.map.points ?? [];
+    const enemies = this.cats.filter((c) => c.alive && c.team !== team);
+    let best = owned[0] as number;
+    let bestD = -1;
+    for (const i of owned) {
+      const d = defs[i] as NonNullable<typeof defs>[number];
+      const nearest = enemies.reduce((m, e) => Math.min(m, Math.hypot(e.x - d.x, e.y - d.y)), 1e9);
+      if (nearest > bestD) {
+        bestD = nearest;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  protected override killCat(target: Cat, killer: Cat | null): void {
+    super.killCat(target, killer);
+    if (this.points.length === 0 || this.phase !== 'fight') return;
+    const st = this.respawn.get(target.id) ?? { at: 0, lastLife: false };
+    if (this.ownedBy(target.team).length > 0) {
+      st.at = this.time + RESPAWN_S;
+    } else if (!st.lastLife) {
+      // sin patios: una ultima vida desde la base
+      st.at = this.time + RESPAWN_S;
+    } else {
+      // sin patios y sin vidas: espera a que alguien de su equipo recupere un patio
+      st.at = Infinity;
+    }
+    this.respawn.set(target.id, st);
+  }
+
+  private processRespawns(): void {
+    for (const cat of this.cats) {
+      if (cat.alive) continue;
+      const st = this.respawn.get(cat.id);
+      if (st && st.at <= this.time) this.respawnCat(cat, st);
+    }
+  }
+
+  private respawnCat(cat: Cat, st: RespawnState): void {
+    const spot = this.spawnPoint(cat.team);
+    const defs = this.map.points ?? [];
+    let x: number;
+    let y: number;
+    if (spot >= 0) {
+      const d = defs[spot] as NonNullable<typeof defs>[number];
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(0.15, 0.6) * d.r;
+      x = d.x + Math.cos(a) * r;
+      y = d.y + Math.sin(a) * r * 0.8;
+      st.lastLife = false;
+    } else {
+      x = cat.spawn.x + this.rng.range(-14, 14);
+      y = cat.spawn.y + this.rng.range(-14, 14);
+      st.lastLife = true;
+    }
+    st.at = 0;
+    cat.x = x;
+    cat.y = y;
+    cat.alive = true;
+    cat.hp = CAT.maxHp;
+    cat.shield = CAT.startShield;
+    cat.stamina = fullStamina();
+    cat.running = false;
+    cat.heal = null;
+    cat.reload = null;
+    cat.cooldownUntil = 0;
+    cat.prevFire = false;
+    cat.queue.length = 0;
+    cat.killerId = null;
+    cat.spectate = null;
+    cat.zoneAcc = 0;
+    cat.waterAcc = 0;
+    cat.protectUntil = this.time + SPAWN_PROTECT_S;
+    const kit = this.kits.get(cat.id) ?? this.lastKit.get(cat.id);
+    if (kit) this.equip(cat, kit);
+    this.emit({ e: 'revive', x: Math.round(x), y: Math.round(y), id: cat.id });
+  }
+
+  /** Cuando un equipo recupera un patio, sus eliminados pueden volver a salir. */
+  private teamGainedPoint(team: number): void {
+    for (const cat of this.cats) {
+      if (cat.team !== team) continue;
+      const st = this.respawn.get(cat.id);
+      if (!st) continue;
+      st.lastLife = false;
+      if (!cat.alive && st.at === Infinity) st.at = this.time + RESPAWN_S;
+    }
+  }
+
+  /** Municion infinita: las balas de repuesto de cada arma que lleva nunca se acaban. */
+  private refillAmmo(): void {
+    for (const cat of this.cats) {
+      if (!cat.alive) continue;
+      for (const it of cat.inv) {
+        if (!it || !isWeapon(it.kind)) continue;
+        const kind = `ammo_${it.kind}` as AmmoKind;
+        if (cat.ammo[kind] < INFINITE_AMMO) {
+          cat.ammo[kind] = INFINITE_AMMO;
+          cat.invDirty = true;
+        }
+      }
     }
   }
 
@@ -446,6 +605,10 @@ export class PvpGame extends BRGame {
     this.time = Math.max(this.time, this.graceS + 0.1);
     for (const c of this.cats) {
       if (c.alive && c.team !== team) this.damageCat(c, 99999, null);
+    }
+    // sin vidas ni patios para volver: la ronda se decide ya
+    for (const c of this.cats) {
+      if (c.team !== team) this.respawn.set(c.id, { at: Infinity, lastLife: true });
     }
   }
 
@@ -485,11 +648,13 @@ export class PvpGame extends BRGame {
       roundWinner: this.roundWinner,
     };
     if (this.points.length > 0) {
-      pvp.points = this.points.map((p) => [
-        p.owner,
-        p.owner >= 0 ? 100 : Math.round(p.prog),
-        p.capTeam,
-      ]);
+      pvp.points = this.points.map((p) => [p.owner, Math.round(p.prog), p.capTeam]);
+      const wait = this.respawn.get(cat.id);
+      if (!cat.alive && wait) {
+        pvp.respawn = wait.at === Infinity ? -1 : Math.max(0, Math.ceil(wait.at - this.time));
+      }
+      pvp.lastLife = wait?.lastLife ?? false;
+      pvp.spawnAt = this.spawnPoint(cat.team);
       pvp.hold = [Math.round(this.hold[0]), Math.round(this.hold[1])];
     }
     snap.pvp = pvp;

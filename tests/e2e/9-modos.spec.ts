@@ -228,4 +228,73 @@ test.describe('Flujo 12: modos de juego y pelea en el techo', () => {
     await expect(page.getByTestId('results')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('#results-title')).toHaveText('¡VICTORIA DEL EQUIPO!');
   });
+
+  test('territorio: la bandera sube al capturar y quien cae reaparece en el patio que tomó su equipo', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_resp'), true);
+    await page.locator('[data-mode=territorio]').click();
+    await page.getByTestId('room-teamsize').selectOption('1');
+    await page.getByTestId('room-map').selectOption('calle');
+    await page.getByTestId('btn-solo').click();
+    await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'pick', null, {
+      timeout: 15_000,
+    });
+    await page.keyboard.press('Digit1');
+    await page.waitForFunction(() => window.__cybergrid?.pvpPhase === 'fight', null, {
+      timeout: 20_000,
+    });
+    type G = {
+      __game: {
+        alive: boolean;
+        x: number;
+        y: number;
+        map: { points: { x: number; y: number; r: number }[] };
+        pvp: { points: number[][]; respawn?: number; lastLife?: boolean };
+      };
+      __net: { socket: { emit: (e: string, p?: unknown) => void } };
+    };
+    // al entrar al patio la captura se ve avanzar de inmediato
+    await page.evaluate(() => {
+      const w = window as unknown as G;
+      const p = w.__game.map.points[0]!;
+      w.__net.socket.emit('dev:tp', { x: p.x, y: p.y });
+    });
+    await page.waitForFunction(
+      () => {
+        const pt = (window as unknown as G).__game.pvp.points[0]!;
+        return pt[1]! > 15 && pt[0] === -1;
+      },
+      null,
+      { timeout: 4000 },
+    );
+    await page.waitForFunction(
+      () => (window as unknown as G).__game.pvp.points[0]![0] === 0,
+      null,
+      { timeout: 10_000 },
+    );
+    // al caer, la cuenta y el lugar donde sale
+    await page.evaluate(() => (window as unknown as G).__net.socket.emit('dev:die'));
+    await page.waitForFunction(() => !(window as unknown as G).__game.alive, null, {
+      timeout: 5000,
+    });
+    await page.waitForFunction(
+      () => {
+        const r = (window as unknown as G).__game.pvp.respawn;
+        return r !== undefined && r > 0 && r <= 4;
+      },
+      null,
+      { timeout: 5000 },
+    );
+    await page.waitForFunction(() => (window as unknown as G).__game.alive, null, {
+      timeout: 9000,
+    });
+    const near = await page.evaluate(() => {
+      const g = (window as unknown as G).__game;
+      const p = g.map.points[0]!;
+      return Math.hypot(g.x - p.x, g.y - p.y) <= p.r + 6;
+    });
+    expect(near).toBe(true);
+  });
 });

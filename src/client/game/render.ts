@@ -1103,13 +1103,17 @@ export class BRRenderer {
       const cy = Math.round(p.y - camY);
       if (cx < -p.r - 8 || cx > this.viewW + p.r + 8 || cy < -p.r - 8 || cy > this.viewH + p.r + 8)
         return;
-      const base = owner >= 0 ? (TEAM_COLORS[owner as 0 | 1] as string) : '#e8ecf4';
+      const ownerCol = owner >= 0 ? (TEAM_COLORS[owner as 0 | 1] as string) : '#e8ecf4';
       const capCol = cap >= 0 ? (TEAM_COLORS[cap as 0 | 1] as string) : '#e8ecf4';
+      // quien lo esta tomando ahora y cuanto lleva: si es de alguien, esa bandera baja primero
+      const neutralizing = owner >= 0 && prog < 100;
+      const taking = owner < 0 && prog > 0;
+      const live = neutralizing ? ownerCol : taking ? capCol : ownerCol;
       const rx = p.r;
       const ry = Math.round(p.r * 0.78);
-      // relleno en tablero de ajedrez, tenue
-      b.globalAlpha = owner >= 0 ? 0.2 : 0.1;
-      b.fillStyle = base;
+      // relleno en tablero de ajedrez, tenue (mas vivo mientras se disputa)
+      b.globalAlpha = (owner >= 0 ? 0.2 : 0.1) + (neutralizing || taking ? 0.1 : 0);
+      b.fillStyle = neutralizing || taking ? live : ownerCol;
       for (let y = -ry; y <= ry; y++) {
         for (let x = -rx; x <= rx; x++) {
           if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
@@ -1118,31 +1122,47 @@ export class BRRenderer {
         }
       }
       b.globalAlpha = 1;
-      // anillo de rayas que gira despacio
-      const steps = Math.max(40, Math.round(rx * 5));
+      // anillo de rayas que gira; el avance de la captura lo va llenando (o vaciando) con su color
+      const steps = Math.max(48, Math.round(rx * 5));
       const spin = Math.floor(now / 140);
+      const shown = neutralizing || taking ? prog / 100 : 0;
       for (let k = 0; k < steps; k++) {
-        const a = (k / steps) * Math.PI * 2;
+        const a = (k / steps) * Math.PI * 2 - Math.PI / 2;
         const x = Math.round(cx + Math.cos(a) * rx);
         const y = Math.round(cy + Math.sin(a) * ry);
-        const filled = prog > 0 && owner < 0 && k / steps <= prog / 100;
+        const filled = (neutralizing || taking) && k / steps <= shown;
         if (!filled && ((k + spin) & 3) > 1) continue;
-        b.fillStyle = filled ? capCol : base;
+        b.fillStyle = filled ? live : ownerCol;
         b.fillRect(x, y, filled ? 2 : 1, filled ? 2 : 1);
       }
-      // bandera en el centro
+      // bandera: sube y baja por el asta segun el avance (de este color mientras se la quitan)
+      const pole = 22;
+      const level = owner >= 0 ? prog / 100 : taking ? prog / 100 : 0.12;
+      const flagY = cy - 4 - Math.round(level * (pole - 8));
       const sway = Math.round(Math.sin(now / 260 + i) * 1);
       b.fillStyle = '#2a2d38';
-      b.fillRect(cx, cy - 16, 2, 16);
-      b.fillStyle = owner >= 0 ? base : '#c4cad8';
-      b.fillRect(cx + 2, cy - 16, 9 + sway, 6);
+      b.fillRect(cx, cy - pole - 2, 2, pole + 2);
+      b.fillStyle = '#566c86';
+      b.fillRect(cx - 3, cy - 1, 8, 3);
+      b.fillStyle = owner >= 0 || taking ? live : '#c4cad8';
+      b.fillRect(cx + 2, flagY, 10 + sway, 7);
       b.fillStyle = 'rgba(255,255,255,0.35)';
-      b.fillRect(cx + 2, cy - 16, 9 + sway, 1);
+      b.fillRect(cx + 2, flagY, 10 + sway, 1);
+      b.fillStyle = 'rgba(0,0,0,0.25)';
+      b.fillRect(cx + 2, flagY + 6, 10 + sway, 1);
+      // barra de avance sobre el patio mientras se disputa
+      if (neutralizing || taking) {
+        const bw = 30;
+        b.fillStyle = 'rgba(26,28,44,0.85)';
+        b.fillRect(cx - bw / 2 - 1, cy - pole - 12, bw + 2, 5);
+        b.fillStyle = live;
+        b.fillRect(cx - bw / 2, cy - pole - 11, Math.round((bw * prog) / 100), 3);
+      }
       this.labels.push({
         x: p.x,
-        y: p.y - 24,
+        y: p.y - 30,
         text: letters[i] ?? '',
-        color: owner >= 0 ? base : C.white,
+        color: owner >= 0 ? ownerCol : C.white,
         kind: 'name',
       });
     });

@@ -902,7 +902,9 @@ function updateHud(g: ClientBR, n: Net): void {
   $('hud-rtt').dataset.q =
     !n.connected || n.rttMedian >= 160 ? 'bad' : n.rttMedian >= 100 ? 'warn' : 'ok';
   // por equipos nadie "queda en un puesto": el eliminado mira a su equipo mientras dura la ronda
-  if (g.pvp) specBar.hidden = g.alive || g.pvp.phase !== 'fight' || g.result !== null;
+  if (g.pvp)
+    specBar.hidden =
+      g.alive || g.pvp.phase !== 'fight' || g.result !== null || g.pvp.points !== undefined;
   if (!specBar.hidden) {
     const spec = g.latest?.spectating;
     $('spec-name').textContent =

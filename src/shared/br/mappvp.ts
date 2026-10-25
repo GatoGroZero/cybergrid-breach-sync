@@ -320,6 +320,27 @@ function freeSpot(
   return null;
 }
 
+/** Donde queda el patio del oeste: a 14 casillas del centro, para que la zona nunca lo deje fuera. */
+const PLAZA_X = 34;
+/** Radio de captura de un patio (grande, para poder pelear dentro). */
+const POINT_R = 62;
+
+/** Bancas, macetas y farolas en anillo alrededor de un patio, con huecos para entrar. */
+function ringCover(b: Builder, cx: number, cy: number, radius: number): void {
+  for (let k = 0; k < 14; k++) {
+    if (k % 5 === 2) continue; // huecos por donde entra la gente
+    const a = (k / 14) * Math.PI * 2 + 0.25;
+    const px = Math.round(cx + Math.cos(a) * radius);
+    const py = Math.round(cy + Math.sin(a) * radius * 0.85);
+    const kind: PropKind = k % 3 === 0 ? 'bench' : k % 3 === 1 ? 'planter' : 'lamp';
+    const pw = kind === 'bench' ? 2 : 1;
+    let ok = true;
+    for (let xx = px; xx < px + pw && ok; xx++)
+      ok = inBounds(b.m, xx, py) && b.m.solid[b.at(xx, py)] === 0;
+    if (ok) b.addProp(kind, px, py, pw, 1, kind === 'bench' ? 'base' : 'all');
+  }
+}
+
 /** Calles con asfalto, aceras, pasos de cebra y un cruce al centro, mas casas a los lados. */
 export function buildCalle(rng: Rng, seed: number): BRMap {
   const b = new Builder(rng, 'calle', seed, 96, 60);
@@ -356,10 +377,23 @@ export function buildCalle(rng: Rng, seed: number): BRMap {
     b.setGround(half - 5, y, G.ACERA);
   }
   // pasos de cebra a cada lado del cruce
-  for (const x0 of [half - 12, half - 20]) {
+  for (const x0 of [half - 10, 29]) {
     for (let x = x0; x < x0 + 2; x++) {
       for (let y = mid - 5; y <= mid + 4; y++) b.setGround(x, y, G.CEBRA);
     }
+  }
+  // calle transversal del cruce oeste: los patios quedan en cruces, no en la nada
+  for (let x = PLAZA_X - 2; x < PLAZA_X + 2; x++) {
+    for (let y = 2; y < h - 2; y++) {
+      if (y >= mid - 8 && y <= mid + 7) continue;
+      b.setGround(x, y, G.ASFALTO);
+    }
+    for (let y = mid - 8; y <= mid + 7; y++) b.setGround(x, y, G.ASFALTO);
+  }
+  for (let y = 2; y < h - 2; y++) {
+    if (y >= mid - 8 && y <= mid + 7) continue;
+    for (const x of [PLAZA_X - 5, PLAZA_X - 4, PLAZA_X - 3, PLAZA_X + 2, PLAZA_X + 3, PLAZA_X + 4])
+      b.setGround(x, y, G.ACERA);
   }
   // desgaste del asfalto
   for (let y = mid - 5; y <= mid + 4; y++)
@@ -372,22 +406,22 @@ export function buildCalle(rng: Rng, seed: number): BRMap {
           b.setGround(x, y, G.ADOQUIN);
   };
   plaza(half - 1, mid, 5);
-  plaza(26, mid, 4);
+  plaza(PLAZA_X, mid, 6);
   b.fillGround(3, mid - 10, 10, 21, G.ADOQUIN);
   b.reserve(2, mid - 11, 12, 23);
   b.reserve(half - 8, mid - 10, 9, 21);
-  b.reserve(26 - 5, mid - 5, 11, 11);
+  b.reserve(PLAZA_X - 4, mid - 4, 9, 9);
   const spawnX = 6;
   placeSquadSpawns(b, spawnX);
   b.m.points = [
-    { x: 26 * TILE + TILE / 2, y: mid * TILE, r: 44, name: 'Plaza oeste' },
-    { x: half * TILE, y: mid * TILE, r: 48, name: 'El cruce' },
+    { x: PLAZA_X * TILE, y: mid * TILE, r: POINT_R, name: 'Plaza oeste' },
+    { x: half * TILE, y: mid * TILE, r: POINT_R + 4, name: 'El cruce' },
   ];
 
-  // manzanas con casas al norte y al sur de la avenida
+  // manzanas con casas al norte y al sur de la avenida, entre la base y cada cruce
   const slots: { x0: number; x1: number }[] = [
-    { x0: 15, x1: 25 },
-    { x0: 27, x1: 37 },
+    { x0: 14, x1: 25 },
+    { x0: 37, x1: 42 },
   ];
   for (const north of [true, false]) {
     for (const [i, slot] of slots.entries()) {
@@ -437,7 +471,7 @@ export function buildCalle(rng: Rng, seed: number): BRMap {
   for (let i = 0; i < 160 && cars < 10; i++) {
     const x = rng.int(15, half - 14);
     const y = rng.pick(lanes);
-    if (x >= 20 && x <= 31) continue; // el paso de cebra y la plaza quedan abiertos
+    if (x >= 27 && x <= 42) continue; // los pasos de cebra y las plazas quedan abiertos
     if (place('car', 2, 1, x, y, 'all')) cars++;
   }
   let bins = 0;
@@ -449,7 +483,7 @@ export function buildCalle(rng: Rng, seed: number): BRMap {
   let fences = 0;
   for (let i = 0; i < 120 && fences < 4; i++) {
     const x = rng.int(15, half - 14);
-    if (x >= 20 && x <= 31) continue;
+    if (x >= 27 && x <= 42) continue;
     const y = rng.pick([mid - 5, mid + 4, mid - 2, mid + 1]);
     const len = rng.int(2, 3);
     let ok = true;
@@ -460,7 +494,10 @@ export function buildCalle(rng: Rng, seed: number): BRMap {
     const spot = freeSpot(b, rng, 14, half - 9, mid - 8, mid + 7);
     if (spot) place('bench', 2, 1, spot.x, spot.y, 'base');
   }
-  place('busstop', 3, 1, rng.int(32, 38), mid - 7, 'base');
+  place('busstop', 3, 1, rng.int(38, 40), mid - 7, 'base');
+  // cada plaza tiene su propia cobertura alrededor: bancas, macetas y farolas con huecos para pasar
+  ringCover(b, PLAZA_X, mid, 6);
+  ringCover(b, half - 2, mid, 7);
   for (let i = 0; i < 10; i++) {
     const spot = freeSpot(b, rng, 14, half - 8, mid - 8, mid + 7);
     if (spot) place('planter', 1, 1, spot.x, spot.y, 'all');
@@ -531,11 +568,19 @@ export function buildPatios(rng: Rng, seed: number): BRMap {
   b.reserve(2, mid - 11, 11, 23);
   placeSquadSpawns(b, 6);
   b.m.points = [
-    { x: 22 * TILE, y: mid * TILE, r: 44, name: 'Patio oeste' },
-    { x: half * TILE, y: mid * TILE, r: 48, name: 'Patio central' },
+    { x: PLAZA_X * TILE, y: mid * TILE, r: POINT_R, name: 'Patio oeste' },
+    { x: half * TILE, y: mid * TILE, r: POINT_R + 4, name: 'Patio central' },
   ];
-  b.reserve(22 - 4, mid - 6, 9, 11);
+  // cada patio es un empedrado en el cruce del callejon, con su propia cobertura alrededor
+  for (const cx of [PLAZA_X, half - 1]) {
+    for (let y = mid - 5; y <= mid + 5; y++)
+      for (let x = cx - 5; x <= cx + 5; x++)
+        if ((x - cx) ** 2 + (y - mid) ** 2 <= 26 && x < half + 1) b.setGround(x, y, G.ADOQUIN);
+  }
+  b.reserve(PLAZA_X - 4, mid - 4, 9, 9);
   b.reserve(half - 6, mid - 7, 8, 13);
+  ringCover(b, PLAZA_X, mid, 6);
+  ringCover(b, half - 2, mid, 7);
 
   const place = (
     kind: PropKind,

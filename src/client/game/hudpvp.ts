@@ -83,6 +83,13 @@ function drawDominion(f: HudFrame, y: number): void {
     ctx.globalAlpha = owner >= 0 ? 0.85 : 0.35;
     ctx.fillRect(x + 2, y + 2, size - 4, size - 4);
     ctx.globalAlpha = 1;
+    if (owner >= 0 && prog < 100) {
+      // alguien se lo esta quitando: el color del dueno se va vaciando desde arriba
+      ctx.fillStyle = cap >= 0 && cap !== owner ? (TEAM_COLORS[cap as 0 | 1] as string) : '#566c86';
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x + 2, y + 2, size - 4, Math.round(((size - 4) * (100 - prog)) / 100));
+      ctx.globalAlpha = 1;
+    }
     if (owner < 0 && prog > 0) {
       // avance de la captura: sube desde abajo con el color de quien captura
       ctx.fillStyle = cap >= 0 ? (TEAM_COLORS[cap as 0 | 1] as string) : C.white;
@@ -416,9 +423,64 @@ function drawBetween(f: HudFrame): void {
 }
 
 /** Todo lo de las rondas: marcador, eleccion de kit, cuenta y pausas. */
+/** Territorio: cuenta para reaparecer, o aviso de que te toca esperar un patio, y la ultima vida. */
+function drawRespawn(f: HudFrame): void {
+  const { ctx, g, w, h, now } = f;
+  const pvp = g.pvp;
+  if (!pvp || pvp.points === undefined || pvp.phase !== 'fight') return;
+  const small = g.input.mode === 'touch' || h < 520;
+  const size = Math.round(clamp(w * 0.022, small ? 11 : 13, 20));
+  if (!g.alive && pvp.respawn !== undefined) {
+    ctx.fillStyle = 'rgba(10,12,24,0.35)';
+    ctx.fillRect(0, h * 0.62, w, h * 0.2);
+    const y = Math.round(h * 0.68);
+    if (pvp.respawn < 0) {
+      text(ctx, 'ELIMINADO', w / 2, y, size, C.red, 'center', PIX);
+      text(
+        ctx,
+        'Vuelves cuando tu equipo recupere un patio',
+        w / 2,
+        y + size * 2,
+        small ? 17 : 21,
+        C.white,
+        'center',
+        VT,
+      );
+    } else {
+      text(
+        ctx,
+        `REAPARECES EN ${Math.max(1, pvp.respawn)}`,
+        w / 2,
+        y,
+        size,
+        C.yellow,
+        'center',
+        PIX,
+      );
+      const where =
+        pvp.spawnAt !== undefined && pvp.spawnAt >= 0
+          ? `en ${g.map.points?.[pvp.spawnAt]?.name ?? 'un patio'}`
+          : 'en tu base, con tu última vida';
+      text(ctx, where, w / 2, y + size * 2, small ? 17 : 21, C.lgray, 'center', VT);
+    }
+  }
+  if (pvp.lastLife && Math.floor(now / 450) % 2 === 0)
+    text(
+      ctx,
+      'ÚLTIMA VIDA: recupera un patio',
+      w / 2,
+      Math.round(h * 0.145),
+      small ? 16 : 20,
+      C.red,
+      'center',
+      VT,
+    );
+}
+
 export function drawPvpHud(f: HudFrame, assets: Assets, scoreTop: number): void {
   if (!f.g.pvp) return;
   drawScoreboard(f, scoreTop);
+  drawRespawn(f);
   drawReady(f);
   drawBetween(f);
   drawPick(f, assets);

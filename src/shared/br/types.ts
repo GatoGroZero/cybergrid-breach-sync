@@ -120,6 +120,14 @@ export interface PvpState {
   points?: [number, number, number][];
   /** Territorio: segundos seguidos que cada equipo lleva dominando todos los patios. */
   hold?: [number, number];
+  /**
+   * Territorio: si estas eliminado, cuanto falta para reaparecer (en segundos), 0 si ya vas a
+   * salir, o -1 si no hay forma hasta que tu equipo recupere un patio.
+   */
+  respawn?: number;
+  /** Territorio: reapareces donde (indice del patio, o -1 en la base) y si es tu ultima vida. */
+  spawnAt?: number;
+  lastLife?: boolean;
 }
 
 /** Estado de la aventura para quien recibe la instantanea. */
