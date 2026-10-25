@@ -18,6 +18,9 @@ export function uniqueName(prefix: string): string {
 
 /** El acceso con usuario y contraseña vive en un desplegable: se abre si no lo está. */
 export async function openPasswordForm(page: Page): Promise<void> {
+  // Se espera a que la pantalla de acceso termine de armarse (al armarse deja el desplegable
+  // cerrado); si no, se podria abrir antes y que se cierre despues.
+  await expect(page.getByTestId('btn-guest')).toBeVisible();
   const box = page.getByTestId('auth-legacy');
   if (!(await box.evaluate((el) => (el as HTMLDetailsElement).open)))
     await box.locator('summary').click();
@@ -40,6 +43,8 @@ export async function startSoloGame(page: Page): Promise<void> {
   await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('hud-coords')).toHaveAttribute('data-x', /^\d+$/);
   await page.waitForFunction(() => (window.__cybergrid?.snapshots ?? 0) > 5);
+  // La partida empieza con una cuenta regresiva donde todos estan quietos: se espera a que acabe.
+  await page.waitForFunction(() => window.__cybergrid?.intro === 0, null, { timeout: 20_000 });
 }
 
 export async function coords(page: Page): Promise<{ x: number; y: number }> {
@@ -186,6 +191,7 @@ declare global {
       hp: number;
       alive: boolean;
       players: number;
+      intro: number;
       drawMs: number;
     };
   }

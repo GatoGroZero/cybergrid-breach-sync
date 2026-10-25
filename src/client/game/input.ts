@@ -20,6 +20,7 @@ export const ACTIONS = [
   'run',
   'mute',
   'emote',
+  'reload',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -40,6 +41,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   run: 'Correr (mantener)',
   mute: 'Silenciar',
   emote: 'Abrir los emotes',
+  reload: 'Recargar el arma',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -59,6 +61,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   run: 'ShiftLeft',
   mute: 'KeyN',
   emote: 'KeyT',
+  reload: 'KeyR',
 };
 
 /** Las flechas siempre mueven al gato, ademas de las teclas que cada jugador elija. */
@@ -127,6 +130,7 @@ export const TOUCH_IDS = [
   'menu',
   'map',
   'emote',
+  'reload',
 ] as const;
 export type TouchId = (typeof TOUCH_IDS)[number];
 
@@ -148,6 +152,7 @@ export const TOUCH_LABELS: Record<TouchId, string> = {
   menu: 'Menú',
   map: 'Mapa',
   emote: 'Emotes',
+  reload: 'Recargar',
 };
 
 export const DEFAULT_TOUCH: TouchLayout = {
@@ -159,6 +164,7 @@ export const DEFAULT_TOUCH: TouchLayout = {
   menu: { x: 0.04, y: 0.1, s: 0.9 },
   map: { x: 0.955, y: 0.3, s: 0.9 },
   emote: { x: 0.04, y: 0.5, s: 0.85 },
+  reload: { x: 0.74, y: 0.62, s: 0.8 },
 };
 
 export function loadTouchLayout(): TouchLayout {
@@ -190,6 +196,24 @@ export function loadTouchLayout(): TouchLayout {
 export function saveTouchLayout(layout: TouchLayout): void {
   try {
     window.localStorage.setItem('cg_touch', JSON.stringify(layout));
+  } catch {
+    // sin almacenamiento
+  }
+}
+
+export type FireMode = 'aim' | 'target';
+
+export function loadFireMode(): FireMode {
+  try {
+    return window.localStorage.getItem('cg_fire_mode') === 'target' ? 'target' : 'aim';
+  } catch {
+    return 'aim';
+  }
+}
+
+export function saveFireMode(mode: FireMode): void {
+  try {
+    window.localStorage.setItem('cg_fire_mode', mode);
   } catch {
     // sin almacenamiento
   }
@@ -234,6 +258,7 @@ export function touchCircles(
     menu: c('menu', 20),
     map: c('map', 20),
     emote: c('emote', 24),
+    reload: c('reload', 24),
     slots,
   };
 }
@@ -273,6 +298,8 @@ export interface InputCallbacks {
   onMenu: () => void;
   onSelect: (slot: number) => void;
   onMute: () => void;
+  /** Recargar el arma en mano. */
+  onReload: () => void;
   /** Mando el emote `kind` (0 a 4). */
   onEmote: (kind: number) => void;
   onFirstGesture: () => void;
@@ -294,6 +321,13 @@ export class InputController {
   playerScreen = { x: 480, y: 270 };
   /** Rectangulos de la barra de objetos en pantalla (modo PC), puestos por el renderizador. */
   hotbarRects: { x: number; y: number; w: number; h: number }[] = [];
+  /**
+   * Como dispara el joystick de la mira en el movil: `aim` dispara mientras se ve la linea y
+   * `target` solo cuando la linea toca a un gato o a un muro colocado.
+   */
+  fireMode: FireMode = loadFireMode();
+  /** La mira (movil) esta tocando un objetivo en este momento: se usa para dibujar la guia. */
+  aimLocked = false;
   /** La barra de emotes esta abierta; el renderizador pone aqui sus botones mientras lo este. */
   emoteOpen = false;
   emoteRects: { x: number; y: number; w: number; h: number }[] = [];
@@ -393,6 +427,7 @@ export class InputController {
       else if (action === 'bag') this.cb.onBag();
       else if (action === 'map') this.cb.onMap();
       else if (action === 'mute') this.cb.onMute();
+      else if (action === 'reload') this.cb.onReload();
       else if (action.startsWith('slot')) this.cb.onSelect(Number(action.slice(4)) - 1);
       else if (action === 'fireKey') this.clickLatch = true;
     }
@@ -475,6 +510,7 @@ export class InputController {
     if (tap('menu', this.cb.onMenu)) return;
     if (tap('map', this.cb.onMap)) return;
     if (tap('emote', () => (this.emoteOpen = true))) return;
+    if (tap('reload', this.cb.onReload)) return;
     if (inside(circles.aim, x, y, 1.6) || (x > w * 0.6 && y > h * 0.3 && y < h * 0.97)) {
       this.pointers.set(id, { id: 'aim', startX: circles.aim.x, startY: circles.aim.y });
       this.pressed.add('aim');
@@ -585,10 +621,15 @@ export class InputController {
       const kind = game.selectedItem?.kind ?? null;
       const aimActive = this.aimAngle !== null;
       const facing = len > 0.2 ? Math.atan2(my, mx) : game.facing === 1 ? 0 : Math.PI;
+      this.aimLocked = false;
       if (kind === null || isWeapon(kind)) {
-        // Armas y garras: se dispara solo mientras la linea de mira esta a la vista.
-        fire = aimActive || (kind === null && this.tapLatch);
-        hold = aimActive;
+        // Armas y garras: se dispara mientras la linea de mira esta a la vista o, si asi se
+        // eligio, solo cuando esa linea toca a un gato o a un muro colocado.
+        const locked =
+          aimActive && (this.fireMode === 'aim' || game.aimLocked(this.aimAngle as number));
+        this.aimLocked = this.fireMode === 'target' && locked;
+        fire = locked || (kind === null && this.tapLatch);
+        hold = locked;
       } else if (kind === 'wall') {
         // El muro se coloca al soltar la mira, donde mostraba la guia.
         fire = this.releaseLatch !== null || this.tapLatch;

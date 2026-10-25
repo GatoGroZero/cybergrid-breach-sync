@@ -13,7 +13,10 @@ export type Inventory = (Item | null)[];
 
 export const emptyInventory = (): Inventory => Array.from({ length: INVENTORY_SLOTS }, () => null);
 
-export const cloneItem = (it: Item): Item => ({ kind: it.kind, qty: it.qty, rarity: it.rarity });
+export const cloneItem = (it: Item): Item =>
+  it.mag === undefined
+    ? { kind: it.kind, qty: it.qty, rarity: it.rarity }
+    : { kind: it.kind, qty: it.qty, rarity: it.rarity, mag: it.mag };
 
 // ---------------------------------------------------------------- compartimento de balas
 

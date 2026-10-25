@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test';
 import { registerViaUi, startSoloGame, uniqueName, walkTo } from './helpers';
 
 interface DebugGame {
-  inv: ({ kind: string; qty: number; rarity: number } | null)[];
+  inv: ({ kind: string; qty: number; rarity: number; mag?: number } | null)[];
   ammo: number[];
   stamina: { value: number; tired: boolean };
   x: number;
   latest: { walls: unknown[]; me: { sel: number } } | null;
+  me: { reload: number } | null;
 }
 
 test.describe('Flujo 5: combate, objetos y muros', () => {
@@ -27,15 +28,23 @@ test.describe('Flujo 5: combate, objetos y muros', () => {
     expect((await game()).ammo[4]).toBe(90);
     expect((await game()).inv.filter(Boolean)).toHaveLength(4);
 
-    // El fusil es arma automatica: mantener el clic gasta varias balas.
+    // El fusil es arma automatica: mantener el clic gasta varios disparos del cargador (de 30).
     await page.keyboard.press('Digit1');
     await page.mouse.move(900, 300);
     await page.mouse.down();
     await page.waitForTimeout(900);
     await page.mouse.up();
-    const ammo = (await game()).ammo[4] ?? 90;
-    expect(ammo).toBeLessThan(90);
-    expect(ammo).toBeGreaterThan(70);
+    await expect.poll(async () => (await game()).inv[0]?.mag ?? 30).toBeLessThan(30);
+    const mag = (await game()).inv[0]?.mag ?? 30;
+    expect(mag).toBeGreaterThan(15);
+    // Las balas de repuesto siguen intactas hasta recargar.
+    expect((await game()).ammo[4]).toBe(90);
+
+    // R recarga: tarda su tiempo, llena el cargador y gasta las balas de repuesto.
+    await page.keyboard.press('KeyR');
+    await expect.poll(async () => (await game()).me?.reload ?? 0).toBeGreaterThan(0);
+    await expect.poll(async () => (await game()).inv[0]?.mag ?? 0, { timeout: 8000 }).toBe(30);
+    expect((await game()).ammo[4]).toBe(90 - (30 - mag));
 
     // Un mini muro: se elige el espacio 4 y un clic lo coloca delante del gato.
     await page.keyboard.press('Digit4');

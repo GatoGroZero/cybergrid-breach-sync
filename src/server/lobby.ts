@@ -215,6 +215,11 @@ export class Lobby {
       const m = me();
       if (parsed.success && m?.game) m.game.pushInput(m.member.catId, parsed.data);
     });
+    socket.on('game:reload', () => {
+      if (!allow(actionBucket)) return;
+      const m = me();
+      if (m?.game) m.game.reload(m.member.catId);
+    });
     socket.on('game:emote', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = emoteSchema.safeParse(raw);
@@ -632,6 +637,7 @@ export class Lobby {
           mapKind,
           cats,
           zoneScale: this.config.zoneTimeScale,
+          introSeconds: this.config.introSeconds,
         });
       } catch (err) {
         console.error('no se pudo crear la partida', err);

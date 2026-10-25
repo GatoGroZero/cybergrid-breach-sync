@@ -2,7 +2,7 @@ import type { Item } from './items';
 
 /** [id, x, y, flags, apuntado en grados, arma en mano (indice de ITEM_KINDS * 3 + rareza, o -1)] */
 export type CatTuple = [number, number, number, number, number, number];
-/** [id, x, y, tipo (0 bala, 1 perdigon, 2 sniper, 3 misil), angulo en grados] */
+/** [id, x, y, tipo (0 pistola, 1 perdigon, 2 sniper, 3 misil, 4 fusil), angulo en grados] */
 export type ShotTuple = [number, number, number, number, number];
 /** [id, casillaX, casillaY, vida %] */
 export type WallTuple = [number, number, number, number];
@@ -11,7 +11,9 @@ export type ContainerTuple = [number, number, number, number, number, number];
 
 export type BREvent =
   | { e: 'shot'; x: number; y: number; a: number; w: number }
-  | { e: 'hit'; x: number; y: number; v: number; kill: boolean }
+  | { e: 'hit'; x: number; y: number; v: number; kill: boolean; by: number; to: number }
+  | { e: 'reload'; x: number; y: number; w: number; done: boolean }
+  | { e: 'dry'; x: number; y: number; w: number }
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'wallhit'; x: number; y: number }
   | { e: 'wallbreak'; x: number; y: number }
@@ -37,6 +39,8 @@ export interface MeState {
   healKind: 'medkit' | 'shield' | null;
   /** Segundos hasta poder disparar otra vez. */
   cooldown: number;
+  /** Segundos que faltan de la recarga en curso, o 0. */
+  reload: number;
   /** Aire para correr, de 0 a 100. */
   stamina: number;
   /** Se quedo sin aire: no corre hasta recuperar un poco. */
@@ -58,8 +62,10 @@ export interface ZoneView {
 }
 
 export interface BRSnapshot {
-  /** Milisegundos desde que arranco la partida. */
+  /** Milisegundos de reloj de la partida (corre tambien durante la cuenta regresiva inicial). */
   t: number;
+  /** Segundos que faltan de la cuenta regresiva inicial (todos quietos), o 0. */
+  intro: number;
   tick: number;
   ack: number;
   me: MeState;

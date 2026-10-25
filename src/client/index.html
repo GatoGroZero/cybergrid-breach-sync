@@ -600,8 +600,30 @@
         <div id="set-touch" class="set-pane" hidden>
           <p class="muted">
             Mueve y cambia el tamaño de cada botón del teléfono: joystick, fuego, interactuar,
-            inventario, objetos, menú y mapa.
+            inventario, objetos, menú, mapa, emotes y recargar.
           </p>
+          <p class="muted">Cómo dispara la mira del lado derecho:</p>
+          <div id="fire-mode" class="seg" role="radiogroup" aria-label="Cómo dispara la mira">
+            <button
+              type="button"
+              role="radio"
+              data-mode="aim"
+              aria-checked="true"
+              data-testid="fire-mode-aim"
+            >
+              Al apuntar
+            </button>
+            <button
+              type="button"
+              role="radio"
+              data-mode="target"
+              aria-checked="false"
+              data-testid="fire-mode-target"
+            >
+              Solo con objetivo
+            </button>
+          </div>
+          <p id="fire-mode-help" class="muted" data-testid="fire-mode-help"></p>
           <button id="touch-edit" class="btn primary wide" type="button" data-testid="touch-edit">
             Editar botones
           </button>

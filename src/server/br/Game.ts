@@ -40,6 +40,7 @@ import {
   WEAPONS,
   isAmmo,
   isWeapon,
+  magOf,
   rollAmmoCrate,
   rollChest,
   type AmmoKind,
@@ -106,6 +107,8 @@ export interface GameOptions {
   cats: CatInit[];
   /** Acelera la linea de tiempo de la ola (solo para pruebas y demostraciones). */
   zoneScale?: number;
+  /** Segundos de cuenta regresiva con todos quietos antes de que empiece la partida. */
+  introSeconds?: number;
 }
 
 export interface Cat {
@@ -128,6 +131,8 @@ export interface Cat {
   running: boolean;
   sel: number;
   heal: { kind: HealKind; elapsed: number; left: number } | null;
+  /** Recarga en curso: casilla del arma y cuando termina. */
+  reload: { slot: number; until: number } | null;
   /** Hasta cuando no puede volver a mandar un emote. */
   emoteUntil: number;
   cooldownUntil: number;
@@ -187,12 +192,13 @@ interface Container {
   title: string;
 }
 
+/** Tipo de proyectil que viaja al cliente: cada arma tiene su propio dibujo. */
 const SHOT_KIND: Record<WeaponKind, number> = {
   pistol: 0,
-  rifle: 0,
   shotgun: 1,
   sniper: 2,
   bazooka: 3,
+  rifle: 4,
 };
 const CONTAINER_CODE: Record<ContainerKind, number> = {
   chest: 0,
@@ -223,7 +229,12 @@ export class BRGame {
   private readonly zoneScale: number;
 
   tick = 0;
+  /** Tiempo de juego: no corre durante la cuenta regresiva del inicio. */
   time = 0;
+  /** Reloj que siempre avanza (lo usan las instantaneas). */
+  clock = 0;
+  /** Segundos que faltan de la cuenta regresiva inicial; mientras sea mayor que 0 todos estan quietos. */
+  introLeft = 0;
   result: GameEndPayload | null = null;
   zone: ZoneState;
 
@@ -244,6 +255,7 @@ export class BRGame {
   constructor(options: GameOptions) {
     this.seed = options.seed;
     this.zoneScale = Math.max(1, options.zoneScale ?? 1);
+    this.introLeft = Math.max(0, options.introSeconds ?? 0);
     this.mapKind = options.mapKind;
     this.map = generateMap(options.mapKind, options.seed);
     this.rng = createRng((options.seed ^ 0x9e3779b9) >>> 0);
@@ -275,6 +287,7 @@ export class BRGame {
         running: false,
         sel: 0,
         heal: null,
+        reload: null,
         emoteUntil: 0,
         cooldownUntil: 0,
         prevFire: false,
@@ -397,6 +410,7 @@ export class BRGame {
     if (!cat || !cat.alive || slot < 0 || slot >= INVENTORY_SLOTS) return false;
     if (slot !== cat.sel) {
       cat.heal = null;
+      cat.reload = null;
       cat.sel = slot;
     }
     return true;
@@ -420,6 +434,7 @@ export class BRGame {
 
   /** Disparo, uso del objeto en mano o garras segun lo que lleve el gato. */
   fireControl(cat: Cat, aim: number, fire: boolean, hold = false): void {
+    if (this.introLeft > 0) return;
     const edge = fire && !cat.prevFire;
     cat.prevFire = fire;
     cat.aim = aim;
@@ -455,10 +470,15 @@ export class BRGame {
   }
 
   private shoot(cat: Cat, item: Item, def: WeaponDef, aim: number): void {
+    if (cat.reload) return;
     if (this.time < cat.cooldownUntil) return;
-    if (cat.ammo[def.ammo] < def.ammoPerShot) return;
     if (this.shots.length > MAX_SHOTS) return;
-    spendAmmo(cat.ammo, def.ammo, def.ammoPerShot);
+    // Cargador vacio: se recarga solo (si quedan balas) y si no, solo suena el clic.
+    if (magOf(item) <= 0) {
+      if (!this.startReload(cat)) this.emitDry(cat, def);
+      return;
+    }
+    item.mag = magOf(item) - 1;
     cat.invDirty = true;
     cat.cooldownUntil = this.time + def.cooldown;
     cat.heal = null;
@@ -483,7 +503,8 @@ export class BRGame {
         left: def.range,
         weapon: def.kind,
         rarity: item.rarity,
-        kind: SHOT_KIND[def.kind],
+        // tipo de arma en los 3 primeros bits y la rareza arriba (para el halo del proyectil)
+        kind: SHOT_KIND[def.kind] + item.rarity * 8,
         splash: def.splash,
         angle: a,
       });
@@ -495,6 +516,71 @@ export class BRGame {
       a: Math.round((aim * 180) / Math.PI),
       w: ITEM_KINDS.indexOf(def.kind),
     });
+    // Al vaciar el cargador se recarga sola si quedan balas.
+    if (magOf(item) <= 0) this.startReload(cat);
+  }
+
+  // ---------------------------------------------------------------- recarga
+
+  /** Empieza a recargar el arma en mano. Devuelve false si no hace falta o no hay balas. */
+  startReload(cat: Cat): boolean {
+    if (!cat.alive || cat.reload || this.introLeft > 0) return false;
+    const item = this.held(cat);
+    if (!item || !isWeapon(item.kind)) return false;
+    const def = WEAPONS[item.kind];
+    if (magOf(item) >= def.magazine) return false;
+    if (cat.ammo[def.ammo] < def.ammoPerShot) return false;
+    cat.reload = { slot: cat.sel, until: this.time + def.reload };
+    this.emit({
+      e: 'reload',
+      x: q1(cat.x),
+      y: q1(cat.y),
+      w: ITEM_KINDS.indexOf(def.kind),
+      done: false,
+    });
+    return true;
+  }
+
+  /** Pedido del jugador (tecla R o boton). */
+  reload(catId: number): boolean {
+    const cat = this.cat(catId);
+    return cat ? this.startReload(cat) : false;
+  }
+
+  private updateReload(cat: Cat): void {
+    const r = cat.reload;
+    if (!r) return;
+    const item = cat.inv[r.slot];
+    if (cat.sel !== r.slot || !item || !isWeapon(item.kind)) {
+      cat.reload = null;
+      return;
+    }
+    if (this.time < r.until) return;
+    const def = WEAPONS[item.kind];
+    // Pasa del compartimento al cargador solo en tandas completas de disparos.
+    const shots = Math.min(
+      Math.floor(cat.ammo[def.ammo] / def.ammoPerShot),
+      def.magazine - magOf(item),
+    );
+    if (shots > 0) {
+      item.mag = magOf(item) + shots;
+      cat.ammo[def.ammo] -= shots * def.ammoPerShot;
+      cat.invDirty = true;
+    }
+    cat.reload = null;
+    this.emit({
+      e: 'reload',
+      x: q1(cat.x),
+      y: q1(cat.y),
+      w: ITEM_KINDS.indexOf(def.kind),
+      done: true,
+    });
+  }
+
+  /** Disparo con el cargador vacio y sin balas de repuesto: solo un clic seco. */
+  private emitDry(cat: Cat, def: WeaponDef): void {
+    cat.cooldownUntil = this.time + 0.4;
+    this.emit({ e: 'dry', x: q1(cat.x), y: q1(cat.y), w: ITEM_KINDS.indexOf(def.kind) });
   }
 
   private claw(cat: Cat, aim: number): void {
@@ -629,6 +715,8 @@ export class BRGame {
       y: q1(target.y),
       v: Math.round(r.dealt),
       kill: target.hp <= 0,
+      by: attacker && attacker.id !== target.id ? attacker.id : 0,
+      to: target.id,
     });
     if (target.hp <= 0) this.killCat(target, attacker);
   }
@@ -639,6 +727,7 @@ export class BRGame {
     target.placement = alive;
     target.diedAt = this.time;
     target.heal = null;
+    target.reload = null;
     target.queue.length = 0;
     target.killerId = killer && killer.id !== target.id ? killer.id : null;
     if (killer && killer.id !== target.id) killer.kills++;
@@ -807,7 +896,10 @@ export class BRGame {
     if (!ok) return false;
     cat.invDirty = true;
     // Lo que tienes en mano se mueve con la casilla: si cambia, la curacion se cancela.
-    if (cat.inv[cat.sel] !== heldBefore) cat.heal = null;
+    if (cat.inv[cat.sel] !== heldBefore) {
+      cat.heal = null;
+      cat.reload = null;
+    }
     return true;
   }
 
@@ -819,7 +911,10 @@ export class BRGame {
     if (!item) return false;
     cat.inv[slot] = null;
     cat.invDirty = true;
-    if (slot === cat.sel) cat.heal = null;
+    if (slot === cat.sel) {
+      cat.heal = null;
+      cat.reload = null;
+    }
     this.dropAt(cat, item);
     return true;
   }
@@ -861,6 +956,17 @@ export class BRGame {
   step(): void {
     if (this.over) return;
     this.tick++;
+    this.clock += TICK_DT;
+    // Cuenta regresiva inicial: todos quietos, sin disparar ni abrir nada.
+    if (this.introLeft > 0) {
+      this.introLeft = this.introLeft - TICK_DT < 1e-6 ? 0 : this.introLeft - TICK_DT;
+      for (const cat of this.cats) {
+        cat.moving = false;
+        cat.running = false;
+        while (cat.queue.length > 0) cat.lastSeq = (cat.queue.shift() as InputPayload).seq;
+      }
+      return;
+    }
     this.time += TICK_DT;
     this.zone = zoneAt(
       this.plan,
@@ -899,7 +1005,11 @@ export class BRGame {
       }
     }
 
-    for (const cat of this.cats) if (cat.alive) this.updateHeal(cat, TICK_DT);
+    for (const cat of this.cats) {
+      if (!cat.alive) continue;
+      this.updateHeal(cat, TICK_DT);
+      this.updateReload(cat);
+    }
     this.updateShots(TICK_DT);
     this.hazards(TICK_DT);
     this.checkEnd();
@@ -1169,11 +1279,13 @@ export class BRGame {
       healLeft: cat.heal ? healSecondsLeft(cat.heal.kind, cat, cat.heal.left) : 0,
       healKind: cat.heal ? cat.heal.kind : null,
       cooldown: Math.max(0, q1(cat.cooldownUntil - this.time)),
+      reload: cat.reload ? Math.max(0.1, q1(cat.reload.until - this.time)) : 0,
       stamina: q1(cat.stamina.value),
       tired: cat.stamina.tired,
     };
     const snap: BRSnapshot = {
-      t: Math.round(this.time * 1000),
+      t: Math.round(this.clock * 1000),
+      intro: Math.max(0, q1(this.introLeft)),
       tick: this.tick,
       ack: cat.lastSeq,
       me,

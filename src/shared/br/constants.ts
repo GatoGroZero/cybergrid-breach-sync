@@ -39,7 +39,7 @@ export const WATER = {
 } as const;
 
 /** Distancia (en pixeles) a la que el servidor envia entidades a cada cliente. */
-export const INTEREST_RADIUS = 360;
+export const INTEREST_RADIUS = 560;
 
 export const SKIN_W = 24;
 export const SKIN_H = 16;

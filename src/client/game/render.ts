@@ -9,6 +9,7 @@ import {
 } from '../../shared/br/items';
 import {
   G,
+  groundAt,
   isSolidTile,
   isWaterAtPx,
   type BRMap,
@@ -18,7 +19,7 @@ import {
 import { segmentSolidHit } from '../../shared/br/physics';
 import { defaultSkin } from '../../shared/br/skin';
 import type { BREvent, ZoneView } from '../../shared/br/types';
-import type { Sfx } from '../audio';
+import { spatial, surfaceFor, type Sfx } from '../audio';
 import { C, ell, flipH, hash, make, px, rect } from '../pixel/draw';
 import { buildAssets, roofSprite, type Assets } from '../pixel/art';
 import { catSprites } from '../pixel/cat';
@@ -105,6 +106,8 @@ export class BRRenderer {
   private lastHealFx = 0;
   private lastStepFx = 0;
   private lastStepSfx = 0;
+  /** Cuando se oyo la ultima pisada de cada gato ajeno (para no sonar todas a la vez). */
+  private readonly otherSteps = new Map<number, number>();
   private wasTired = false;
   private lastBeat = 0;
   private labels: Label[] = [];
@@ -335,6 +338,73 @@ export class BRRenderer {
     return false;
   }
 
+  /** Fogonazo propio de cada arma. */
+  private muzzleFlash(x: number, y: number, a: number, weapon: string): void {
+    const fx = this.fx;
+    const flash = (size: number, life: number, color: string): void =>
+      fx.add({ x, y, vx: 0, vy: 0, life, max: life, color, size, grav: 0, kind: 0, r: 0 });
+    switch (weapon) {
+      case 'rifle':
+        fx.burst(x, y, 3, {
+          colors: [C.lime, C.white, C.yellow],
+          speed: 80,
+          life: 0.1,
+          angle: a,
+          spread: 0.5,
+        });
+        flash(3, 0.05, C.white);
+        break;
+      case 'shotgun':
+        fx.burst(x, y, 9, {
+          colors: [C.orange, C.yellow, C.white],
+          speed: 95,
+          life: 0.18,
+          angle: a,
+          spread: 1.1,
+        });
+        flash(5, 0.08, C.yellow);
+        fx.burst(x, y, 3, {
+          colors: ['#c8c8c8', C.lgray],
+          speed: 25,
+          life: 0.5,
+          angle: a,
+          spread: 0.9,
+          grav: -10,
+        });
+        break;
+      case 'sniper':
+        fx.burst(x, y, 4, {
+          colors: [C.cyan, C.white],
+          speed: 120,
+          life: 0.16,
+          angle: a,
+          spread: 0.2,
+        });
+        flash(4, 0.09, C.cyan);
+        fx.ring(x, y, 7, C.cyan, 0.2);
+        break;
+      case 'bazooka':
+        fx.burst(x, y, 8, {
+          colors: [C.orange, C.yellow, C.white],
+          speed: 70,
+          life: 0.25,
+          angle: a,
+          spread: 0.9,
+        });
+        flash(5, 0.1, C.white);
+        break;
+      default:
+        fx.burst(x, y, 4, {
+          colors: [C.yellow, C.white, C.orange],
+          speed: 70,
+          life: 0.14,
+          angle: a,
+          spread: 0.7,
+        });
+        flash(3, 0.07, C.white);
+    }
+  }
+
   private distToMe(x: number, y: number): number {
     const g = this.game;
     return g ? Math.hypot(x - g.x, y - g.y) : 9999;
@@ -347,44 +417,46 @@ export class BRRenderer {
       case 'shot': {
         const d = this.distToMe(ev.x, ev.y);
         const a = (ev.a * Math.PI) / 180;
+        const kind = ITEM_KINDS[ev.w];
         const mx = ev.x + Math.cos(a) * 11;
         const my = ev.y + Math.sin(a) * 6 - 1;
-        fx.burst(mx, my, 4, {
-          colors: [C.yellow, C.white, C.orange],
-          speed: 70,
-          life: 0.14,
-          angle: a,
-          spread: 0.7,
-        });
-        fx.add({
-          x: mx,
-          y: my,
-          vx: 0,
-          vy: 0,
-          life: 0.07,
-          max: 0.07,
-          color: C.white,
-          size: 3,
-          grav: 0,
-          kind: 0,
-          r: 0,
-        });
-        const kind = ITEM_KINDS[ev.w];
-        if (kind === 'bazooka')
-          fx.burst(ev.x - Math.cos(a) * 8, ev.y, 6, {
-            colors: ['#c8c8c8', C.lgray],
-            speed: 40,
-            life: 0.5,
-            angle: a + Math.PI,
-            spread: 0.9,
+        this.muzzleFlash(mx, my, a, kind ?? 'pistol');
+        // Casquillo que sale volando hacia un lado (solo de las armas de balas).
+        if (kind === 'pistol' || kind === 'rifle' || kind === 'shotgun') {
+          const side = a + Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+          fx.burst(ev.x + Math.cos(a) * 4, ev.y - 3, 1, {
+            colors: kind === 'shotgun' ? [C.red, C.orange] : ['#d9a574', C.yellow],
+            speed: 38,
+            life: 0.45,
+            grav: 160,
+            angle: side,
+            spread: 0.4,
+            size: 1,
           });
-        if (d < 420) {
-          this.sfx.shot(kind ?? 'pistol', Math.max(0.15, 1 - d / 420));
+        }
+        if (d < 520 && g) {
+          const s = spatial(ev.x - g.x, ev.y - g.y, 520);
+          this.sfx.shot(kind ?? 'pistol', Math.max(0.12, s.v), d < 12 ? 0 : s.pan);
           if (kind === 'bazooka' || kind === 'sniper')
             this.shake = Math.max(this.shake, d < 60 ? 2 : 0);
         }
         break;
       }
+      case 'reload': {
+        if (!g) break;
+        const s = spatial(ev.x - g.x, ev.y - g.y, 240);
+        const kind = ITEM_KINDS[ev.w] ?? 'pistol';
+        if (!ev.done && s.v > 0.05) this.sfx.reload(kind, Math.max(0.2, s.v), s.pan);
+        else if (ev.done && this.distToMe(ev.x, ev.y) < 12) this.sfx.reloadDone();
+        break;
+      }
+      case 'dry':
+        if (this.distToMe(ev.x, ev.y) < 12) this.sfx.dry();
+        else if (g) {
+          const s = spatial(ev.x - g.x, ev.y - g.y, 200);
+          if (s.v > 0.1) this.sfx.dry(s.v * 0.7, s.pan);
+        }
+        break;
       case 'hit': {
         fx.burst(ev.x, ev.y - 2, ev.kill ? 12 : 6, {
           colors: [C.red, C.orange, C.white],
@@ -394,11 +466,19 @@ export class BRRenderer {
         });
         if ((ev.v >= 4 || ev.kill) && !this.hiddenByRoof(ev.x, ev.y))
           fx.float(ev.x, ev.y - 12, String(ev.v), ev.kill ? C.yellow : C.white);
-        const d = this.distToMe(ev.x, ev.y);
-        if (d < 12 && g?.alive) {
+        if (!g) break;
+        if (ev.to === g.you && g.alive) {
+          // Te pegaron.
           this.sfx.hurt();
           this.shake = Math.max(this.shake, 2);
-        } else if (d < 240) this.sfx.hit(Math.max(0.3, 1 - d / 240));
+        } else if (ev.by === g.you && ev.by !== 0) {
+          // Le pegaste a alguien.
+          this.sfx.hitDealt(ev.kill);
+        } else {
+          // Le pegaron a alguien cerca: se oye el golpe, de su lado y mas flojo.
+          const s = spatial(ev.x - g.x, ev.y - g.y, 280);
+          if (s.v > 0.08) this.sfx.hitNear(Math.max(0.3, s.v), s.pan);
+        }
         break;
       }
       case 'boom': {
@@ -419,20 +499,26 @@ export class BRRenderer {
           grav: -18,
         });
         const d = this.distToMe(ev.x, ev.y);
-        if (d < 420) {
-          this.sfx.boom(Math.max(0.2, 1 - d / 420));
+        if (d < 520 && g) {
+          const sp = spatial(ev.x - g.x, ev.y - g.y, 520);
+          this.sfx.boom(Math.max(0.2, sp.v), sp.pan);
           this.shake = Math.max(this.shake, Math.max(1, 4 - d / 80));
         }
         break;
       }
-      case 'wallhit':
+      case 'wallhit': {
         fx.burst(ev.x, ev.y, 5, {
           colors: ['#b9835a', '#7a4e2c', '#d9a574'],
           speed: 50,
           life: 0.4,
           grav: 100,
         });
+        if (g) {
+          const sp = spatial(ev.x - g.x, ev.y - g.y, 260);
+          if (sp.v > 0.08) this.sfx.wallHit(sp.v, sp.pan);
+        }
         break;
+      }
       case 'place':
         if (this.distToMe(ev.x, ev.y) < 260) this.sfx.place();
         fx.burst(ev.x, ev.y + 4, 6, {
@@ -450,8 +536,10 @@ export class BRRenderer {
           size: 2,
           grav: 120,
         });
-        if (this.distToMe(ev.x, ev.y) < 300)
-          this.sfx.wallBreak(Math.max(0.3, 1 - this.distToMe(ev.x, ev.y) / 300));
+        if (g) {
+          const sp = spatial(ev.x - g.x, ev.y - g.y, 320);
+          if (sp.v > 0.05) this.sfx.wallBreak(Math.max(0.3, sp.v), sp.pan);
+        }
         break;
       case 'death': {
         fx.burst(ev.x, ev.y - 2, 16, {
@@ -472,7 +560,10 @@ export class BRRenderer {
           );
         const d = this.distToMe(ev.x, ev.y);
         if (ev.id === g?.you) this.sfx.death();
-        else if (d < 260) this.sfx.kill();
+        else if (d < 320 && g) {
+          const sp = spatial(ev.x - g.x, ev.y - g.y, 320);
+          this.sfx.kill(Math.max(0.3, sp.v), sp.pan);
+        }
         break;
       }
       case 'open': {
@@ -977,9 +1068,22 @@ export class BRRenderer {
     const sx = Math.round(x - camX);
     const sy = Math.round(y - camY);
 
-    if (moving && !wet && isMe && now - this.lastStepSfx > (running ? 170 : 290)) {
-      this.lastStepSfx = now;
-      this.sfx.step(running);
+    // Pisadas: suenan distinto segun el piso y las de otros gatos se oyen cerca y de su lado.
+    if (moving) {
+      const surface = wet
+        ? 'water'
+        : surfaceFor(groundAt(g.map, Math.floor(x / TILE), Math.floor((y + 4) / TILE)));
+      if (isMe) {
+        if (now - this.lastStepSfx > (running ? 170 : 290)) {
+          this.lastStepSfx = now;
+          this.sfx.step(surface, running);
+        }
+      } else if (now - (this.otherSteps.get(id) ?? 0) > (running ? 190 : 320)) {
+        const s = spatial(x - g.x, y - g.y, 230);
+        this.otherSteps.set(id, now + Math.random() * 60);
+        if (s.v > 0.05 && !this.hiddenByRoof(x, y))
+          this.sfx.step(surface, running, s.v * 0.55, s.pan);
+      }
     }
     if (moving && !wet && now - this.lastStepFx > (running ? 55 : 140) && isMe) {
       this.lastStepFx = now;
@@ -1222,7 +1326,8 @@ export class BRRenderer {
     const len = def.range * (hit.hit ? hit.t : 1);
     const phase = (now / 40) % 4;
     // Linea punteada: el brillo corre hacia adelante para que se note la direccion.
-    const end = dots(len, kind === 'sniper' ? C.cyan : C.white, 5, phase);
+    const locked = g.input.aimLocked;
+    const end = dots(len, locked ? C.red : kind === 'sniper' ? C.cyan : C.white, 5, phase);
     if (def.pellets > 1) {
       // Escopeta: el abanico por donde saldran los perdigones.
       for (const sign of [-1, 1]) {
@@ -1238,7 +1343,8 @@ export class BRRenderer {
     b.fillStyle = 'rgba(26,28,44,0.7)';
     b.fillRect(ex - 4, ey - 1, 9, 3);
     b.fillRect(ex - 1, ey - 4, 3, 9);
-    b.fillStyle = color;
+    // Con objetivo fijado (modo "solo con objetivo") la cruz se pone roja y parpadea.
+    b.fillStyle = locked ? (Math.floor(now / 120) % 2 === 0 ? C.red : C.orange) : color;
     b.fillRect(ex - 3, ey, 7, 1);
     b.fillRect(ex, ey - 3, 1, 7);
     if (def.splash > 0) {
@@ -1250,52 +1356,93 @@ export class BRRenderer {
     }
   }
 
+  /**
+   * Cada arma tiene su proyectil: bala dorada (pistola), trazadora verde (fusil), perdigones
+   * naranjas (escopeta), rayo largo cyan (sniper) y misil con llama (bazuca). Llevan un contorno
+   * oscuro para verse sobre cualquier piso y, si el arma es rara, un halo verde o morado.
+   */
   private drawShots(
     b: Ctx,
     shots: Map<number, { x: number; y: number; kind: number; ang: number }>,
     camX: number,
     camY: number,
   ): void {
+    const now = performance.now();
+    const DARK = 'rgba(26,28,44,0.6)';
     for (const s of shots.values()) {
       const x = s.x - camX;
       const y = s.y - camY;
-      if (x < -20 || y < -20 || x > this.viewW + 20 || y > this.viewH + 20) continue;
+      if (x < -30 || y < -30 || x > this.viewW + 30 || y > this.viewH + 30) continue;
+      const base = s.kind & 7;
+      const rarity = s.kind >> 3;
       const cx = Math.cos(s.ang);
       const cy = Math.sin(s.ang);
-      const trail = (len: number, color: string, thick = 1): void => {
+      // Pinta una raya hacia atras desde la cabeza: de `from` a `to` pixeles, de `thick` de grueso.
+      const line = (from: number, to: number, color: string, thick = 1): void => {
         b.fillStyle = color;
-        for (let i = 0; i < len; i++)
-          b.fillRect(Math.round(x - cx * i), Math.round(y - cy * i), thick, thick);
+        const off = thick >> 1;
+        for (let i = from; i <= to; i++)
+          b.fillRect(Math.round(x - cx * i - off), Math.round(y - cy * i - off), thick, thick);
       };
-      switch (s.kind) {
-        case 0:
-          trail(5, 'rgba(255,205,117,0.55)');
-          trail(2, C.white, 2);
+      if (rarity > 0)
+        ell(b, x, y, 3.4, 3.4, rarity === 2 ? 'rgba(181,91,240,0.5)' : 'rgba(56,183,100,0.45)');
+      switch (base) {
+        case 1: {
+          // perdigon de escopeta
+          line(0, 3, 'rgba(239,125,87,0.5)', 1);
+          line(0, 0, DARK, 4);
+          line(0, 0, C.orange, 3);
+          line(0, 0, C.yellow, 1);
           break;
-        case 1:
-          trail(3, 'rgba(239,125,87,0.5)');
-          b.fillStyle = C.orange;
-          b.fillRect(Math.round(x), Math.round(y), 2, 2);
+        }
+        case 2: {
+          // bala de sniper: un rayo largo y delgado
+          line(0, 20, 'rgba(115,239,247,0.28)', 3);
+          line(0, 12, DARK, 3);
+          line(0, 16, C.cyan, 1);
+          line(0, 7, C.white, 2);
+          if (Math.random() < 0.35)
+            this.fx.star(
+              s.x - cx * (4 + Math.random() * 12),
+              s.y - cy * (4 + Math.random() * 12),
+              C.cyan,
+              0.2,
+              0,
+            );
           break;
-        case 2:
-          trail(18, 'rgba(115,239,247,0.35)');
-          trail(9, C.cyan);
-          trail(4, C.white, 2);
-          break;
-        default: {
-          trail(10, 'rgba(244,244,244,0.25)', 2);
-          trail(5, C.orange, 2);
-          b.fillStyle = C.lgray;
-          b.fillRect(Math.round(x - 1), Math.round(y - 1), 4, 3);
-          b.fillStyle = C.red;
-          b.fillRect(Math.round(x + cx * 2), Math.round(y + cy * 2 - 1), 2, 3);
-          if (Math.random() < 0.7)
-            this.fx.burst(s.x - cx * 5, s.y - cy * 5, 1, {
-              colors: ['#c8c8c8', C.yellow],
-              speed: 12,
-              life: 0.35,
+        }
+        case 3: {
+          // misil: cuerpo gris con punta roja y una llama que parpadea
+          const flame = 4 + ((now / 55) & 3);
+          line(8, 8 + flame, Math.floor(now / 70) % 2 ? C.orange : C.yellow, 3);
+          line(8, 8 + flame - 2, C.white, 1);
+          line(1, 8, DARK, 5);
+          line(2, 8, C.lgray, 3);
+          line(5, 6, C.gray, 3);
+          line(0, 1, C.red, 3);
+          if (Math.random() < 0.8)
+            this.fx.burst(s.x - cx * 10, s.y - cy * 10, 1, {
+              colors: ['#c8c8c8', C.yellow, C.orange],
+              speed: 14,
+              life: 0.4,
               grav: -8,
             });
+          break;
+        }
+        case 4: {
+          // trazadora del fusil: verde y larga
+          line(3, 13, 'rgba(167,240,112,0.4)', 1);
+          line(0, 6, DARK, 3);
+          line(0, 6, C.lime, 2);
+          line(0, 1, C.white, 2);
+          break;
+        }
+        default: {
+          // bala de pistola: dorada y corta
+          line(2, 8, 'rgba(255,205,117,0.45)', 1);
+          line(0, 3, DARK, 4);
+          line(0, 3, C.yellow, 2);
+          line(0, 1, C.white, 2);
         }
       }
     }

@@ -3,6 +3,7 @@ import {
   WEAPONS,
   isAmmo,
   isWeapon,
+  magOf,
   type Item,
   type WeaponDef,
   type WeaponKind,
@@ -154,7 +155,7 @@ export class BotBrain {
     this.aggression = rng.range(0.15, 0.95);
     this.aimError = rng.range(0.05, 0.14);
     this.reaction = rng.range(0.3, 0.7);
-    this.sight = rng.range(130, 190);
+    this.sight = rng.range(170, 250);
     this.sprinty = rng.range(0.3, 1);
     this.startDelay = rng.range(0.4, 2.5);
     this.peaceUntil = rng.range(40, 90) - this.aggression * 15;
@@ -201,6 +202,8 @@ export class BotBrain {
       this.equipBest(this.target ? dist(c.x, c.y, this.target.x, this.target.y) : 100, true);
     }
 
+    this.maybeReload();
+
     // la ola manda
     if (this.zoneUrgent()) {
       this.mode = 'zone';
@@ -226,6 +229,19 @@ export class BotBrain {
     if (this.investigate(now)) return;
     if (this.loot(now)) return;
     this.roam(now);
+  }
+
+  /** Sin enemigo cerca aprovecha para recargar el arma en mano cuando ya casi esta vacia. */
+  private maybeReload(): void {
+    const c = this.cat;
+    if (c.reload || c.heal) return;
+    const it = this.game.held(c);
+    if (!it || !isWeapon(it.kind)) return;
+    const def = WEAPONS[it.kind];
+    if (magOf(it) > Math.max(1, Math.floor(def.magazine * 0.3))) return;
+    const t = this.target;
+    if (t && dist(c.x, c.y, t.x, t.y) < 150) return;
+    this.game.startReload(c);
   }
 
   // ---------------------------------------------------------------- percepcion
@@ -480,7 +496,9 @@ export class BotBrain {
     this.cat.inv.forEach((item, slot) => {
       if (!item || !isWeapon(item.kind)) return;
       const def = WEAPONS[item.kind];
-      if (this.cat.ammo[def.ammo] >= def.ammoPerShot) out.push({ slot, item, def });
+      // Sirve si tiene balas en el cargador o de repuesto para recargar.
+      if (magOf(item) > 0 || this.cat.ammo[def.ammo] >= def.ammoPerShot)
+        out.push({ slot, item, def });
     });
     return out;
   }
@@ -555,7 +573,8 @@ export class BotBrain {
     let best = -1;
     let bestScore = -1;
     for (const o of options) {
-      const sc = fit(o.def) * (1 + o.item.rarity * 0.35);
+      // Un arma con el cargador vacio hay que recargarla antes: vale menos en plena pelea.
+      const sc = fit(o.def) * (1 + o.item.rarity * 0.35) * (magOf(o.item) > 0 ? 1 : 0.3);
       if (sc > bestScore) {
         bestScore = sc;
         best = o.slot;
@@ -564,7 +583,9 @@ export class BotBrain {
     if (best >= 0) {
       if (c.sel !== best) {
         const cur = options.find((o) => o.slot === c.sel);
-        const curScore = cur ? fit(cur.def) * (1 + cur.item.rarity * 0.35) : 0;
+        const curScore = cur
+          ? fit(cur.def) * (1 + cur.item.rarity * 0.35) * (magOf(cur.item) > 0 ? 1 : 0.3)
+          : 0;
         if (!cur || bestScore > curScore * 1.25 || force) {
           g.select(c.id, best);
           this.nextWeaponSwap = now + 1.2;
@@ -589,14 +610,14 @@ export class BotBrain {
     const range = def ? def.range : 16;
     const preferred = def
       ? def.kind === 'shotgun'
-        ? 34
+        ? 38
         : def.kind === 'sniper'
-          ? 150
+          ? 210
           : def.kind === 'bazooka'
-            ? 120
+            ? 140
             : def.kind === 'rifle'
-              ? 95
-              : 80
+              ? 120
+              : 100
       : 10;
 
     // sin verlo: ir a donde se le vio por ultima vez

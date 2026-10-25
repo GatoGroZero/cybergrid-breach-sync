@@ -106,6 +106,7 @@ const input = new InputController(canvas, {
   },
   onSelect: (slot) => game?.select(slot),
   onEmote: (kind) => game?.sendEmote(kind),
+  onReload: () => game?.sendReload(),
   onMute: () => {
     sfx.setMuted(!sfx.muted);
     toast(sfx.muted ? 'Sonido apagado' : 'Sonido encendido');
@@ -674,8 +675,8 @@ function startGame(payload: GameStartPayload): void {
   }
   input.active = true;
   applyMode(input.mode);
-  sfx.go();
-  game.say('¡Sé el último gato en pie!', 'info', 4200);
+  // El sonido y el cartel de inicio los pone la cuenta regresiva (o, sin ella, no hay ninguno).
+  sfx.startAmbient(payload.map as 'bosque' | 'casa' | 'piscina');
   if (tipTimer !== null) window.clearTimeout(tipTimer);
   tipTimer = window.setTimeout(() => {
     tipTimer = null;
@@ -685,7 +686,7 @@ function startGame(payload: GameStartPayload): void {
         ? 'Acércate a un cofre y toca ABRIR'
         : `Busca un cofre: acércate y pulsa ${keyLabel(input.keys.interact).toUpperCase()}`;
     game.say(how, 'good', 4500);
-  }, 4600);
+  }, 9000);
   if (!raf) {
     lastTick = lastRender = fpsStart = performance.now();
     raf = requestAnimationFrame(frame);
@@ -750,6 +751,7 @@ function updateHud(g: ClientBR, n: Net): void {
     hp: Math.round(g.me?.hp ?? 0),
     alive: g.alive,
     players: g.latest?.alive ?? 0,
+    intro: g.intro,
     drawMs: Math.round(drawMs * 100) / 100,
   };
 }
@@ -868,6 +870,7 @@ function leaveGameView(): void {
   if (resultsTimer !== null) window.clearTimeout(resultsTimer);
   if (tipTimer !== null) window.clearTimeout(tipTimer);
   deathTimer = resultsTimer = tipTimer = null;
+  sfx.stopAmbient();
   game = null;
   renderer.setGame(null);
   window.__cybergrid = undefined;
@@ -988,6 +991,7 @@ declare global {
       hp: number;
       alive: boolean;
       players: number;
+      intro: number;
       drawMs: number;
     };
   }

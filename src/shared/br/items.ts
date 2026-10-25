@@ -22,6 +22,8 @@ export interface Item {
   kind: ItemKind;
   qty: number;
   rarity: Rarity;
+  /** Solo armas: disparos que quedan cargados. Sin valor significa cargador lleno. */
+  mag?: number;
 }
 
 export const isWeapon = (kind: ItemKind): kind is WeaponKind =>
@@ -44,6 +46,10 @@ export interface WeaponDef {
   auto: boolean;
   /** Radio de la explosion (solo bazuca). */
   splash: number;
+  /** Disparos que caben en el cargador. */
+  magazine: number;
+  /** Segundos que tarda recargar. */
+  reload: number;
 }
 
 export const WEAPONS: Record<WeaponKind, WeaponDef> = {
@@ -57,9 +63,11 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     spread: 0.04,
     cooldown: 0.32,
     speed: 300,
-    range: 170,
+    range: 260,
     auto: false,
     splash: 0,
+    magazine: 30,
+    reload: 1.6,
   },
   shotgun: {
     kind: 'shotgun',
@@ -71,9 +79,11 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     spread: 0.3,
     cooldown: 0.9,
     speed: 260,
-    range: 90,
+    range: 130,
     auto: false,
     splash: 0,
+    magazine: 5,
+    reload: 2.2,
   },
   sniper: {
     kind: 'sniper',
@@ -85,9 +95,11 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     spread: 0,
     cooldown: 1.5,
     speed: 760,
-    range: 360,
+    range: 520,
     auto: false,
     splash: 0,
+    magazine: 3,
+    reload: 2.4,
   },
   bazooka: {
     kind: 'bazooka',
@@ -99,9 +111,11 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     spread: 0,
     cooldown: 2.4,
     speed: 190,
-    range: 280,
+    range: 360,
     auto: false,
     splash: 34,
+    magazine: 1,
+    reload: 2.0,
   },
   rifle: {
     kind: 'rifle',
@@ -113,9 +127,11 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     spread: 0.07,
     cooldown: 0.18,
     speed: 340,
-    range: 200,
+    range: 320,
     auto: true,
     splash: 0,
+    magazine: 30,
+    reload: 2.0,
   },
 };
 
@@ -153,6 +169,20 @@ export const STACK_MAX: Record<ItemKind, number> = {
   shield: 4,
   wall: 5,
 };
+
+/** Disparos cargados de un arma (sin dato se cuenta como cargador lleno); 0 si no es un arma. */
+export function magOf(item: Item | null | undefined): number {
+  if (!item || !isWeapon(item.kind)) return 0;
+  const cap = WEAPONS[item.kind].magazine;
+  return Math.max(0, Math.min(cap, item.mag ?? cap));
+}
+
+/** Balas del compartimento que hacen falta para llenar el cargador de esta arma. */
+export function reloadNeed(item: Item): number {
+  if (!isWeapon(item.kind)) return 0;
+  const def = WEAPONS[item.kind];
+  return (def.magazine - magOf(item)) * def.ammoPerShot;
+}
 
 export function weaponDamage(kind: WeaponKind, rarity: Rarity): number {
   return WEAPONS[kind].damage[rarity] as number;
@@ -211,7 +241,9 @@ export function rollWeaponKind(rng: Rng): WeaponKind {
 }
 
 export function rollWeapon(rng: Rng, tier: ChestTier): Item {
-  return { kind: rollWeaponKind(rng), qty: 1, rarity: rollRarity(rng, tier) };
+  const kind = rollWeaponKind(rng);
+  // Las armas de un cofre vienen con el cargador lleno.
+  return { kind, qty: 1, rarity: rollRarity(rng, tier), mag: WEAPONS[kind].magazine };
 }
 
 /** Municion suelta en un cofre. */

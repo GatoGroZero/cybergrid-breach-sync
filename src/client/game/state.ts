@@ -1,8 +1,16 @@
 import { CAT, INTEREST_RADIUS, TICK_DT, TILE } from '../../shared/br/constants';
 import { SnapshotBuffer } from '../../shared/interp';
-import { AMMO_KINDS, ITEM_KINDS, type AmmoKind, type Item } from '../../shared/br/items';
+import {
+  AMMO_KINDS,
+  CLAWS,
+  ITEM_KINDS,
+  WEAPONS,
+  isWeapon,
+  type AmmoKind,
+  type Item,
+} from '../../shared/br/items';
 import { generateMap, type BRMap, type MapKind } from '../../shared/br/map';
-import { stepCat } from '../../shared/br/physics';
+import { aimTouchesTarget, stepCat } from '../../shared/br/physics';
 import { STAMINA, fullStamina, stepStamina, type StaminaState } from '../../shared/br/stamina';
 import type {
   CatInfo,
@@ -97,6 +105,11 @@ export class ClientBR {
   private haveOffset = false;
   private readonly knownWalls = new Map<number, { tx: number; ty: number }>();
   private lastZonePhase = 0;
+  /** Segundos que faltan de la cuenta regresiva inicial (todos quietos). */
+  intro = 0;
+  private lastIntroSecond = -1;
+  /** Cartel grande de "A jugar" que sale al terminar la cuenta regresiva. */
+  splash: { at: number } | null = null;
   /** El servidor congela el mundo al terminar: no se manda ni se predice movimiento. */
   private inputFrozen = false;
 
@@ -182,6 +195,7 @@ export class ClientBR {
     }
     this.latest = snap;
     this.me = snap.me;
+    this.trackIntro(snap.intro ?? 0);
     this.zone = snap.zone;
     this.boxes = snap.boxes;
     if (snap.inv) {
@@ -339,6 +353,15 @@ export class ClientBR {
       this.stepDX = this.stepDY = 0;
       return;
     }
+    // Durante la cuenta regresiva del inicio todos estan quietos y sin disparar.
+    const frozen = this.intro > 0;
+    if (frozen) {
+      sample.mx = 0;
+      sample.my = 0;
+      sample.fire = false;
+      sample.hold = false;
+      sample.run = false;
+    }
     const mx = Math.round(sample.mx * 100) / 100;
     const my = Math.round(sample.my * 100) / 100;
     this.aim = sample.aim;
@@ -407,6 +430,41 @@ export class ClientBR {
       this.handle((this.eventQueue.shift() as { ev: BREvent }).ev);
     }
     if (this.eventQueue.length > 400) this.eventQueue.splice(0, this.eventQueue.length - 400);
+  }
+
+  /** Cuenta regresiva del inicio: un tic por segundo y, al llegar a 0, el cartel de a jugar. */
+  private trackIntro(left: number): void {
+    const before = this.intro;
+    this.intro = left;
+    if (left > 0) {
+      const sec = Math.ceil(left - 0.001);
+      if (sec !== this.lastIntroSecond) {
+        this.lastIntroSecond = sec;
+        this.sfx.introTick(sec);
+      }
+    } else if (before > 0) {
+      this.splash = { at: performance.now() };
+      this.sfx.introGo();
+    }
+  }
+
+  /** Pide recargar el arma en mano (tecla R o boton). */
+  sendReload(): void {
+    if (!this.alive || !this.net.connected || this.intro > 0) return;
+    this.net.socket.emit('game:reload');
+  }
+
+  /**
+   * Dice si la linea de mira, disparada hacia `angle`, toca algo a lo que vale la pena disparar:
+   * un gato (que no sea tu) o un muro colocado, antes de chocar con cualquier otra cosa.
+   * Sirve para el modo "solo con objetivo" de la mira en el movil.
+   */
+  aimLocked(angle: number): boolean {
+    const item = this.selectedItem;
+    const range = item && isWeapon(item.kind) ? WEAPONS[item.kind].range : CLAWS.range + 8;
+    const { cats } = this.sampleWorld();
+    const others = [...cats.values()].filter((c) => c.id !== this.you && (c.flags & 1) === 0);
+    return aimTouchesTarget(this.map, this.x, this.y, angle, range, others);
   }
 
   /** Manda un emote (con un respiro de 1.5 s entre uno y otro, igual que el servidor). */
