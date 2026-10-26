@@ -51,11 +51,23 @@ const body = (
   grow = 0,
   cx = 10.5,
   rx = 7.6,
-): void => fillEll(c, cx, 9.2 + p.dy, rx + grow, 4.3 + grow, color);
+): void => fillEll(c, cx, 9.2 + p.dy, rx + grow, 3.8 + grow, color);
 
 /** Cabeza del gato, con margen opcional. */
 const head = (c: Ctx, p: Pose, color: (x: number, y: number) => string | null, grow = 0): void =>
   fillEll(c, 18.7, 7.6 + p.dy, 4.4 + grow, 3.8 + grow, color);
+
+/**
+ * El tronco del gato ocupa las filas 5 a 11 de la cuadricula. Las ropas se dibujaron una fila mas
+ * abajo (dejaban el lomo al descubierto y colgaban sobre las patas), asi que todo lo que viste el
+ * tronco se sube un bloque con esta funcion; los sombreros y las caras se quedan donde estaban.
+ */
+function onTorso(c: Ctx, draw: () => void): void {
+  c.save();
+  c.translate(0, -1);
+  draw();
+  c.restore();
+}
 
 /** Filas de rangos de x: `[y, x0, x1]`, con el desplazamiento vertical del marco. */
 function spans(c: Ctx, rows: [number, number, number][], color: string, dy = 0): void {
@@ -71,32 +83,34 @@ const BRUJA: Outfit = {
     const P0 = '#2a1a3d';
     const P1 = '#46307f';
     const P2 = '#6a4fb0';
-    // capa sobre el lomo
-    spans(
-      c,
-      [
-        [6, 6, 13],
-        [7, 5, 13],
-        [8, 5, 14],
-        [9, 4, 14],
-        [10, 4, 14],
-        [11, 4, 14],
-        [12, 5, 13],
-      ],
-      P1,
-      d,
-    );
-    spans(c, [[12, 5, 13]], P0, d);
-    for (const x of [5, 7, 9, 11, 13]) px(c, x, 13 + d, P1);
-    for (const [x, y] of [
-      [7, 8],
-      [10, 10],
-      [6, 11],
-      [12, 7],
-    ] as const)
-      px(c, x, y + d, '#ffcd75');
-    px(c, 14, 8 + d, '#ffcd75');
-    px(c, 14, 9 + d, '#ef7d57');
+    onTorso(c, () => {
+      // capa sobre el lomo
+      spans(
+        c,
+        [
+          [6, 6, 13],
+          [7, 5, 13],
+          [8, 5, 14],
+          [9, 4, 14],
+          [10, 4, 14],
+          [11, 4, 14],
+          [12, 5, 13],
+        ],
+        P1,
+        d,
+      );
+      spans(c, [[12, 5, 13]], P0, d);
+      for (const x of [5, 7, 9, 11, 13]) px(c, x, 13 + d, P1);
+      for (const [x, y] of [
+        [7, 8],
+        [10, 10],
+        [6, 11],
+        [12, 7],
+      ] as const)
+        px(c, x, y + d, '#ffcd75');
+      px(c, 14, 8 + d, '#ffcd75');
+      px(c, 14, 9 + d, '#ef7d57');
+    });
     // sombrero de punta doblada
     spans(c, [[3, 13, 23]], P2, d);
     spans(c, [[4, 15, 22]], P0, d);
@@ -133,46 +147,48 @@ const BRUJA: Outfit = {
 const CALABAZA: Outfit = {
   front: (c, p) => {
     const d = p.dy;
-    body(
-      c,
-      p,
-      (x, y) => {
-        if (x < 5 || x > 16) return null;
-        if (y <= 6 + d && x % 3 === 1) return '#cf5a2b';
-        if (y >= 11 + d && x % 3 === 1) return '#cf5a2b';
-        if (y <= 7 + d && x < 9) return '#f6a15f';
-        return '#ef7d57';
-      },
-      -0.4,
-      10.5,
-      7.3,
-    );
-    // cara tallada que brilla
-    const glow = '#ffcd75';
-    for (const [x, y] of [
-      [7, 8],
-      [8, 8],
-      [8, 9],
-      [12, 8],
-      [13, 8],
-      [12, 9],
-      [7, 11],
-      [8, 11],
-      [9, 11],
-      [10, 11],
-      [11, 11],
-      [12, 11],
-      [13, 11],
-      [8, 10],
-      [10, 10],
-      [12, 10],
-    ] as const)
-      px(c, x, y + d, glow);
-    for (const [x, y] of [
-      [9, 11],
-      [11, 11],
-    ] as const)
-      px(c, x, y + d, '#a3411e');
+    onTorso(c, () => {
+      body(
+        c,
+        p,
+        (x, y) => {
+          if (x < 4 || x > 17) return null;
+          if (y <= 6 + d && x % 3 === 1) return '#cf5a2b';
+          if (y >= 11 + d && x % 3 === 1) return '#cf5a2b';
+          if (y <= 7 + d && x < 9) return '#f6a15f';
+          return '#ef7d57';
+        },
+        0.1,
+        10.5,
+        7.5,
+      );
+      // cara tallada que brilla
+      const glow = '#ffcd75';
+      for (const [x, y] of [
+        [7, 8],
+        [8, 8],
+        [8, 9],
+        [12, 8],
+        [13, 8],
+        [12, 9],
+        [7, 11],
+        [8, 11],
+        [9, 11],
+        [10, 11],
+        [11, 11],
+        [12, 11],
+        [13, 11],
+        [8, 10],
+        [10, 10],
+        [12, 10],
+      ] as const)
+        px(c, x, y + d, glow);
+      for (const [x, y] of [
+        [9, 11],
+        [11, 11],
+      ] as const)
+        px(c, x, y + d, '#a3411e');
+    });
     // tallo y hoja entre las orejas
     rect(c, 18, 1 + d, 2, 3, '#38b764');
     px(c, 18, 1 + d, '#a7f070');
@@ -252,64 +268,68 @@ const VAMPIRO: Outfit = {
     px(c, 14, 4 + d, '#b13e53');
     px(c, 14, 5 + d, '#b13e53');
     px(c, 13, 3 + d, '#b13e53');
-    // capa que cae por detras
-    spans(
-      c,
-      [
-        [6, 7, 14],
-        [7, 4, 14],
-        [8, 3, 13],
-        [9, 2, 13],
-        [10, 2, 13],
-        [11, 1, 13],
-        [12, 1 - flare, 13],
-        [13, 0 - flare, 12],
-      ],
-      '#2b2d42',
-      d,
-    );
-    // forro rojo y bordes rotos
-    spans(
-      c,
-      [
-        [10, 2, 3],
-        [11, 1, 4],
-        [12, 1 - flare, 5],
-        [13, 0 - flare, 6],
-      ],
-      '#b13e53',
-      d,
-    );
-    for (let x = 0; x <= 12; x += 2) px(c, x - flare, 14 + d, '#2b2d42');
+    onTorso(c, () => {
+      // capa que cae por detras
+      spans(
+        c,
+        [
+          [6, 7, 14],
+          [7, 4, 14],
+          [8, 3, 13],
+          [9, 2, 13],
+          [10, 2, 13],
+          [11, 1, 13],
+          [12, 1 - flare, 13],
+          [13, 0 - flare, 12],
+        ],
+        '#2b2d42',
+        d,
+      );
+      // forro rojo y bordes rotos
+      spans(
+        c,
+        [
+          [10, 2, 3],
+          [11, 1, 4],
+          [12, 1 - flare, 5],
+          [13, 0 - flare, 6],
+        ],
+        '#b13e53',
+        d,
+      );
+      for (let x = 0; x <= 12; x += 2) px(c, x - flare, 14 + d, '#2b2d42');
+    });
   },
   front: (c, p) => {
     const d = p.dy;
-    // capa negra sobre el lomo con forro rojo en el borde
-    spans(
-      c,
-      [
-        [6, 6, 13],
-        [7, 5, 13],
-        [8, 5, 14],
-        [9, 4, 14],
-        [10, 4, 14],
-        [11, 4, 14],
-        [12, 5, 13],
-      ],
-      '#2b2d42',
-      d,
-    );
-    for (const x of [7, 10, 13]) rect(c, x, 8 + d, 1, 4, '#3d4163');
-    spans(
-      c,
-      [
-        [12, 5, 13],
-        [13, 5, 12],
-      ],
-      '#b13e53',
-      d,
-    );
-    px(c, 14, 8 + d, '#ffcd75');
+    onTorso(c, () => {
+      // capa negra sobre el lomo con forro rojo en el borde
+      spans(
+        c,
+        [
+          [6, 6, 13],
+          [7, 5, 13],
+          [8, 5, 14],
+          [9, 4, 14],
+          [10, 4, 14],
+          [11, 4, 14],
+          [12, 5, 13],
+        ],
+        '#2b2d42',
+        d,
+      );
+      for (const x of [7, 10, 13]) rect(c, x, 8 + d, 1, 4, '#3d4163');
+      spans(
+        c,
+        [
+          [12, 5, 13],
+          [13, 5, 12],
+        ],
+        '#b13e53',
+        d,
+      );
+      px(c, 14, 8 + d, '#ffcd75');
+    });
     // pelo peinado hacia atras con pico en la frente
     spans(
       c,
@@ -337,7 +357,9 @@ const MOMIA: Outfit = {
     const B = '#b9a67c';
     const wrap = (x: number, y: number): string => ((x + y) % 4 === 0 ? B : A);
     // cuerpo y cabeza envueltos, con la ventana de los ojos al aire
-    body(c, p, (x, y) => ((x * 7 + y * 13) % 29 === 0 ? null : wrap(x, y)), 0, 10.5, 7.6);
+    onTorso(c, () => {
+      body(c, p, (x, y) => ((x * 7 + y * 13) % 29 === 0 ? null : wrap(x, y)), 0, 10.5, 7.6);
+    });
     head(c, p, (x, y) => (y >= 6 + d && y <= 8 + d && x >= 19 ? null : wrap(x + 1, y)), 0.3);
     spans(
       c,
@@ -382,16 +404,18 @@ const ESQUELETO: Outfit = {
     const d = p.dy;
     const bone = '#f4f4f4';
     const boneD = '#c8d0e0';
-    body(c, p, () => K, 0, 10.5, 7.4);
-    // columna y costillas
-    for (let x = 5; x <= 14; x++) px(c, x, 6 + d, bone);
-    for (const x of [8, 10, 12, 14]) {
-      rect(c, x, 7 + d, 1, 4, bone);
-      px(c, x - 1, 10 + d, boneD);
-    }
-    for (let x = 6; x <= 15; x += 1) if (x % 2 === 0) px(c, x, 11 + d, boneD);
-    // pelvis
-    rect(c, 5, 10 + d, 2, 2, bone);
+    onTorso(c, () => {
+      body(c, p, () => K, 0, 10.5, 7.4);
+      // columna y costillas
+      for (let x = 5; x <= 14; x++) px(c, x, 6 + d, bone);
+      for (const x of [8, 10, 12, 14]) {
+        rect(c, x, 7 + d, 1, 4, bone);
+        px(c, x - 1, 10 + d, boneD);
+      }
+      for (let x = 6; x <= 15; x += 1) if (x % 2 === 0) px(c, x, 11 + d, boneD);
+      // pelvis
+      rect(c, 5, 10 + d, 2, 2, bone);
+    });
     // huesos de las patas
     for (const x of [8, 16]) {
       rect(c, x, 12, 1, 4, bone);
@@ -428,7 +452,9 @@ const PIRATA: Outfit = {
   front: (c, p) => {
     const d = p.dy;
     // camisa de rayas
-    body(c, p, (x) => (x < 6 || x > 15 ? null : x % 2 === 0 ? W : '#b13e53'), -0.6, 10.5, 7.4);
+    onTorso(c, () => {
+      body(c, p, (x) => (x < 5 || x > 16 ? null : x % 2 === 0 ? W : '#b13e53'), 0.3, 10.5, 7.5);
+    });
     // panuelo en el cuello
     spans(
       c,
@@ -558,11 +584,21 @@ const MURCIELAGO: Outfit = {
     px(c, 20, 10 + d, W);
     px(c, 22, 10 + d, W);
     // peto oscuro con su murcielaguito
-    body(c, p, (x, y) => (x >= 10 && x <= 15 && y >= 8 + d ? M : null), -0.8, 10.5, 7.4);
-    px(c, 12, 9 + d, '#ffcd75');
-    px(c, 14, 9 + d, '#ffcd75');
-    px(c, 13, 10 + d, '#ffcd75');
-    px(c, 13, 9 + d, '#ffcd75');
+    onTorso(c, () => {
+      // traje de murcielago completo: oscuro arriba, morado en el pecho y el vientre
+      body(
+        c,
+        p,
+        (x, y) => (x < 4 || x > 16 ? null : y >= 9 + d && x >= 8 ? '#46307f' : M),
+        0,
+        10.5,
+        7.5,
+      );
+      px(c, 12, 9 + d, '#ffcd75');
+      px(c, 14, 9 + d, '#ffcd75');
+      px(c, 13, 10 + d, '#ffcd75');
+      px(c, 13, 9 + d, '#ffcd75');
+    });
   },
 };
 // ------------------------------------------------------------------ diablillo
@@ -572,38 +608,40 @@ const DIABLILLO: Outfit = {
     const d = p.dy;
     const R = '#b13e53';
     const RD = '#7e2638';
-    // capa roja
-    spans(
-      c,
-      [
-        [6, 6, 13],
-        [7, 5, 13],
-        [8, 5, 14],
-        [9, 4, 14],
-        [10, 4, 14],
-        [11, 4, 14],
-        [12, 5, 13],
-      ],
-      R,
-      d,
-    );
-    spans(
-      c,
-      [
-        [10, 4, 14],
-        [11, 4, 14],
-      ],
-      RD,
-      d,
-    );
-    // llamas que titilan en el borde
-    const flick = p.frame % 2;
-    for (let x = 4; x <= 14; x++) {
-      const tall = (x + flick) % 3 === 0;
-      px(c, x, 12 + d, tall ? '#ffcd75' : '#ef7d57');
-      if (tall) px(c, x, 13 + d, '#ef7d57');
-    }
-    px(c, 14, 8 + d, '#ffcd75');
+    onTorso(c, () => {
+      // capa roja
+      spans(
+        c,
+        [
+          [6, 6, 13],
+          [7, 5, 13],
+          [8, 5, 14],
+          [9, 4, 14],
+          [10, 4, 14],
+          [11, 4, 14],
+          [12, 5, 13],
+        ],
+        R,
+        d,
+      );
+      spans(
+        c,
+        [
+          [10, 4, 14],
+          [11, 4, 14],
+        ],
+        RD,
+        d,
+      );
+      // llamas que titilan en el borde
+      const flick = p.frame % 2;
+      for (let x = 4; x <= 14; x++) {
+        const tall = (x + flick) % 3 === 0;
+        px(c, x, 12 + d, tall ? '#ffcd75' : '#ef7d57');
+        if (tall) px(c, x, 13 + d, '#ef7d57');
+      }
+      px(c, 14, 8 + d, '#ffcd75');
+    });
     // cuernos
     for (const [x, y] of [
       [16, 3],
@@ -654,15 +692,17 @@ const FRANKENSTEIN: Outfit = {
     const d = p.dy;
     const G1 = '#7cc063';
     const G2 = '#4f9a49';
-    // saco oscuro con solapa
-    body(c, p, (x) => (x < 5 ? null : x > 14 ? null : '#333c57'), -0.4, 10.5, 7.2);
-    for (let y = 7; y <= 11; y++) px(c, 14, y + d, '#566c86');
-    px(c, 13, 8 + d, W);
-    px(c, 13, 9 + d, W);
-    rect(c, 8, 10 + d, 2, 2, '#ffcd75');
-    px(c, 8, 10 + d, '#ef7d57');
-    px(c, 6, 8 + d, '#566c86');
-    px(c, 7, 8 + d, '#566c86');
+    onTorso(c, () => {
+      // saco oscuro con solapa
+      body(c, p, (x) => (x < 4 ? null : x > 15 ? null : '#333c57'), 0.5, 10.5, 7.4);
+      for (let y = 7; y <= 11; y++) px(c, 14, y + d, '#566c86');
+      px(c, 13, 8 + d, W);
+      px(c, 13, 9 + d, W);
+      rect(c, 8, 10 + d, 2, 2, '#ffcd75');
+      px(c, 8, 10 + d, '#ef7d57');
+      px(c, 6, 8 + d, '#566c86');
+      px(c, 7, 8 + d, '#566c86');
+    });
     // cabeza verde
     head(c, p, (x, y) => (y >= 10 + d ? G2 : G1), 0.3);
     // pelo plano
