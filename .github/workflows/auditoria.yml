@@ -1,0 +1,43 @@
+name: Auditoria del PDF
+
+# Corre a mano (Actions, "Run workflow") la auditoria estricta de los lineamientos y la revision de
+# seguridad contra la URL publica, desde un servidor de GitHub: una red limpia y estable, sin el
+# ruido de una Wi-Fi o una conexion domestica. Solo hace peticiones normales al servicio.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: URL publica a revisar
+        default: https://cybergrid-breach-sync.onrender.com
+      rondas:
+        description: Rondas seguidas de cada revision
+        default: '3'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  auditoria:
+    name: Auditoria y revision de seguridad
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      URL: ${{ inputs.url }}
+      RONDAS: ${{ inputs.rondas }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Despertar el servicio
+        run: curl -s --max-time 90 --retry 3 --retry-delay 10 "$URL/api/test/health" > /dev/null
+      - name: Revision de seguridad
+        run: node scripts/seguridad.mjs "$URL" --rondas "$RONDAS"
+      - name: Auditoria de los lineamientos del PDF
+        run: node scripts/auditoria.mjs "$URL" --rondas "$RONDAS"
+        env:
+          GH_TOKEN: ${{ github.token }}
