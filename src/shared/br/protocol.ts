@@ -130,7 +130,12 @@ export const skinSchema = z.object({
   outfit: z.number().int().min(0).max(OUTFIT_COUNT).default(0),
 });
 
-const roomName = z.string().trim().min(1).max(24);
+/** Nombre de sala: sin caracteres de control, invisibles ni de direccion de texto (\p{C}), que sirven para disfrazar nombres. */
+const roomName = z
+  .string()
+  .max(200)
+  .transform((s) => s.replace(/\p{C}/gu, '').replace(/\s+/g, ' ').trim())
+  .pipe(z.string().min(1).max(24));
 const roomMap = z.enum([...ALL_MAP_KINDS, 'azar'] as unknown as [string, ...string[]]);
 const roomMode = z.enum(GAME_MODES as unknown as [GameMode, ...GameMode[]]);
 const roomFormat = z.enum(DUEL_FORMATS as unknown as [DuelFormat, ...DuelFormat[]]);

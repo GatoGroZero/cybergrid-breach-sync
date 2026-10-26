@@ -216,6 +216,22 @@ export class Lobby {
 
   // ------------------------------------------------------------------ conexiones
 
+  private handlerErrors = 0;
+  private handlerErrorWindow = 0;
+
+  /** Anota un error de un manejador del socket; con un tope por minuto para que no llene el registro. */
+  private handlerError(event: string, err: unknown): void {
+    // un "ack" que no es funcion es cosa del cliente, no un fallo nuestro: no se anota
+    if (err instanceof TypeError && err.message === 'ack is not a function') return;
+    const now = Date.now();
+    if (now - this.handlerErrorWindow > 60_000) {
+      this.handlerErrorWindow = now;
+      this.handlerErrors = 0;
+    }
+    if (++this.handlerErrors > 20) return;
+    console.error(`[socket ${event}]`, err instanceof Error ? err.message : err);
+  }
+
   attach(socket: Socket): void {
     const user = socket.data.user as SessionUser;
     const previous = this.sockets.get(user.id);
@@ -240,13 +256,26 @@ export class Lobby {
       return room && member ? { room, member, game: member.inGame ? room.game : null } : null;
     };
 
-    socket.on('rooms:list', (ack?: (a: Ack<PublicRoom[]>) => void) => {
+    // Un cliente hostil puede mandar cualquier cosa, por ejemplo un "ack" que no es una funcion.
+    // Que un manejador lance una excepcion no puede tumbar el proceso: se anota y se ignora.
+    const on = (event: string, handler: (...args: never[]) => unknown): void => {
+      socket.on(event, (...args: unknown[]) => {
+        try {
+          const out = handler(...(args as never[]));
+          if (out instanceof Promise) out.catch((err: unknown) => this.handlerError(event, err));
+        } catch (err) {
+          this.handlerError(event, err);
+        }
+      });
+    };
+
+    on('rooms:list', (ack?: (a: Ack<PublicRoom[]>) => void) => {
       if (allow(actionBucket)) ack?.({ ok: true, data: this.publicRooms() });
     });
-    socket.on('skin:get', (ack?: (a: Ack<Skin>) => void) => {
+    on('skin:get', (ack?: (a: Ack<Skin>) => void) => {
       ack?.({ ok: true, data: this.skins.get(user.id) ?? defaultSkin() });
     });
-    socket.on('skin:set', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('skin:set', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = skinSchema.safeParse(raw);
       if (!parsed.success) return ack?.(fail('pelaje_invalido'));
@@ -258,53 +287,53 @@ export class Lobby {
       }
       ack?.({ ok: true });
     });
-    socket.on('room:create', (raw: unknown, ack?: (a: Ack<{ code: string }>) => void) => {
+    on('room:create', (raw: unknown, ack?: (a: Ack<{ code: string }>) => void) => {
       if (allow(actionBucket)) ack?.(this.createRoom(user, socket, raw));
     });
-    socket.on('room:join', (raw: unknown, ack?: (a: Ack<{ code: string }>) => void) => {
+    on('room:join', (raw: unknown, ack?: (a: Ack<{ code: string }>) => void) => {
       if (allow(actionBucket)) ack?.(this.joinRoom(user, socket, raw));
     });
-    socket.on('room:leave', (ack?: (a: Ack) => void) => {
+    on('room:leave', (ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       this.leaveRoom(user.id, socket);
       ack?.({ ok: true });
     });
-    socket.on('room:ready', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:ready', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setReady(user.id, raw));
     });
-    socket.on('room:settings', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:settings', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setSettings(user.id, raw));
     });
-    socket.on('room:team', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:team', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setTeam(user.id, raw));
     });
-    socket.on('room:start', (ack?: (a: Ack) => void) => {
+    on('room:start', (ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.startNow(user.id));
     });
-    socket.on('room:away', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:away', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.setAway(user.id, raw));
     });
-    socket.on('room:kick', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:kick', (raw: unknown, ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.kick(user.id, raw));
     });
     // Salir de la partida SIN salir del grupo (room:leave sigue siendo salir del grupo).
-    socket.on('game:leave', (ack?: (a: Ack) => void) => {
+    on('game:leave', (ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.leaveMatch(user.id));
     });
 
     // ---- partida
-    socket.on('game:input', (raw: unknown) => {
+    on('game:input', (raw: unknown) => {
       if (!allow(inputBucket)) return;
       const parsed = inputSchema.safeParse(raw);
       const m = me();
       if (parsed.success && m?.game) m.game.pushInput(m.member.catId, parsed.data);
     });
-    socket.on('game:reload', () => {
+    on('game:reload', () => {
       if (!allow(actionBucket)) return;
       const m = me();
       if (m?.game) m.game.reload(m.member.catId);
     });
-    socket.on('game:kit', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('game:kit', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = kitSchema.safeParse(raw);
       const m = me();
@@ -313,7 +342,7 @@ export class Lobby {
       const done = m.game.chooseKit(m.member.catId, parsed.data.kit as KitId);
       ack?.(done ? { ok: true } : fail('fuera_de_tiempo'));
     });
-    socket.on('game:relic', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('game:relic', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = relicSchema.safeParse(raw);
       const m = me();
@@ -322,7 +351,7 @@ export class Lobby {
       const done = m.game.chooseRelic(m.member.catId, parsed.data.i);
       ack?.(done ? { ok: true } : fail('sin_oferta'));
     });
-    socket.on('game:power', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('game:power', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = powerPickSchema.safeParse(raw);
       const m = me();
@@ -331,88 +360,88 @@ export class Lobby {
       const done = m.game.choosePower(m.member.catId, parsed.data.i);
       ack?.(done ? { ok: true } : fail('sin_oferta'));
     });
-    socket.on('room:meta', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('room:meta', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = metaSchema.safeParse(raw);
       if (!parsed.success) return ack?.(fail('datos_invalidos'));
       this.remember(this.metas, user.id, clampMeta(parsed.data));
       ack?.({ ok: true });
     });
-    socket.on('game:emote', (raw: unknown) => {
+    on('game:emote', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = emoteSchema.safeParse(raw);
       const m = me();
       if (parsed.success && m?.game) m.game.emote(m.member.catId, parsed.data.k);
     });
-    socket.on('dev:kit', (kind?: unknown) => {
+    on('dev:kit', (kind?: unknown) => {
       const m = me();
       if (this.config.testKit && m?.game) m.game.giveTestKit(m.member.catId, kind === 'heavy');
     });
-    socket.on('dev:round', () => {
+    on('dev:round', () => {
       const m = me();
       if (!this.config.testKit || !(m?.game instanceof PvpGame)) return;
       const mine = m.game.cat(m.member.catId);
       if (mine) m.game.forceRoundWin(mine.team);
     });
-    socket.on('dev:tp', (p?: { x?: unknown; y?: unknown }) => {
+    on('dev:tp', (p?: { x?: unknown; y?: unknown }) => {
       const m = me();
       if (this.config.testKit && m?.game && typeof p?.x === 'number' && typeof p?.y === 'number')
         m.game.debugMove(m.member.catId, p.x, p.y);
     });
-    socket.on('dev:die', () => {
+    on('dev:die', () => {
       const m = me();
       if (this.config.testKit && m?.game) m.game.debugKill(m.member.catId);
     });
-    socket.on('dev:room', (i?: unknown) => {
+    on('dev:room', (i?: unknown) => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame && Number.isInteger(i))
         m.game.debugTeleport(i as number);
     });
-    socket.on('dev:boss', () => {
+    on('dev:boss', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugKillBoss();
     });
-    socket.on('dev:win', () => {
+    on('dev:win', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugWin();
     });
-    socket.on('dev:power', (raw: unknown) => {
+    on('dev:power', (raw: unknown) => {
       const m = me();
       const p = raw as { id?: unknown; lvl?: unknown } | null;
       if (!this.config.testKit || !(m?.game instanceof AdventureGame)) return;
       if (typeof p?.id === 'number' && Number.isInteger(p.id))
         m.game.debugPower(m.member.catId, p.id, typeof p.lvl === 'number' ? p.lvl : 1);
     });
-    socket.on('dev:armor', (raw: unknown) => {
+    on('dev:armor', (raw: unknown) => {
       const m = me();
       const p = raw as { slot?: unknown; tier?: unknown } | null;
       if (!this.config.testKit || !(m?.game instanceof AdventureGame)) return;
       if (typeof p?.slot === 'number' && typeof p?.tier === 'number')
         m.game.debugArmor(m.member.catId, p.slot, p.tier);
     });
-    socket.on('dev:arm', () => {
+    on('dev:arm', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugArm(m.member.catId);
     });
-    socket.on('dev:finish', () => {
+    on('dev:finish', () => {
       const m = me();
       if (!this.config.testKit || !m?.game) return;
       const bot = m.game.cats.find((c) => c.bot && c.alive);
       m.game.forceFinish(bot?.id ?? null);
     });
-    socket.on('game:select', (raw: unknown) => {
+    on('game:select', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = selectSchema.safeParse(raw);
       const m = me();
       if (parsed.success && m?.game) m.game.select(m.member.catId, parsed.data.slot);
     });
-    socket.on('game:interact', (ack?: (a: Ack<LootContents | null>) => void) => {
+    on('game:interact', (ack?: (a: Ack<LootContents | null>) => void) => {
       if (!allow(actionBucket)) return;
       const m = me();
       if (!m?.game) return ack?.(fail('sin_partida') as Ack<LootContents | null>);
       ack?.({ ok: true, data: m.game.interact(m.member.catId) });
     });
-    socket.on('loot:open', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
+    on('loot:open', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = lootIdSchema.safeParse(raw);
       const m = me();
@@ -420,7 +449,7 @@ export class Lobby {
         return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
       ack?.({ ok: true, data: m.game.contents(m.member.catId, parsed.data.id) });
     });
-    socket.on('loot:take', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
+    on('loot:take', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = lootTakeSchema.safeParse(raw);
       const m = me();
@@ -429,7 +458,7 @@ export class Lobby {
       const { id, index, slot } = parsed.data;
       ack?.({ ok: true, data: m.game.lootTake(m.member.catId, id, index, slot) });
     });
-    socket.on('loot:takeAll', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
+    on('loot:takeAll', (raw: unknown, ack?: (a: Ack<LootContents | null>) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = lootIdSchema.safeParse(raw);
       const m = me();
@@ -437,7 +466,7 @@ export class Lobby {
         return ack?.(fail('datos_invalidos') as Ack<LootContents | null>);
       ack?.({ ok: true, data: m.game.lootTakeAll(m.member.catId, parsed.data.id) });
     });
-    socket.on('inv:move', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('inv:move', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = moveItemSchema.safeParse(raw);
       const m = me();
@@ -445,7 +474,7 @@ export class Lobby {
       m.game.invMove(m.member.catId, parsed.data.from, parsed.data.to);
       ack?.({ ok: true });
     });
-    socket.on('inv:drop', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('inv:drop', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = dropSchema.safeParse(raw);
       const m = me();
@@ -453,7 +482,7 @@ export class Lobby {
       m.game.invDrop(m.member.catId, parsed.data.slot, parsed.data.qty);
       ack?.({ ok: true });
     });
-    socket.on('armor:move', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('armor:move', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = armorMoveSchema.safeParse(raw);
       const m = me();
@@ -462,7 +491,7 @@ export class Lobby {
       const why = m.game.armorMove(m.member.catId, parsed.data.slot, parsed.data.to);
       ack?.(why ? fail(why) : { ok: true });
     });
-    socket.on('ammo:drop', (raw: unknown, ack?: (a: Ack) => void) => {
+    on('ammo:drop', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;
       const parsed = dropAmmoSchema.safeParse(raw);
       const m = me();
@@ -470,14 +499,14 @@ export class Lobby {
       m.game.ammoDrop(m.member.catId, parsed.data.kind as AmmoKind, parsed.data.qty);
       ack?.({ ok: true });
     });
-    socket.on('spectate:next', (raw: unknown) => {
+    on('spectate:next', (raw: unknown) => {
       if (!allow(actionBucket)) return;
       const parsed = spectateSchema.safeParse(raw);
       const m = me();
       if (parsed.success && m?.game) m.game.spectateNext(m.member.catId, parsed.data.dir);
     });
 
-    socket.on('disconnect', () => this.onDisconnect(user.id, socket));
+    on('disconnect', () => this.onDisconnect(user.id, socket));
     this.resume(user.id, socket);
   }
 
@@ -1105,6 +1134,15 @@ export class Lobby {
     const stepMs = 1000 / TICK_HZ;
     let next = performance.now() + stepMs;
     const run = (): void => {
+      try {
+        step();
+      } catch (err) {
+        // un fallo dentro de una partida cierra esa sala, no el servidor entero
+        console.error('[partida] error en la simulacion, se cierra la sala', err);
+        this.endGame(room);
+      }
+    };
+    const step = (): void => {
       let guard = 0;
       while (next <= performance.now() && guard < 4) {
         // Con la partida terminada el mundo se congela: solo se siguen enviando instantaneas

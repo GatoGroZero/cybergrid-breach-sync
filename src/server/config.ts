@@ -60,6 +60,10 @@ export interface Config {
   version: string;
   limits: {
     login: number;
+    /** Fallos de contrasena por cuenta (sin importar desde que IP) cada 15 minutos. */
+    accountFails: number;
+    /** Peticiones por minuto y por IP a /api/auth. */
+    api: number;
     register: number;
     guest: number;
     oauth: number;
@@ -173,9 +177,11 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     introSeconds: Math.min(15, Math.max(0, int(process.env.INTRO_SECONDS, 5))),
     pickSeconds: Math.min(40, Math.max(2, int(process.env.PICK_SECONDS, 14))),
-    version: '3.4.0',
+    version: '3.4.1',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
+      accountFails: int(process.env.LIMIT_ACCOUNT_FAILS, 10),
+      api: int(process.env.LIMIT_API, 600),
       register: int(process.env.LIMIT_REGISTER, 30),
       guest: int(process.env.LIMIT_GUEST, 200),
       oauth: int(process.env.LIMIT_OAUTH, 40),

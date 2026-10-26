@@ -85,6 +85,9 @@ interface PlayerAgg {
   survival_seconds: number | null;
 }
 
+/** Cuantas partidas sembradas se guardan como maximo (las mas viejas se descartan). */
+export const SEED_STORE_MAX = 10_000;
+
 export class Repo {
   readonly db: Database.Database;
   private readonly insertUser;
@@ -95,6 +98,7 @@ export class Repo {
   private readonly aggMatches;
   private readonly aggPlayers;
   private readonly deleteSeeded;
+  private readonly trimSeeded;
   private readonly kvSelect;
   private readonly kvUpsert;
   private readonly kvInsert;
@@ -130,6 +134,10 @@ export class Repo {
          FROM match_players GROUP BY source`,
     );
     this.deleteSeeded = this.db.prepare(`DELETE FROM matches WHERE source = 'seed'`);
+    this.trimSeeded = this.db.prepare(
+      `DELETE FROM matches WHERE source = 'seed' AND id NOT IN
+         (SELECT id FROM matches WHERE source = 'seed' ORDER BY id DESC LIMIT ?)`,
+    );
     this.kvSelect = this.db.prepare('SELECT v FROM kv WHERE k = ?');
     this.kvUpsert = this.db.prepare(
       'INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
@@ -236,6 +244,9 @@ export class Repo {
           );
         });
       });
+      // Tope de lo sembrado: sin el, repetir la siembra sin reemplazar llenaria el disco y haria
+      // lentas las consultas de telemetria. Se conservan las mas recientes.
+      this.trimSeeded.run(SEED_STORE_MAX);
       return matches.length;
     });
     return run();

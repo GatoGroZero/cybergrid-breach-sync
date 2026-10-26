@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# El flujo solo lee el codigo: ningun paso necesita permisos de escritura sobre el repositorio.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   # en main no se cancela nada: cada commit del historial queda con su resultado
@@ -25,6 +29,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      - name: Dependencias con vulnerabilidades conocidas
+        run: npm audit --omit=dev --audit-level=high
 
   pruebas-unitarias:
     name: Pruebas unitarias e integracion
