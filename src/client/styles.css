@@ -1309,6 +1309,48 @@ body.cinema .menu-btn {
   border-color: var(--yellow);
 }
 
+/* celular en horizontal: todo mas apretado para que el detalle y sus botones quepan sin bajar */
+@media (max-height: 520px) {
+  .inv-head h2 {
+    font-size: 14px;
+  }
+
+  .inv-detail {
+    padding: 8px;
+    min-height: 0;
+  }
+
+  .inv-info-head {
+    margin-bottom: 4px;
+  }
+
+  .inv-info-head canvas {
+    width: 32px;
+    height: 32px;
+  }
+
+  .inv-stats {
+    gap: 0 10px;
+    margin-bottom: 6px;
+    font-size: 17px;
+    line-height: 1;
+  }
+
+  .inv-text {
+    margin-bottom: 6px;
+    font-size: 16px;
+    line-height: 1.05;
+  }
+
+  .inv-act {
+    min-height: 38px;
+  }
+
+  #inv-hint {
+    display: none;
+  }
+}
+
 @media (max-width: 640px) {
   .inv-body {
     grid-template-columns: minmax(0, 1fr);

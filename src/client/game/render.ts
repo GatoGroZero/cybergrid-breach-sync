@@ -47,6 +47,8 @@ const SWAY: Record<string, number> = {
 const T = TILE;
 const BG = '#1a1c2c';
 const NATIVE_H = 270;
+/** Cuadros de la caminata: pata, paso, otra pata, paso (0 es el gato con las patas juntas). */
+const WALK_CYCLE = [1, 0, 2, 0] as const;
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -1651,11 +1653,15 @@ export class BRRenderer {
     const lift = Math.max(0, (outfitInfo(info?.skin.outfit)?.height ?? 0) - 2);
     const moving = (flags & FLAG.moving) !== 0;
     const running = moving && (flags & FLAG.running) !== 0;
-    const frame = running
-      ? 3 + (Math.floor(now / 80 + id) & 1)
-      : moving
-        ? 1 + (Math.floor(now / 115 + id) & 1)
-        : 0;
+    // Caminar en cuatro tiempos (pata, paso, otra pata, paso): en el paso las patas se juntan y el
+    // cuerpo sube; al galopar el cuerpo se lanza hacia adelante. Quieto, respira.
+    const phase = Math.floor(now / (running ? 80 : 95) + id);
+    const frame = running ? 3 + (phase & 1) : moving ? (WALK_CYCLE[phase & 3] as number) : 0;
+    let bodyUp = 0;
+    let lunge = 0;
+    if (running) lunge = frame === 3 ? 1 : 0;
+    else if (moving) bodyUp = frame === 0 ? 1 : 0;
+    else bodyUp = Math.floor(now / 650 + id * 3) % 4 === 0 ? 1 : 0;
     const hurtNow = (flags & FLAG.hurt) !== 0;
     if (hurtNow && !this.stillHurt.has(id)) this.hurtAt.set(id, now);
     if (hurtNow) this.stillHurt.add(id);
@@ -1778,13 +1784,20 @@ export class BRRenderer {
           const dw = Math.round(w * (1 + 0.2 * squash));
           const dh = Math.round(h * (1 - 0.16 * squash));
           b.drawImage(sprite, 0, 0, w, h, dx - Math.round((dw - w) / 2), dy + (h - dh), dw, dh);
+        } else if (bodyUp !== 0 || lunge !== 0) {
+          // el cuerpo se mueve un poco sobre las patas (que se quedan pegadas al piso)
+          const w = sprite.width;
+          const h = sprite.height;
+          const cut = CAT_PAD + 13;
+          b.drawImage(sprite, 0, cut - 1, w, h - cut + 1, dx, dy + cut - 1, w, h - cut + 1);
+          b.drawImage(sprite, 0, 0, w, cut, dx + lunge * facing, dy - bodyUp, w, cut);
         } else {
           b.drawImage(sprite, dx, dy);
         }
         if (icon && !wet) {
           const gun = facing === 1 ? icon : this.flip(icon);
           const gx = Math.round(sx + Math.cos(aim) * 8 - gun.width / 2 + facing * 2);
-          const gy = Math.round(sy + Math.sin(aim) * 4.5 - gun.height / 2 + 2);
+          const gy = Math.round(sy + Math.sin(aim) * 4.5 - gun.height / 2 + 2) - bodyUp;
           b.drawImage(gun, gx, gy);
         }
         if (winner) {
