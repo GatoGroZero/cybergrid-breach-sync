@@ -9,17 +9,29 @@ import {
   saveFireMode,
   saveKeys,
   saveTouchLayout,
+  touchAlpha,
   touchCircles,
+  TOUCH_MIN_ALPHA,
   type Action,
   type Circle,
   type InputController,
   type TouchId,
   type TouchLayout,
+  type TouchSpot,
 } from '../game/input';
+import {
+  HUD_KEYS,
+  HUD_LABELS,
+  HUD_DEFAULTS,
+  HUD_MAX,
+  HUD_MIN,
+  hudPrefs,
+  saveHudPrefs,
+} from '../game/hudprefs';
 import { drawTouchControls } from '../game/touchui';
 import { $, el } from './dom';
 
-type Tab = 'keys' | 'touch' | 'sound';
+type Tab = 'keys' | 'touch' | 'sound' | 'ui';
 
 /** Ajustes: reasignar teclas, mover y cambiar el tamano de los botones tactiles, y el sonido. */
 export class Settings {
@@ -41,7 +53,7 @@ export class Settings {
     private readonly bagIcon?: HTMLCanvasElement,
     private readonly emoteIcon?: HTMLCanvasElement,
   ) {
-    for (const tab of ['keys', 'touch', 'sound'] as const) {
+    for (const tab of ['keys', 'touch', 'sound', 'ui'] as const) {
       $(`set-tab-${tab}`).addEventListener('click', () => this.showTab(tab));
     }
     $('settings-close').addEventListener('click', () => this.close());
@@ -54,6 +66,7 @@ export class Settings {
     sound.checked = !sfx.muted;
     sound.addEventListener('change', () => this.sfx.setMuted(!sound.checked));
     this.buildVolumes();
+    this.buildHudPrefs();
     $('volume-reset').addEventListener('click', () => {
       for (const key of Object.keys(DEFAULT_VOLUMES) as (Channel | 'master')[])
         this.sfx.setVolume(key, DEFAULT_VOLUMES[key]);
@@ -78,6 +91,17 @@ export class Settings {
     $('editor-minus').addEventListener('click', () => this.scale(-0.1));
     $('editor-reset').addEventListener('click', () => {
       this.draft = structuredClone(DEFAULT_TOUCH);
+    });
+    const alpha = $<HTMLInputElement>('editor-alpha');
+    alpha.min = String(Math.round(TOUCH_MIN_ALPHA * 100));
+    alpha.addEventListener('input', () => {
+      if (!this.selected) return;
+      this.draft[this.selected].a = Number(alpha.value) / 100;
+    });
+    $('editor-alpha-all').addEventListener('click', () => {
+      if (!this.selected) return;
+      const a = touchAlpha(this.draft[this.selected]);
+      for (const id of Object.keys(this.draft) as TouchId[]) this.draft[id].a = a;
     });
     $('editor-cancel').addEventListener('click', () => this.closeEditor(false));
     $('editor-save').addEventListener('click', () => this.closeEditor(true));
@@ -158,14 +182,59 @@ export class Settings {
         : 'El arma dispara sola mientras la línea de mira está a la vista.';
   }
 
+  /** Un deslizador por cada parte del HUD: el cambio se ve de inmediato y se guarda solo. */
+  private buildHudPrefs(): void {
+    const list = $('ui-list');
+    const sliders: [keyof typeof hudPrefs, HTMLInputElement, HTMLElement][] = [];
+    for (const key of HUD_KEYS) {
+      const label = HUD_LABELS[key];
+      const row = el('label', 'volume');
+      const name = el('span', '', label);
+      const range = el('input');
+      range.type = 'range';
+      range.min = String(Math.round(HUD_MIN * 100));
+      range.max = String(Math.round(HUD_MAX * 100));
+      range.step = '5';
+      range.setAttribute('data-testid', `ui-${key}`);
+      range.setAttribute('aria-label', label);
+      const out = el('output', '', '');
+      range.addEventListener('input', () => {
+        hudPrefs[key] = Number(range.value) / 100;
+        out.textContent = `${range.value}%`;
+        saveHudPrefs(hudPrefs);
+      });
+      row.append(name, range, out);
+      list.append(row);
+      sliders.push([key, range, out]);
+    }
+    const sync = (): void => {
+      for (const [key, range, out] of sliders) {
+        range.value = String(Math.round(hudPrefs[key] * 100));
+        out.textContent = `${range.value}%`;
+      }
+    };
+    sync();
+    this.syncHudPrefs = sync;
+    $('ui-reset').addEventListener('click', () => {
+      Object.assign(hudPrefs, HUD_DEFAULTS);
+      saveHudPrefs(hudPrefs);
+      sync();
+    });
+  }
+
+  private syncHudPrefs: () => void = () => undefined;
+
   private showTab(tab: Tab): void {
-    for (const t of ['keys', 'touch', 'sound'] as const) {
+    // en "Pantalla" el fondo se aclara: asi se ve el HUD cambiar mientras se mueve cada control
+    this.root.classList.toggle('soft', tab === 'ui');
+    for (const t of ['keys', 'touch', 'sound', 'ui'] as const) {
       const on = t === tab;
       $(`set-tab-${t}`).classList.toggle('is-active', on);
       $(`set-tab-${t}`).setAttribute('aria-selected', String(on));
       $(`set-${t}`).hidden = !on;
     }
     if (tab === 'keys') this.renderKeys();
+    if (tab === 'ui') this.syncHudPrefs();
   }
 
   // ------------------------------------------------------------------ teclas
@@ -260,9 +329,15 @@ export class Settings {
       bagIcon: this.bagIcon,
       emoteIcon: this.emoteIcon,
     });
+    const sel = this.selected ? this.draft[this.selected] : null;
     $('editor-sel').textContent = this.selected
-      ? `${TOUCH_LABELS[this.selected]} x${this.draft[this.selected].s.toFixed(1)}`
+      ? `${TOUCH_LABELS[this.selected]} x${(sel as TouchSpot).s.toFixed(1)}`
       : 'Toca un botón';
+    const alpha = $<HTMLInputElement>('editor-alpha');
+    alpha.disabled = !sel;
+    if (sel && document.activeElement !== alpha)
+      alpha.value = String(Math.round(touchAlpha(sel) * 100));
+    $('editor-alpha-out').textContent = `${sel ? Math.round(touchAlpha(sel) * 100) : 100}%`;
   }
 
   private hit(x: number, y: number): TouchId | null {

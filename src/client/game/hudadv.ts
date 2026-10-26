@@ -11,6 +11,7 @@ import { RARITY_COLORS } from '../../shared/br/items';
 import type { Assets } from '../pixel/art';
 import { armorIcon, potionIcon, powerIcon, relicIcon } from '../pixel/art-items';
 import { C } from '../pixel/draw';
+import { hudPrefs, withScale } from './hudprefs';
 import { keyLabel } from './input';
 import { PIX, VT, panel, sprite, text, type HudFrame } from './hud';
 import type { ClientBR } from './state';
@@ -183,7 +184,7 @@ export class AdvHud {
   }
 
   /** Barra de vida del jefe en pantalla, con sus fases. */
-  drawBoss(f: HudFrame): void {
+  drawBoss(f: HudFrame, topBottom: number): void {
     const { ctx, g, w } = f;
     this.bossBottom = 0;
     const boss = g.adv?.boss;
@@ -194,37 +195,40 @@ export class AdvHud {
     const bw = small ? clamp(w * 0.34, 150, 260) : clamp(w * 0.4, 220, 380);
     const x = Math.round(w / 2 - bw / 2);
     // por debajo de la linea de FPS y ping (que va en el HTML, a 46 px del borde)
-    const y = Math.max(this.topBox.y + this.topBox.h + (small ? 8 : 12), STATS_BOTTOM + 4);
+    const y = Math.max(topBottom + (small ? 8 : 12), STATS_BOTTOM + 4);
     const fs = small ? 13 : 15;
     const bh = small ? 5 : 7;
-    this.bossBottom = y + fs + bh + 6;
-    ctx.globalAlpha = 0.9;
-    panel(ctx, x - 5, y - 4, bw + 10, fs + bh + 9, 'rgba(26,28,44,0.7)');
-    ctx.globalAlpha = 1;
-    text(ctx, def.name.toUpperCase(), w / 2, y + fs / 2, fs, C.white, 'center', VT);
-    ctx.fillStyle = '#4a1c2c';
-    ctx.fillRect(x, y + fs + 1, bw, bh);
-    const fw = Math.round((bw * clamp(boss.hp, 0, 100)) / 100);
-    const phase = boss.phase;
-    ctx.fillStyle = phase >= 3 ? '#b794f4' : phase === 2 ? '#ef7d57' : '#e0566d';
-    ctx.fillRect(x, y + fs + 1, fw, bh);
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    ctx.fillRect(x, y + fs + 1, fw, 2);
-    // marcas donde cambia de fase
-    ctx.fillStyle = C.black;
-    const cuts = boss.kind === MOB.reyGato ? [33, 66] : [50];
-    for (const c of cuts) ctx.fillRect(x + Math.round((bw * c) / 100) - 1, y + fs, 2, bh + 2);
-    if (phase >= 2 && !small)
-      text(
-        ctx,
-        phase >= 3 ? 'FASE FINAL' : 'ENFURECIDO',
-        x + bw,
-        y + fs / 2,
-        13,
-        phase >= 3 ? '#b794f4' : C.orange,
-        'right',
-        VT,
-      );
+    const k = hudPrefs.boss;
+    this.bossBottom = y + (fs + bh + 6) * k;
+    withScale(ctx, w / 2, y, k, () => {
+      ctx.globalAlpha = 0.9;
+      panel(ctx, x - 5, y - 4, bw + 10, fs + bh + 9, 'rgba(26,28,44,0.7)');
+      ctx.globalAlpha = 1;
+      text(ctx, def.name.toUpperCase(), w / 2, y + fs / 2, fs, C.white, 'center', VT);
+      ctx.fillStyle = '#4a1c2c';
+      ctx.fillRect(x, y + fs + 1, bw, bh);
+      const fw = Math.round((bw * clamp(boss.hp, 0, 100)) / 100);
+      const phase = boss.phase;
+      ctx.fillStyle = phase >= 3 ? '#b794f4' : phase === 2 ? '#ef7d57' : '#e0566d';
+      ctx.fillRect(x, y + fs + 1, fw, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fillRect(x, y + fs + 1, fw, 2);
+      // marcas donde cambia de fase
+      ctx.fillStyle = C.black;
+      const cuts = boss.kind === MOB.reyGato ? [33, 66] : [50];
+      for (const c of cuts) ctx.fillRect(x + Math.round((bw * c) / 100) - 1, y + fs, 2, bh + 2);
+      if (phase >= 2 && !small)
+        text(
+          ctx,
+          phase >= 3 ? 'FASE FINAL' : 'ENFURECIDO',
+          x + bw,
+          y + fs / 2,
+          13,
+          phase >= 3 ? '#b794f4' : C.orange,
+          'right',
+          VT,
+        );
+    });
   }
 
   /** Reliquias, armadura, pociones y el cooldown de la voltereta. Devuelve la altura que ocupo. */
@@ -540,13 +544,16 @@ export class AdvHud {
     const small = g.input.mode === 'touch' || h < 520;
     const size = Math.round(clamp(w * 0.016, 10, 15));
     // si hay barra de jefe, el cartel baja debajo de ella para no taparla
-    const y = Math.max(Math.round(h * (small ? 0.27 : 0.24)), this.bossBottom + size + 8);
+    const k = hudPrefs.msg;
+    const y = Math.max(Math.round(h * (small ? 0.27 : 0.24)), this.bossBottom + (size + 8) * k);
     const col = b.tone === 'bad' ? C.red : b.tone === 'good' ? C.lime : C.yellow;
-    text(ctx, plain(b.title), w / 2, y, size, col, 'center', PIX);
-    if (b.sub) {
-      const sub = Math.round(clamp(w * 0.017, 15, 20));
-      text(ctx, b.sub, w / 2, y + size * 1.7, sub, C.white, 'center', VT);
-    }
+    withScale(ctx, w / 2, y, k, () => {
+      text(ctx, plain(b.title), w / 2, y, size, col, 'center', PIX);
+      if (b.sub) {
+        const sub = Math.round(clamp(w * 0.017, 15, 20));
+        text(ctx, b.sub, w / 2, y + size * 1.7, sub, C.white, 'center', VT);
+      }
+    });
     ctx.globalAlpha = 1;
   }
 

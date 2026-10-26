@@ -156,8 +156,16 @@ export interface TouchSpot {
   y: number;
   /** Escala (0.6 a 2). */
   s: number;
+  /** Opacidad (0.2 a 1); sin ella el boton se ve como siempre. */
+  a?: number;
 }
 export type TouchLayout = Record<TouchId, TouchSpot>;
+
+/** Lo menos opaco que puede quedar un boton (si no, se pierde y ya no se encuentra). */
+export const TOUCH_MIN_ALPHA = 0.2;
+
+/** La opacidad de un boton: 1 si nunca se toco. */
+export const touchAlpha = (spot: TouchSpot): number => spot.a ?? 1;
 
 export const TOUCH_LABELS: Record<TouchId, string> = {
   stick: 'Joystick',
@@ -207,6 +215,8 @@ export function loadTouchLayout(): TouchLayout {
             y: Math.min(1, Math.max(0, p.y)),
             s: Math.min(2.2, Math.max(0.55, p.s)),
           };
+          if (typeof p.a === 'number' && Number.isFinite(p.a))
+            layout[id].a = Math.min(1, Math.max(TOUCH_MIN_ALPHA, p.a));
         }
       }
       return layout;

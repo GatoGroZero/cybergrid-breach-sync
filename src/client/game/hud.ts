@@ -22,6 +22,7 @@ import type { Floater } from './fx';
 import { keyLabel, type Circle } from './input';
 import type { ClientBR } from './state';
 import { AdvHud } from './hudadv';
+import { hudPrefs, withScale } from './hudprefs';
 import { drawTouchControls } from './touchui';
 
 /** Cuanto se ve el aviso del objeto en mano y cuanto tarda en difuminarse. */
@@ -266,12 +267,19 @@ export class Hud {
     this.drawVignette(f);
     if (g.input.mode === 'keyboard') g.input.hotbarRects = [];
     const touch = g.input.mode === 'touch';
+    // el panel de arriba (y el reloj del cielo) se escalan juntos alrededor de su centro de arriba
+    const topY = f.safe.t + 8;
+    withScale(ctx, f.w / 2, topY, hudPrefs.top, () => {
+      if (g.mode === 'aventura') {
+        this.advHud.drawTop(f, this.assets);
+        this.zoneBox = this.advHud.topBox;
+      } else this.drawZoneInfo(f);
+      this.drawSky(f);
+    });
     if (g.mode === 'aventura') {
-      this.advHud.drawTop(f, this.assets);
-      this.zoneBox = this.advHud.topBox;
-      this.advHud.drawBoss(f);
-    } else this.drawZoneInfo(f);
-    this.drawSky(f);
+      const z = this.zoneBox;
+      this.advHud.drawBoss(f, topY + (z.y + z.h - topY) * hudPrefs.top);
+    }
     this.drawMinimap(f, touch);
     this.drawFeed(f, touch);
     if (g.alive) {
@@ -417,6 +425,12 @@ export class Hud {
     } else {
       y = h - safe.b - 92;
     }
+    // vida, escudo y estamina se escalan alrededor de su esquina (de arriba en celular, de abajo en PC)
+    const anchorY = touch ? y : y + 80;
+    ctx.save();
+    ctx.translate(x, anchorY);
+    ctx.scale(hudPrefs.bars, hudPrefs.bars);
+    ctx.translate(-x, -anchorY);
     const bar = (
       yy: number,
       value: number,
@@ -472,6 +486,7 @@ export class Hud {
         me.healKind === 'shield' ? C.cyan : C.lime,
         'left',
       );
+    ctx.restore();
   }
 
   /** Barra de estamina en forma de pez: se vacia al correr y se llena quieto o caminando. */
@@ -605,6 +620,10 @@ export class Hud {
 
   /** Aviso corto cuando cambia la hora: "Atardece", "Anochece"... */
   private drawDayToast(f: HudFrame): void {
+    withScale(f.ctx, f.w / 2, f.safe.t + 52, hudPrefs.msg, () => this.drawDayToastRaw(f));
+  }
+
+  private drawDayToastRaw(f: HudFrame): void {
     const { ctx, dayToast: t, now, w, safe } = f;
     if (!t) return;
     const age = now - t.at;
@@ -1106,6 +1125,10 @@ export class Hud {
   // ------------------------------------------------------------------ avisos
 
   private drawWarnings(f: HudFrame): void {
+    withScale(f.ctx, f.w / 2, f.safe.t + 84, hudPrefs.msg, () => this.drawWarningsRaw(f));
+  }
+
+  private drawWarningsRaw(f: HudFrame): void {
     const { ctx, g, w, safe } = f;
     if (!g.alive || g.result) {
       if (!g.alive && !g.result) {
@@ -1156,14 +1179,17 @@ export class Hud {
     const tw = Math.min(w - 24, ctx.measureText(b.text).width + 24);
     const ph = small ? 26 : 32;
     // debajo de la barra del jefe si la hay (y de la linea de FPS y ping)
+    const k = hudPrefs.msg;
     const y = Math.max(
       Math.round(h * (small ? 0.2 : 0.22)),
-      g.mode === 'aventura' ? this.advHud.bossBottom + ph / 2 + 6 : 0,
+      g.mode === 'aventura' ? this.advHud.bossBottom + (ph / 2) * k + 6 : 0,
     );
-    ctx.globalAlpha = a * 0.92;
-    panel(ctx, Math.round(w / 2 - tw / 2), y - ph / 2, tw, ph, 'rgba(26,28,44,0.8)', C.black);
-    ctx.globalAlpha = a;
-    text(ctx, b.text, w / 2, y + 1, size, color, 'center', PIX, null);
+    withScale(ctx, w / 2, y, k, () => {
+      ctx.globalAlpha = a * 0.92;
+      panel(ctx, Math.round(w / 2 - tw / 2), y - ph / 2, tw, ph, 'rgba(26,28,44,0.8)', C.black);
+      ctx.globalAlpha = a;
+      text(ctx, b.text, w / 2, y + 1, size, color, 'center', PIX, null);
+    });
     ctx.globalAlpha = 1;
   }
 
