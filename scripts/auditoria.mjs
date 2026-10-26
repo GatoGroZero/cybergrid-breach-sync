@@ -391,7 +391,9 @@ async function auditOnce(round) {
           await page.keyboard.up(go);
           const b = await pos();
           there = Math.hypot(b.x - a.x, b.y - a.y);
-          if (there < 80) continue;
+          // Se exige el recorrido completo (cerca de 95 a 100 px en 1.2 s): con menos, una pared corto el
+          // camino y la vuelta, ya despejada, recorreria mas sin que el tiempo delta falle.
+          if (there < 90) continue;
           await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
           await sleep(700);
           await page.keyboard.down(ret);
@@ -404,7 +406,7 @@ async function auditOnce(round) {
         }
         const ratio = back / Math.max(1, there);
         return {
-          ok: there >= 80 && ratio > 0.8 && ratio < 1.2,
+          ok: there >= 90 && ratio > 0.8 && ratio < 1.2,
           detail: `${Math.round(there)} px a ${fpsFast} FPS y ${Math.round(back)} px a ${fpsSlow} FPS (razon ${ratio.toFixed(2)})`,
         };
       } finally {
@@ -724,16 +726,26 @@ async function auditOnce(round) {
     4,
     'Pipeline en verde en el historial de GitHub (las 3 ultimas ejecuciones terminadas en main)',
     async () => {
-      const out = execFileSync(
-        'gh',
-        [
-          'api',
-          `repos/${repoSlug}/actions/workflows/ci.yml/runs?branch=main&per_page=8`,
-          '--jq',
-          '.workflow_runs | map({c: .conclusion, s: .status, t: .head_sha[0:7]})',
-        ],
-        { encoding: 'utf8' },
-      );
+      // la API de GitHub falla de vez en cuando (504, red): se reintenta antes de dar la prueba por mala
+      let out = '';
+      for (let intento = 1; intento <= 4; intento++) {
+        try {
+          out = execFileSync(
+            'gh',
+            [
+              'api',
+              `repos/${repoSlug}/actions/workflows/ci.yml/runs?branch=main&per_page=8`,
+              '--jq',
+              '.workflow_runs | map({c: .conclusion, s: .status, t: .head_sha[0:7]})',
+            ],
+            { encoding: 'utf8' },
+          );
+          break;
+        } catch (err) {
+          if (intento === 4) throw err;
+          await sleep(3000 * intento);
+        }
+      }
       const runs = JSON.parse(out);
       const done = runs.filter((r) => r.s === 'completed').slice(0, 3);
       const green = done.every((r) => r.c === 'success');
