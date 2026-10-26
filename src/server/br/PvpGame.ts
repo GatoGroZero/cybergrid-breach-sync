@@ -628,6 +628,10 @@ export class PvpGame extends BRGame {
 
   // ---------------------------------------------------------------- instantanea
 
+  protected override mateCats(cat: Cat): Cat[] {
+    return cat.team >= 0 ? this.cats.filter((c) => c.id !== cat.id && c.team === cat.team) : [];
+  }
+
   protected override extendSnapshot(snap: BRSnapshot, cat: Cat): void {
     snap.mode = this.mode;
     const revealed = this.phase !== 'pick';

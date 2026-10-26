@@ -494,6 +494,11 @@ export class BRGame {
   }
 
   /** Datos extra que cada modo agrega a la instantanea de un jugador. */
+  /** Quienes son del equipo de este gato (sin contarlo): sus barras de vida se muestran en su HUD. */
+  protected mateCats(_cat: Cat): Cat[] {
+    return [];
+  }
+
   protected extendSnapshot(_snap: BRSnapshot, _cat: Cat): void {
     // nada en el Battle Royale
   }
@@ -1075,13 +1080,21 @@ export class BRGame {
   }
 
   /** Tira una casilla al suelo, donde se puede volver a recoger. */
-  invDrop(catId: number, slot: number): boolean {
+  invDrop(catId: number, slot: number, qty?: number): boolean {
     const cat = this.cat(catId);
     if (!cat || !cat.alive || slot < 0 || slot >= INVENTORY_SLOTS) return false;
     const item = cat.inv[slot];
     if (!item) return false;
-    cat.inv[slot] = null;
+    // de una pila se pueden tirar solo algunas (un arma siempre sale completa)
+    const n =
+      qty === undefined || isWeapon(item.kind) ? item.qty : Math.max(1, Math.min(qty, item.qty));
     cat.invDirty = true;
+    if (n < item.qty) {
+      item.qty -= n;
+      this.dropAt(cat, { ...item, qty: n });
+      return true;
+    }
+    cat.inv[slot] = null;
     if (slot === cat.sel) {
       cat.heal = null;
       cat.reload = null;
@@ -1511,6 +1524,19 @@ export class BRGame {
     }
     if (!cat.alive && cat.spectate !== null) snap.spectating = cat.spectate;
     if (this.feed.length > 0) snap.feed = this.feed;
+    const mates = this.mateCats(cat);
+    if (mates.length > 0) {
+      snap.mates = mates.map((m) => {
+        const caps = this.capsOf(m);
+        return [
+          m.id,
+          m.alive ? Math.ceil(m.hp) : 0,
+          m.alive ? Math.ceil(m.shield) : 0,
+          caps.hp,
+          caps.shield,
+        ];
+      });
+    }
     this.extendSnapshot(snap, cat);
     return snap;
   }

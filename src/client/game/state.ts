@@ -6,6 +6,7 @@ import {
   AMMO_KINDS,
   CLAWS,
   ITEM_KINDS,
+  ITEM_NAMES,
   WEAPONS,
   isWeapon,
   type AmmoKind,
@@ -30,6 +31,7 @@ import type {
   BRSnapshot,
   ContainerTuple,
   HazardTuple,
+  MateTuple,
   MeState,
   PickupTuple,
   PvpState,
@@ -149,6 +151,8 @@ export class ClientBR {
   hazards: HazardTuple[] = [];
   pickups: PickupTuple[] = [];
   adv: AdvState | null = null;
+  /** Vida y escudo de tu equipo (de la ultima instantanea). */
+  mates: MateTuple[] = [];
   /** Salas cuyas puertas de enredadera estan cerradas, y desde cuando esta activa cada una. */
   private readonly gateClosed = new Set<number>();
   private readonly roomSince = new Map<number, number>();
@@ -275,6 +279,7 @@ export class ClientBR {
     this.trackPvp(snap.pvp ?? null);
     this.zone = snap.zone;
     this.boxes = snap.boxes;
+    this.mates = snap.mates ?? [];
     if (snap.inv) {
       this.inv = snap.inv;
       if (snap.ammo) this.ammo = snap.ammo;
@@ -959,9 +964,47 @@ export class ClientBR {
     this.net.socket.emit('inv:move', { from, to });
   }
 
-  dropItem(slot: number): void {
+  /** Tira una casilla (o solo `qty` de una pila) al suelo. */
+  dropItem(slot: number, qty?: number): void {
     this.sfx.drop();
-    this.net.socket.emit('inv:drop', { slot });
+    this.net.socket.emit('inv:drop', { slot, qty });
+  }
+
+  /**
+   * Tirar rapido, sin abrir el inventario: lo que llevas en la mano (una unidad si es una pila) o,
+   * con `half`, la mitad de las balas del arma en mano.
+   */
+  quickDrop(half: boolean): void {
+    if (!this.alive || !this.me || this.frozen || !this.net.connected) return;
+    const slot = this.me.sel;
+    const item = this.inv[slot];
+    if (half) {
+      if (!item || !isWeapon(item.kind)) {
+        this.say('Con un arma en la mano tiras la mitad de sus balas', 'info', 1600);
+        return;
+      }
+      const kind = WEAPONS[item.kind].ammo;
+      const n = Math.floor(this.ammoOf(kind) / 2);
+      if (n <= 0) {
+        this.say('No tienes balas de esta arma para tirar', 'info', 1400);
+        return;
+      }
+      this.dropAmmo(kind, Math.min(100, n));
+      this.say(`Tiraste ${n} ${ITEM_NAMES[kind].toLowerCase()}`, 'info', 1400);
+      return;
+    }
+    if (!item) {
+      this.say('No llevas nada en la mano', 'info', 1200);
+      return;
+    }
+    this.dropItem(slot, item.qty > 1 ? 1 : undefined);
+  }
+
+  /** Aventura: quitarse una pieza de armadura (cae al suelo) o dársela a alguien del grupo. */
+  async moveArmor(slot: number, to?: number): Promise<string | null> {
+    const res = await this.net.ack('armor:move', { slot, to });
+    if (res.ok) this.sfx.drop();
+    return res.ok ? null : res.error;
   }
 
   dropAmmo(kind: AmmoKind, qty?: number): void {

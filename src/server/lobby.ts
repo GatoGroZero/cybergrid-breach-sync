@@ -18,6 +18,7 @@ import {
   TEAM_NAMES,
 } from '../shared/br/modes';
 import {
+  armorMoveSchema,
   awaySchema,
   createRoomSchema,
   dropAmmoSchema,
@@ -382,6 +383,13 @@ export class Lobby {
       if (typeof p?.id === 'number' && Number.isInteger(p.id))
         m.game.debugPower(m.member.catId, p.id, typeof p.lvl === 'number' ? p.lvl : 1);
     });
+    socket.on('dev:armor', (raw: unknown) => {
+      const m = me();
+      const p = raw as { slot?: unknown; tier?: unknown } | null;
+      if (!this.config.testKit || !(m?.game instanceof AdventureGame)) return;
+      if (typeof p?.slot === 'number' && typeof p?.tier === 'number')
+        m.game.debugArmor(m.member.catId, p.slot, p.tier);
+    });
     socket.on('dev:arm', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugArm(m.member.catId);
@@ -442,8 +450,17 @@ export class Lobby {
       const parsed = dropSchema.safeParse(raw);
       const m = me();
       if (!parsed.success || !m?.game) return ack?.(fail('datos_invalidos'));
-      m.game.invDrop(m.member.catId, parsed.data.slot);
+      m.game.invDrop(m.member.catId, parsed.data.slot, parsed.data.qty);
       ack?.({ ok: true });
+    });
+    socket.on('armor:move', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (!allow(actionBucket)) return;
+      const parsed = armorMoveSchema.safeParse(raw);
+      const m = me();
+      if (!parsed.success || !(m?.game instanceof AdventureGame))
+        return ack?.(fail('datos_invalidos'));
+      const why = m.game.armorMove(m.member.catId, parsed.data.slot, parsed.data.to);
+      ack?.(why ? fail(why) : { ok: true });
     });
     socket.on('ammo:drop', (raw: unknown, ack?: (a: Ack) => void) => {
       if (!allow(actionBucket)) return;

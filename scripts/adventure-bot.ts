@@ -123,13 +123,6 @@ export class AutoPlayer {
     }
     this.pickWeapon();
 
-    const room =
-      g.rooms[
-        Math.max(
-          0,
-          g.rooms.findIndex((r) => this.inRoom(r.def, cat)),
-        )
-      ] ?? g.rooms[0]!;
     const mobs = [...g.mobs.values()].filter((m) => m.hp > 0);
     const threats = mobs.filter((m) => dist(cat.x, cat.y, m.x, m.y) < 320);
     const target = this.chooseTarget(threats);
@@ -232,7 +225,7 @@ export class AutoPlayer {
       } else if (cat.hp < 60 && threats.length >= 3) this.drink('potion_valerian');
     } else {
       if (cat.hp < 70 && now > this.healCooldown) this.heal();
-      const go = this.navigate(room.def.id);
+      const go = this.navigate();
       if (!inDanger && go) {
         mx = go.x;
         my = go.y;
@@ -373,13 +366,16 @@ export class AutoPlayer {
   }
 
   /** Sin enemigos: abre cofres, recoge botin y avanza a la siguiente sala. */
-  private navigate(roomId: number): { x: number; y: number } | null {
+  private navigate(): { x: number; y: number } | null {
     const g = this.game;
     const cat = this.cat;
     // cofres de tesoro
     for (const c of g.allContainers()) {
       if (c.kind === 'tomb' || c.kind === 'drop' || this.openedChests.has(c.id)) continue;
-      if (!this.inRoom(g.rooms[roomId]!.def, cat)) break;
+      // solo los cofres del claro donde esta (con senderos que se ramifican, uno de otro claro
+      // lo mandaria de ida y vuelta por el pasillo)
+      const home = g.rooms.find((r) => this.inRoom(r.def, { x: c.x, y: c.y } as never));
+      if (!home || !this.inRoom(home.def, cat)) continue;
       const d = dist(cat.x, cat.y, c.x, c.y);
       if (d < 22) {
         g.interact(this.catId);

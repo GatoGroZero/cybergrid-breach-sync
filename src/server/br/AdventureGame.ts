@@ -133,8 +133,13 @@ interface Pickup {
   kind: number;
   item?: Item;
   until: number;
+  /** Quien la acaba de tirar no la levanta de nuevo hasta `skipUntil` (si no, se la volveria a poner). */
+  skip?: number;
+  skipUntil?: number;
 }
 
+/** A que distancia debe estar alguien de tu grupo para darle una pieza de armadura. */
+const GIVE_RANGE = 90;
 const MAX_MOBS = 90;
 /** Reserva de balas de pistola que se rellena sola (una cada 0.2 s). */
 const PISTOL_RESERVE = 60;
@@ -659,7 +664,14 @@ export class AdventureGame extends BRGame {
 
   // ---------------------------------------------------------------- botin
 
-  private addPickup(x: number, y: number, kind: number, item?: Item, spread = 6): void {
+  private addPickup(
+    x: number,
+    y: number,
+    kind: number,
+    item?: Item,
+    spread = 6,
+    skipCat?: number,
+  ): void {
     if (this.pickups.length > 120) this.pickups.shift();
     this.pickups.push({
       id: this.nextId++,
@@ -668,6 +680,7 @@ export class AdventureGame extends BRGame {
       kind,
       ...(item ? { item } : {}),
       until: this.time + 90,
+      ...(skipCat !== undefined ? { skip: skipCat, skipUntil: this.time + 6 } : {}),
     });
   }
 
@@ -877,6 +890,7 @@ export class AdventureGame extends BRGame {
       }
       for (const cat of this.cats) {
         if (!cat.alive || dist(cat.x, cat.y, p.x, p.y) > 13) continue;
+        if (p.skip === cat.id && this.time < (p.skipUntil ?? 0)) continue;
         if (this.takePickup(cat, p)) {
           this.emit({ e: 'pickup', x: Math.round(p.x), y: Math.round(p.y), kind: p.kind });
           this.pickups.splice(i, 1);
@@ -941,6 +955,42 @@ export class AdventureGame extends BRGame {
       cat.shield = Math.min(this.capsOf(cat).shield, cat.shield + 20);
     }
     return true;
+  }
+
+  /**
+   * Quita una pieza de armadura (0 cabeza, 1 cuerpo, 2 patas): queda en el suelo para quien la
+   * quiera, o se la pasa directo a alguien de tu grupo que este cerca. Devuelve el motivo si no se pudo.
+   */
+  armorMove(catId: number, slot: number, to?: number): string | null {
+    const cat = this.cat(catId);
+    const st = this.state.get(catId);
+    if (!cat || !st || !cat.alive || !Number.isInteger(slot) || slot < 0 || slot > 2)
+      return 'datos_invalidos';
+    const tier = st.equip[slot as 0 | 1 | 2];
+    if (tier < 0) return 'sin_armadura';
+    if (to !== undefined) {
+      const other = this.cat(to);
+      const ost = this.state.get(to);
+      if (!other || !ost || other.bot || other.id === cat.id || !other.alive)
+        return 'sin_companero';
+      if (dist(cat.x, cat.y, other.x, other.y) > GIVE_RANGE) return 'muy_lejos';
+      if (ost.equip[slot as 0 | 1 | 2] >= tier) return 'ya_lleva_igual_o_mejor';
+      ost.equip[slot as 0 | 1 | 2] = tier;
+      this.recompute(other);
+      this.emit({ e: 'relic', x: Math.round(other.x), y: Math.round(other.y) });
+    } else {
+      const kind = (['armor_head', 'armor_body', 'armor_paws'] as ArmorKind[])[slot] as ArmorKind;
+      this.addPickup(cat.x, cat.y, 3, { kind, qty: 1, rarity: tier as Rarity }, 10, cat.id);
+    }
+    st.equip[slot as 0 | 1 | 2] = -1;
+    this.recompute(cat);
+    cat.shield = Math.min(cat.shield, this.capsOf(cat).shield);
+    cat.invDirty = true;
+    return null;
+  }
+
+  protected override mateCats(cat: Cat): Cat[] {
+    return this.cats.filter((c) => c.id !== cat.id && !c.bot);
   }
 
   private recompute(cat: Cat): void {
@@ -1035,7 +1085,9 @@ export class AdventureGame extends BRGame {
     const rage = this.time < st.rageUntil ? POTION.catnip.dmg : 1;
     const crit = this.runRng.chance(st.mods.crit) ? 2 : 1;
     const gaze = this.time < st.gazeUntil ? 1 + 0.8 * st.gazeEff : 1;
-    return Math.max(1, Math.round(base * st.mods.dmg * rage * crit * gaze));
+    // la furia no solo dispara mas rapido: cada bala pega mas fuerte (+40 %, mas con el nivel)
+    const fury = this.time < st.furyUntil ? 1 + 0.4 * st.furyEff : 1;
+    return Math.max(1, Math.round(base * st.mods.dmg * rage * crit * gaze * fury));
   }
 
   protected override shotCooldown(cat: Cat, base: number): number {
@@ -1682,6 +1734,14 @@ export class AdventureGame extends BRGame {
     if (!st || !POWERS[id]) return;
     st.powers = st.powers.filter((p) => p.id !== id).slice(0, POWER_SLOTS - 1);
     st.powers.push({ id, level, readyAt: 0 });
+  }
+
+  /** Solo pruebas: se pone una pieza de armadura (casilla 0 a 2, rareza 0 a 2). */
+  debugArmor(catId: number, slot: number, tier: number): void {
+    const cat = this.cat(catId);
+    if (!cat || slot < 0 || slot > 2 || tier < 0 || tier > 2) return;
+    const kind = (['armor_head', 'armor_body', 'armor_paws'] as ArmorKind[])[slot] as ArmorKind;
+    this.equipItem(cat, { kind, qty: 1, rarity: tier as Rarity });
   }
 
   debugArm(catId: number): void {

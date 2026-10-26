@@ -100,6 +100,15 @@ export class BRRenderer {
   cssH = 540;
   /** Escala entera de pixeles del buffer a pixeles del dispositivo. */
   scale = 3;
+  /** Escala que correspondia a esta pantalla antes de alejar la camara para ver una sala entera. */
+  private baseScale = 3;
+  /** Cuantos escalones se aleja la camara (Aventura: para que quepa la sala donde estas). */
+  private zoomOut = 0;
+  private devW = 0;
+  private devH = 0;
+  /** Que tanto la camara se ha ido al centro de la sala (0 sigue al gato, 1 enmarca la sala). */
+  private roomBlend = 0;
+  private framed: { x: number; y: number; w: number; h: number } | null = null;
   viewW = 320;
   viewH = 240;
   safe: Safe = { l: 0, r: 0, t: 0, b: 0 };
@@ -205,16 +214,73 @@ export class BRRenderer {
     }
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
-    this.scale = Math.max(2, Math.round(ph / NATIVE_H));
-    this.viewW = Math.ceil(pw / this.scale);
-    this.viewH = Math.ceil(ph / this.scale);
+    this.baseScale = Math.max(2, Math.round(ph / NATIVE_H));
+    this.devW = pw;
+    this.devH = ph;
+    this.applyScale();
+    this.safe = this.measureSafeArea();
+    if (this.game) this.game.input.screen = { w: cssW, h: cssH };
+  };
+
+  /** Pone la escala de pixeles (la de la pantalla menos lo que se alejo la camara) y arma el buffer. */
+  private applyScale(): void {
+    this.scale = Math.max(2, this.baseScale - this.zoomOut);
+    this.viewW = Math.ceil(this.devW / this.scale);
+    this.viewH = Math.ceil(this.devH / this.scale);
     this.buf.width = this.viewW;
     this.buf.height = this.viewH;
     this.bctx.imageSmoothingEnabled = false;
     this.wavePattern = null;
-    this.safe = this.measureSafeArea();
-    if (this.game) this.game.input.screen = { w: cssW, h: cssH };
-  };
+  }
+
+  /**
+   * Aventura: al entrar a una sala la camara se aleja lo justo (en escalones enteros, para que los
+   * pixeles sigan nitidos) y se centra en ella: asi se ve todo el claro, con sus enemigos y su jefe,
+   * tambien en el celular. En un sendero la camara sigue al gato como siempre.
+   */
+  private frameRoom(
+    g: ClientBR,
+    target: { x: number; y: number },
+    dt: number,
+  ): { x: number; y: number } {
+    const rooms = g.map.rooms;
+    if (g.mode !== 'aventura' || !rooms || g.bossIntro) return target;
+    const T = TILE;
+    const near = 20;
+    const room = rooms.find(
+      (r) =>
+        target.x >= r.x * T - near &&
+        target.x < (r.x + r.w) * T + near &&
+        target.y >= r.y * T - near &&
+        target.y < (r.y + r.h) * T + near,
+    );
+    if (room) {
+      const needW = room.w * T + 24;
+      const needH = room.h * T + 24;
+      let z = 0;
+      while (
+        this.baseScale - z > 2 &&
+        (this.devW / (this.baseScale - z) < needW || this.devH / (this.baseScale - z) < needH)
+      )
+        z++;
+      if (z !== this.zoomOut) {
+        this.zoomOut = z;
+        this.applyScale();
+      }
+    }
+    if (room) this.framed = room;
+    const fits =
+      room !== undefined && this.viewW >= room.w * T + 16 && this.viewH >= room.h * T + 16;
+    this.roomBlend += ((fits ? 1 : 0) - this.roomBlend) * Math.min(1, dt * 5);
+    const r = this.framed;
+    // al salir de la sala la camara vuelve al gato poco a poco (sin un salto)
+    if (!r || this.roomBlend < 0.001) return target;
+    const k = this.roomBlend;
+    return {
+      x: target.x + ((r.x + r.w / 2) * T - target.x) * k,
+      y: target.y + ((r.y + r.h / 2) * T - target.y) * k,
+    };
+  }
 
   private measureSafeArea(): Safe {
     const probe = document.getElementById('safe-probe');
@@ -892,7 +958,7 @@ export class BRRenderer {
 
     const { cats, shots, mobs } = g.sampleWorld();
     this.celebrate(g, cats, now, dt);
-    const target = g.cameraTarget(cats);
+    const target = this.frameRoom(g, g.cameraTarget(cats), dt);
     const mapW = map.w * T;
     const mapH = map.h * T;
     let camX = Math.round(target.x - this.viewW / 2);

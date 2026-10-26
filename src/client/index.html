@@ -727,6 +727,38 @@
       <section class="card inv-card">
         <header class="inv-head">
           <h2>Inventario</h2>
+          <div id="inv-tabs" class="inv-tabs" role="tablist" aria-label="Secciones" hidden>
+            <button
+              type="button"
+              role="tab"
+              class="inv-tab"
+              data-tab="bolsa"
+              aria-selected="true"
+              data-testid="inv-tab-bolsa"
+            >
+              Mochila
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="inv-tab"
+              data-tab="habilidades"
+              aria-selected="false"
+              data-testid="inv-tab-habilidades"
+            >
+              Habilidades
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="inv-tab"
+              data-tab="equipo"
+              aria-selected="false"
+              data-testid="inv-tab-equipo"
+            >
+              Equipo
+            </button>
+          </div>
           <button
             id="inv-close"
             class="btn ghost small"
@@ -736,19 +768,40 @@
             Cerrar
           </button>
         </header>
-        <div id="loot-block" class="loot-block" hidden data-testid="loot-block">
-          <h3 id="loot-title">Cofre</h3>
-          <ul id="loot-items" class="slots" data-testid="loot-items"></ul>
-          <button id="loot-all" class="btn small" type="button" data-testid="loot-all">
-            Tomar todo
-          </button>
+        <div class="inv-body">
+          <div id="inv-panes" class="inv-main">
+            <div data-pane="bolsa">
+              <div id="loot-block" class="loot-block" hidden data-testid="loot-block">
+                <h3 id="loot-title">Cofre</h3>
+                <ul id="loot-items" class="slots" data-testid="loot-items"></ul>
+                <button id="loot-all" class="btn small" type="button" data-testid="loot-all">
+                  Tomar todo
+                </button>
+              </div>
+              <h3>Tus cosas <span id="inv-count" class="muted">0/5</span></h3>
+              <ul id="inv-slots" class="slots" data-testid="inv-slots"></ul>
+              <h3>Balas <span class="muted">(hasta 120 de cada arma)</span></h3>
+              <ul id="ammo-slots" class="ammo" data-testid="ammo-slots"></ul>
+            </div>
+            <div data-pane="habilidades" hidden>
+              <h3>Tus habilidades</h3>
+              <ul id="inv-powers" class="inv-list" data-testid="inv-powers"></ul>
+            </div>
+            <div data-pane="equipo" hidden>
+              <h3>Armadura</h3>
+              <ul id="inv-armor" class="inv-list" data-testid="inv-armor"></ul>
+              <h3>Reliquias</h3>
+              <ul id="inv-relics" class="inv-list" data-testid="inv-relics"></ul>
+            </div>
+          </div>
+          <aside
+            id="inv-detail"
+            class="inv-detail"
+            aria-live="polite"
+            data-testid="inv-detail"
+          ></aside>
         </div>
-        <h3>Tus cosas <span id="inv-count" class="muted">0/5</span></h3>
-        <ul id="inv-slots" class="slots" data-testid="inv-slots"></ul>
-        <h3>Balas <span class="muted">(hasta 120 de cada arma)</span></h3>
-        <ul id="ammo-slots" class="ammo" data-testid="ammo-slots"></ul>
-        <p id="inv-detail" class="muted detail"></p>
-        <p class="muted">Arrastra para ordenar. Suelta fuera de la tarjeta para tirar.</p>
+        <p id="inv-hint" class="muted hint"></p>
       </section>
     </div>
 

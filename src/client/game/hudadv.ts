@@ -165,7 +165,8 @@ export class AdvHud {
     ctx.fillRect(px0 - 3, py0 - 3, total + 6, pip + 6);
     for (let i = 0; i < n; i++) {
       const st = adv.states[i] ?? 0;
-      const bossRoom = i > 0 && (i === n - 1 || [4, 8, 12, 16, 20].includes(i));
+      const kind = g.map.rooms?.[i]?.kind;
+      const bossRoom = kind === 'minijefe' || kind === 'jefe';
       const x1 = px0 + i * (pip + 3);
       const here = i === adv.room;
       ctx.fillStyle = st === 2 ? '#38b764' : bossRoom ? '#7a2c4d' : '#333c57';
@@ -337,14 +338,14 @@ export class AdvHud {
   }
 
   /** Barra de habilidades de PC: una casilla por habilidad con su tecla y su espera. */
-  drawPowerBar(f: HudFrame, bottom: number): void {
+  drawPowerBar(f: HudFrame, bottom: number, left?: number): void {
     const { ctx, g, w, now } = f;
     const list = this.powerStates(g);
     if (list.length === 0) return;
     const size = 40;
     const gap = 8;
     const total = list.length * size + (list.length - 1) * gap;
-    const x0 = Math.round(w / 2 - total / 2);
+    const x0 = left ?? Math.round(w / 2 - total / 2);
     const keys = [g.input.keys.power1, g.input.keys.power2, g.input.keys.power3];
     list.forEach((p, i) => {
       const x = x0 + i * (size + gap);
