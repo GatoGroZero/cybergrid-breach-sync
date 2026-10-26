@@ -17,6 +17,9 @@ export type HazardTuple = [number, number, number, number, number, number];
 /** [id, x, y, tipo: 0 corazon, 1 balas, 2 pocion, 3 armadura, 4 objeto, y en el 4 el codigo del objeto (indice de ITEM_KINDS * 3 + rareza)] */
 export type PickupTuple = [number, number, number, number, number?];
 
+/** [id, vida, escudo, vida maxima, escudo maximo] de alguien de tu equipo (vida 0 si esta caido). */
+export type MateTuple = [number, number, number, number, number];
+
 export type BREvent =
   | { e: 'shot'; x: number; y: number; a: number; w: number }
   | { e: 'hit'; x: number; y: number; v: number; kill: boolean; by: number; to: number }
@@ -168,6 +171,8 @@ export interface BRSnapshot {
   mobs?: MobTuple[];
   haz?: HazardTuple[];
   pk?: PickupTuple[];
+  /** Vida y escudo de tu equipo (Aventura, Territorio y Pelea 2 contra 2). */
+  mates?: MateTuple[];
   adv?: AdvState;
   /** Modo de la partida (solo se manda si no es Battle Royale). */
   mode?: GameMode;

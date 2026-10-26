@@ -21,6 +21,7 @@ export const ACTIONS = [
   'mute',
   'emote',
   'reload',
+  'drop',
   'dash',
   'power1',
   'power2',
@@ -46,6 +47,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   mute: 'Silenciar',
   emote: 'Abrir los emotes',
   reload: 'Recargar el arma',
+  drop: 'Tirar lo que llevas (con Mayús, la mitad de sus balas)',
   dash: 'Voltereta (Aventura)',
   power1: 'Habilidad 1 (Aventura)',
   power2: 'Habilidad 2 (Aventura)',
@@ -70,6 +72,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   mute: 'KeyN',
   emote: 'KeyT',
   reload: 'KeyR',
+  drop: 'KeyX',
   dash: 'KeyQ',
   power1: 'KeyF',
   power2: 'KeyG',
@@ -342,6 +345,8 @@ export interface InputCallbacks {
   onMute: () => void;
   /** Recargar el arma en mano. */
   onReload: () => void;
+  /** Tirar rapido lo que llevas en la mano; con `half`, la mitad de las balas de su arma. */
+  onDrop: (half: boolean) => void;
   /** Mando el emote `kind` (0 a 4). */
   onEmote: (kind: number) => void;
   /** Elegi el kit numero `index` (0 a 3) en la pantalla de eleccion de la ronda. */
@@ -484,6 +489,7 @@ export class InputController {
       else if (action === 'map') this.cb.onMap();
       else if (action === 'mute') this.cb.onMute();
       else if (action === 'reload') this.cb.onReload();
+      else if (action === 'drop') this.cb.onDrop(e.shiftKey);
       else if (action === 'dash') this.dashLatch = true;
       else if (action === 'power1') this.powerLatch = 1;
       else if (action === 'power2') this.powerLatch = 2;

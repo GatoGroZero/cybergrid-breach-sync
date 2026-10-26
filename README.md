@@ -160,7 +160,7 @@ El lobby ofrece cuatro modos. Cada sala elige uno, y el anfitrión lo puede camb
 
 ### Aventura
 
-Un roguelike de 1 a 4 gatos por un **bosque encantado** de 23 claros unidos por senderos, que se recorre en serpiente de la sala 1 a la 23.
+Un roguelike de 1 a 4 gatos por un **bosque encantado** de 23 claros unidos por una **red de senderos que se ramifica** (estilo Hollow Knight o Silksong): no hay un camino único, cada partida arma el bosque distinto y el grupo decide por dónde explorar. Los claros se acomodan en un árbol con algunos lazos para dar la vuelta; el inicio siempre ofrece dos salidas por lo menos, los minijefes y el jefe final viven al fondo de ramas sin salida, y la dificultad sube con la distancia al inicio, no con un número de sala. Si el grupo se mete al trono del jefe final antes de tiempo, ese es su riesgo: conviene explorar y farmear antes.
 
 - **Salas:** claro de inicio, combates con oleadas, salas del tesoro (cofres dorados y una reliquia), lugares de descanso (la fuente de leche de luna cura al grupo), cinco **guaridas de minijefe** y el **trono del jefe final**. Al entrar a un combate las **puertas de enredadera** se cierran y solo se abren al ganar.
 - **Enemigos de cada acto:** ratones, murciélagos, búhos que lanzan plumas, perros que embisten, hongos que escupen esporas, zorros, guardianes de piedra y sombras. Su vida y daño crecen con cada acto y con cada amigo que se suma, y avisan sus ataques con círculos y franjas rojas en el suelo.

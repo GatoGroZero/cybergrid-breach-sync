@@ -205,20 +205,40 @@ describe('aventura: salas de combate', () => {
     expect(c.hp).toBeLessThan(100);
     // el gato dispara y le quita vida a un enemigo lejano
     const far = alive(g)[0]!;
-    far.x = c.x + 100;
-    far.y = c.y;
+    // un rumbo despejado hacia donde disparar (los claros tienen arboles y rocas)
+    const open = (a: number): boolean =>
+      [10, 20, 30, 40, 50].every(
+        (d) =>
+          g.map.solid[
+            Math.floor((c.y + Math.sin(a) * d) / TILE) * g.map.w +
+              Math.floor((c.x + Math.cos(a) * d) / TILE)
+          ] === 0,
+      );
+    const dir = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => (k * Math.PI) / 4).find(open) ?? 0;
+    // los demas enemigos se quedan quietos atras: no se cruzan en la linea de tiro
+    for (const o of alive(g)) {
+      if (o === far) continue;
+      o.stunUntil = 1e9;
+      o.cd = 1e9;
+      o.x = c.x - Math.cos(dir) * 60;
+      o.y = c.y - Math.sin(dir) * 60;
+    }
+    const place = (): void => {
+      far.x = c.x + Math.cos(dir) * 50;
+      far.y = c.y + Math.sin(dir) * 50;
+    };
+    place();
     far.hp = far.maxHp = 5000;
     far.cd = 1e9;
     far.stunUntil = 1e9;
     g.select(1, 0);
-    c.aim = 0;
+    c.aim = dir;
     for (let i = 0; i < 40; i++) {
       c.hp = 100;
       g.fireControl(c, 0, true);
       g.step();
       g.fireControl(c, 0, false);
-      far.x = c.x + 100;
-      far.y = c.y;
+      place();
     }
     expect(far.hp).toBeLessThan(far.maxHp);
     expect(magOf(c.inv[0]!)).toBeLessThan(30);
@@ -471,19 +491,23 @@ describe('aventura: habilidades de jefe', () => {
     expect(g.choosePower(1, 0)).toBe(false);
   });
 
-  it('Furia felina acorta la espera entre disparos y Mirada de búho sube el daño y el alcance', () => {
+  it('Furia felina dispara el doble de rápido y además pega más fuerte; Mirada de búho sube el daño y el alcance', () => {
     const g = make(1);
     run(g, 0.5);
     const cat = g.cat(1)!;
     teach(g, 1, 0);
     teach(g, 1, 1);
     const base = WEAPONS.pistol.cooldown;
+    const dmg = g as unknown as { shotDamage(c: unknown, b: number): number };
+    expect(dmg.shotDamage(cat, 10)).toBe(10);
     g.fireControl(cat, 0, true);
     expect(cat.cooldownUntil - g.time).toBeCloseTo(base, 2);
     g.fireControl(cat, 0, false);
     run(g, 1);
     press(g, 1, 1);
     expect(g.snapshotFor(1)!.adv!.powers[0]![3]).toBeGreaterThan(4);
+    // con la furia cada bala pega 40 % mas
+    expect(dmg.shotDamage(cat, 10)).toBe(14);
     g.fireControl(cat, 0, true);
     expect(cat.cooldownUntil - g.time).toBeCloseTo(base * 0.5, 2);
     // la habilidad entra en espera

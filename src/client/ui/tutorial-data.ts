@@ -23,9 +23,9 @@ export function tutorialSections(keys: Keys): TutorialSection[] {
       title: 'De qué trata',
       icon: 'gato',
       lines: [
-        'Cruza el bosque encantado sala por sala hasta el trono del Rey Gato de las Sombras.',
+        'Explora el bosque encantado: no hay un solo camino. Tú decides a dónde ir y tarde o temprano llegarás al trono del Rey Gato de las Sombras.',
         'Juegan de 1 a 4 gatos, todos del mismo equipo. Entre más amigos, más enemigos, pero también más botín.',
-        'En cada sala hay oleadas de enemigos. Al vencerlas se abren las puertas de enredadera y sigues.',
+        'En cada sala hay oleadas de enemigos. Al vencerlas se abren las puertas de enredadera. Entre más lejos del inicio, más duro: explora y farmea antes de buscar al jefe final.',
       ],
     },
     {
@@ -66,7 +66,7 @@ export function tutorialSections(keys: Keys): TutorialSection[] {
       title: 'Salas y puertas',
       icon: 'puerta',
       lines: [
-        'Hay salas de combate, del tesoro (cofres dorados y una reliquia), lugares de descanso (la fuente de leche de luna cura al grupo) y guaridas de minijefe.',
+        'Hay salas de combate, del tesoro (cofres dorados y una reliquia), lugares de descanso (la fuente de leche de luna cura al grupo) y guaridas de minijefe. Los jefes están al fondo de ramas sin salida; el minimapa te muestra por dónde ya pasaste.',
         'Las puertas de enredadera se cierran cuando empieza una pelea y se abren al ganar.',
         'Recoge lo que dejan los enemigos antes de seguir: armas, balas y curas.',
       ],

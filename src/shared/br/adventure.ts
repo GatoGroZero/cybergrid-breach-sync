@@ -366,6 +366,16 @@ export const ARMOR_NAMES: Record<(typeof ARMOR_SLOTS)[number], [string, string, 
   paws: ['Calcetines de lana', 'Botitas de gamuza', 'Zapatillas de viento'],
 };
 
+/** Lo que da cada pieza de armadura segun su rareza (comun, normal, epica). */
+export const ARMOR_BONUS = {
+  /** Escudo maximo de mas. */
+  head: { shield: [10, 20, 35] },
+  /** Fraccion del dano que ya no se recibe. */
+  body: { less: [0.08, 0.14, 0.22] },
+  /** Velocidad de mas y fraccion de espera que se ahorra en la voltereta. */
+  paws: { speed: [0.04, 0.08, 0.13], dash: [0.08, 0.14, 0.2] },
+} as const;
+
 export interface Mods {
   dmg: number;
   claw: number;
@@ -452,11 +462,11 @@ export function computeMods(
   const head = equip[0];
   const body = equip[1];
   const paws = equip[2];
-  if (head >= 0) m.maxShield += [10, 20, 35][head] ?? 0;
-  if (body >= 0) m.taken *= 1 - ([0.08, 0.14, 0.22][body] ?? 0);
+  if (head >= 0) m.maxShield += ARMOR_BONUS.head.shield[head] ?? 0;
+  if (body >= 0) m.taken *= 1 - (ARMOR_BONUS.body.less[body] ?? 0);
   if (paws >= 0) {
-    m.speed += [0.04, 0.08, 0.13][paws] ?? 0;
-    m.dashCd *= 1 - ([0.08, 0.14, 0.2][paws] ?? 0);
+    m.speed += ARMOR_BONUS.paws.speed[paws] ?? 0;
+    m.dashCd *= 1 - (ARMOR_BONUS.paws.dash[paws] ?? 0);
   }
   m.taken = Math.max(0.4, m.taken);
   m.crit = Math.min(0.6, m.crit);
@@ -483,7 +493,13 @@ export interface PowerDef {
 
 /** Habilidades que se ganan al derrotar jefes: cada una se activa con su tecla o boton. */
 export const POWERS: readonly PowerDef[] = [
-  { id: 0, name: 'Furia felina', desc: 'Disparas el doble de rápido', cooldown: 30, duration: 6 },
+  {
+    id: 0,
+    name: 'Furia felina',
+    desc: 'Disparas el doble de rápido y tus balas pegan +40 % más fuerte',
+    cooldown: 30,
+    duration: 6,
+  },
   { id: 1, name: 'Mirada de búho', desc: '+80 % de daño y de alcance', cooldown: 32, duration: 6 },
   {
     id: 2,

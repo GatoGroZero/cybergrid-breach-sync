@@ -106,7 +106,13 @@ test.describe('Flujo 15: tutorial y presentacion de jefes en la Aventura', () =>
   }) => {
     await empezarAventura(page);
     await emit(page, 'dev:arm');
-    await emit(page, 'dev:room', 4);
+    // el bosque se arma distinto en cada partida: se busca la guarida del primer minijefe
+    const guarida = await page.evaluate(() =>
+      (
+        window as unknown as { __game: { map: { rooms: { kind: string }[] } } }
+      ).__game.map.rooms.findIndex((r) => r.kind === 'minijefe'),
+    );
+    await emit(page, 'dev:room', guarida);
     await page.waitForFunction(() => (window as unknown as Game).__game.bossIntro !== null, null, {
       timeout: 15_000,
     });

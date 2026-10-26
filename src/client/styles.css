@@ -1079,18 +1079,247 @@ body.cinema .menu-btn {
 /* ------------------------------------------------------------ inventario */
 
 .inv-card {
-  width: min(480px, 100%);
+  width: min(780px, 100%);
 }
 
 .inv-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-bottom: 8px;
 }
 
 .inv-head h2 {
+  margin: 0 auto 0 0;
+}
+
+.inv-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.inv-tab {
+  min-height: 40px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 19px;
+  color: var(--dim);
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+}
+
+.inv-tab[aria-selected='true'] {
+  color: var(--yellow);
+  border-color: var(--yellow);
+}
+
+/* mochila a la izquierda y, al lado, el detalle de lo que se toca (no hasta abajo) */
+.inv-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.inv-main {
+  min-width: 0;
+}
+
+.inv-detail {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  min-height: 140px;
+  padding: 10px;
+  background: var(--black);
+  border: 3px solid var(--line);
+}
+
+.inv-info-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.inv-info-head canvas {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.inv-info-title {
+  display: grid;
+  min-width: 0;
+  font-size: 20px;
+  line-height: 1.05;
+}
+
+.inv-stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0 0 8px;
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.inv-stats dt {
+  color: var(--dim);
+}
+
+.inv-stats dd {
   margin: 0;
+  text-align: right;
+}
+
+.inv-text {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.inv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inv-act {
+  min-height: 42px;
+}
+
+.inv-have {
+  margin: 0 0 6px;
+  font-size: 19px;
+}
+
+.inv-qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.inv-qty .step {
+  min-width: 44px;
+  padding: 4px 10px;
+  font-size: 16px;
+}
+
+.qty-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 120px;
+  height: 42px;
+  font: inherit;
+  font-size: 24px;
+  text-align: center;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 3px solid var(--line);
+}
+
+.qty-input:focus {
+  border-color: var(--yellow);
+  outline: none;
+}
+
+.inv-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.inv-presets .btn {
+  min-width: 48px;
+  padding: 4px 8px;
+}
+
+.inv-presets .btn.on {
+  color: var(--yellow);
+}
+
+.inv-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.inv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 19px;
+  color: var(--text);
+  text-align: left;
+  background: var(--black);
+  border: 3px solid var(--line);
+  cursor: pointer;
+}
+
+.inv-row.picked {
+  border-color: var(--yellow);
+}
+
+.inv-row canvas,
+.inv-row .ph {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.inv-row .txt {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.inv-row .sub {
+  color: var(--dim);
+  font-size: 17px;
+  line-height: 1.05;
+}
+
+.inv-row .cd {
+  flex: none;
+  color: var(--yellow);
+}
+
+.inv-row.empty {
+  display: block;
+  color: var(--dim);
+  cursor: default;
+  opacity: 0.75;
+}
+
+.slot.picked,
+.ammo-chip.sel {
+  border-color: var(--yellow);
+}
+
+@media (max-width: 640px) {
+  .inv-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* en pantalla angosta el detalle va arriba, a la vista, y no pegado al final */
+  .inv-detail {
+    position: static;
+    order: -1;
+    min-height: 0;
+  }
 }
 
 .loot-block {

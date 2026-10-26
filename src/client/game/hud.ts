@@ -2,6 +2,7 @@ import type { DayName, Daylight } from '../../shared/br/daytime';
 import { TEAM_COLORS } from '../../shared/br/modes';
 import { DASH } from '../../shared/br/adventure';
 import { drawPvpHud } from './hudpvp';
+import { drawMates } from './hudmates';
 import { INVENTORY_SLOTS } from '../../shared/br/constants';
 import {
   CLAWS,
@@ -291,12 +292,21 @@ export class Hud {
     this.drawFeed(f, touch);
     if (g.alive) {
       this.drawStatus(f, touch);
+      // tu equipo: su vida y su escudo, junto a los tuyos
+      if (touch) drawMates(f, f.safe.l + 14, f.safe.t + 134, true);
+      else drawMates(f, f.safe.l + 14, f.h - f.safe.b - 134 - (hudPrefs.bars - 1) * 130, false);
       this.drawWeaponInfo(f, touch);
       if (touch) this.drawTouch(f);
       else {
         this.drawHotbar(f);
-        if (g.mode === 'aventura')
-          this.advHud.drawPowerBar(f, f.h - f.safe.b - 12 - this.slotSize(f) - 16);
+        if (g.mode === 'aventura') {
+          // las habilidades van a la derecha de los objetos: arriba taparian el aviso del objeto en mano
+          const size = this.slotSize(f);
+          const hotbarRight = f.w / 2 + (INVENTORY_SLOTS * size + (INVENTORY_SLOTS - 1) * 8) / 2;
+          const bar = 3 * 40 + 2 * 8;
+          const left = Math.round(Math.min(hotbarRight + 22, f.w - f.safe.r - 190 - bar));
+          this.advHud.drawPowerBar(f, f.h - f.safe.b - 12 - Math.round((size - 40) / 2), left);
+        }
       }
     } else {
       g.input.hotbarRects = [];
@@ -832,7 +842,11 @@ export class Hud {
             ? `+50 de escudo en 5 s, ${use} para usar`
             : item.kind === 'wall'
               ? `${use} para colocar`
-              : `Cantidad: ${item.qty}`;
+              : item.kind === 'potion_catnip'
+                ? `+40 % de daño y +18 % de velocidad por 14 s, ${use}`
+                : item.kind === 'potion_valerian'
+                  ? `+30 % de velocidad y voltereta al doble por 16 s, ${use}`
+                  : `Cantidad: ${item.qty}`;
     }
     ctx.font = `20px ${VT}`;
     const tw = Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) + 24;

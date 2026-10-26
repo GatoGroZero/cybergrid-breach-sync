@@ -140,7 +140,13 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
       page.evaluate(() => window.__cybergrid as NonNullable<Window['__cybergrid']>);
 
     // a la guarida del primer minijefe: aparece el jefe y se le da por vencido
-    await emit(page, 'dev:room', 4);
+    // el bosque se arma distinto en cada partida: se busca la guarida del primer minijefe
+    const guarida = await page.evaluate(() =>
+      (
+        window as unknown as { __game: { map: { rooms: { kind: string }[] } } }
+      ).__game.map.rooms.findIndex((r) => r.kind === 'minijefe'),
+    );
+    await emit(page, 'dev:room', guarida);
     await page.waitForFunction(
       () => (window as unknown as { __game: { adv: { boss: unknown } } }).__game.adv.boss !== null,
       null,

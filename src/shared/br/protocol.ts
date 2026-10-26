@@ -66,7 +66,12 @@ const slot = z
   .max(INVENTORY_SLOTS - 1);
 export const selectSchema = z.object({ slot });
 export const moveItemSchema = z.object({ from: slot, to: slot });
-export const dropSchema = z.object({ slot });
+export const dropSchema = z.object({ slot, qty: z.number().int().min(1).max(100).optional() });
+/** Aventura: quitarse una pieza de armadura (0 a 2) y dejarla en el suelo o darsela a alguien (`to`). */
+export const armorMoveSchema = z.object({
+  slot: z.number().int().min(0).max(2),
+  to: z.number().int().min(1).max(MAX_PLAYERS).optional(),
+});
 export const dropAmmoSchema = z.object({
   kind: z.enum(AMMO_KINDS as unknown as [string, ...string[]]),
   qty: z.number().int().min(1).max(100).optional(),

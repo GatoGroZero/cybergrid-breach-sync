@@ -181,6 +181,7 @@ const input = new InputController(canvas, {
   },
   onEmote: (kind) => game?.sendEmote(kind),
   onReload: () => game?.sendReload(),
+  onDrop: (half) => game?.quickDrop(half),
   onMute: () => {
     sfx.setMuted(!sfx.muted);
     toast(sfx.muted ? 'Sonido apagado' : 'Sonido encendido');
