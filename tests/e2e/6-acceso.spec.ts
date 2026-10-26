@@ -1,22 +1,48 @@
 import { expect, test } from '@playwright/test';
-import { createRoomUi, registerViaUi, uniqueName } from './helpers';
+import {
+  createRoomUi,
+  fillSignup,
+  registerViaUi,
+  uniqueEmail,
+  uniqueName,
+  PASSWORD,
+} from './helpers';
 
 test.describe('Flujo 6: acceso con Google, correo e invitado', () => {
-  test('la pantalla ofrece Google, correo e invitado y no enseña la cuenta demo', async ({
+  test('la pantalla pide correo y contraseña, enlaza a crear cuenta y ofrece otras opciones', async ({
     page,
   }) => {
     await page.goto('/');
     await expect(page.getByTestId('screen-auth')).toBeVisible();
+    await expect(page.getByTestId('login-email')).toBeVisible();
+    await expect(page.getByTestId('login-pass')).toBeVisible();
+    await expect(page.getByTestId('login-pass')).toHaveAttribute('type', 'password');
+    await expect(page.getByTestId('login-submit')).toBeVisible();
+    const crear = page.getByTestId('link-signup');
+    await expect(crear).toHaveText('Crea una cuenta');
+    await expect(page.getByTestId('screen-auth')).toContainText('¿No tienes cuenta?');
+    // debajo van las otras formas de entrar
+    await expect(page.getByTestId('auth-others-title')).toHaveText(
+      'Otras opciones de inicio de sesión',
+    );
     await expect(page.getByTestId('btn-google')).toBeVisible();
-    await expect(page.getByTestId('email-address')).toBeVisible();
     await expect(page.getByTestId('btn-guest')).toBeVisible();
+    // las cuentas de demostración no se enseñan
     await expect(page.getByTestId('screen-auth')).not.toContainText('demo1');
     await expect(page.getByTestId('screen-auth')).not.toContainText('CyberGrid26');
-    // El usuario y contraseña queda recogido, sin estorbar.
-    expect(
-      await page.getByTestId('auth-legacy').evaluate((el) => (el as HTMLDetailsElement).open),
-    ).toBe(false);
-    await expect(page.getByTestId('auth-user')).toBeHidden();
+    await expect(page.getByTestId('signup-form')).toBeHidden();
+
+    // el enlace cambia al registro (correo, contraseña y confirmar) y se puede volver
+    await crear.click();
+    await expect(page.getByTestId('signup-form')).toBeVisible();
+    await expect(page.getByTestId('login-form')).toBeHidden();
+    await expect(page.getByTestId('signup-email')).toBeVisible();
+    await expect(page.getByTestId('signup-pass')).toBeVisible();
+    await expect(page.getByTestId('signup-confirm')).toBeVisible();
+    await expect(page.getByTestId('btn-guest')).toBeVisible();
+    await page.getByTestId('link-login').click();
+    await expect(page.getByTestId('login-form')).toBeVisible();
+    await expect(page.getByTestId('signup-form')).toBeHidden();
   });
 
   test('invitado: entra con un clic, confirma su apodo, la sesión sobrevive a recargar y puede cambiarlo', async ({
@@ -151,10 +177,21 @@ test.describe('Flujo 6: acceso con Google, correo e invitado', () => {
     await ctxB.close();
   });
 
-  test('con usuario y contraseña no se pide apodo (cuentas locales)', async ({ page }) => {
-    await registerViaUi(page, uniqueName('e2e_loc'));
+  test('al crear una cuenta con correo se elige el apodo y no se vuelve a pedir en este navegador', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await fillSignup(page, uniqueEmail('apodo'), PASSWORD);
+    await expect(page.getByTestId('nick-panel')).toBeVisible();
+    await expect(page.getByTestId('nick-input')).toHaveValue(/^Gato\d{4}$/);
+    await page.getByTestId('nick-input').fill('Gato Con Correo');
+    await page.getByTestId('nick-save').click();
+    await expect(page.getByTestId('lobby-user')).toHaveText('Gato Con Correo');
+    await page.reload();
+    await expect(page.getByTestId('lobby-user')).toHaveText('Gato Con Correo');
     await expect(page.getByTestId('nick-panel')).toBeHidden();
   });
+
   test('la política de privacidad existe, se enlaza desde el acceso y cabe en el móvil', async ({
     page,
     request,

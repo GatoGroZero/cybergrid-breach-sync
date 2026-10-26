@@ -596,7 +596,7 @@ export interface MetaUpgrade {
   costs: number[];
 }
 
-/** Lo que se compra con la esencia lunar que dejan las partidas (se guarda en este navegador). */
+/** Lo que se compra con la esencia lunar que dejan las partidas (se guarda en la cuenta y en este navegador). */
 export const META_UPGRADES: readonly MetaUpgrade[] = [
   {
     key: 'vida',

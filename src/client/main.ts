@@ -320,6 +320,7 @@ auth.onLogin = async (loggedIn) => {
 
 function showAuth(message = ''): void {
   user = null;
+  shrineFor = '';
   room = null;
   showView('auth');
   navigate('/login', true);
@@ -402,6 +403,9 @@ fillFormatSelect(setFormatSelect);
 const setTeamSizeSelect = $<HTMLSelectElement>('set-teamsize');
 fillTeamSizeSelect(setTeamSizeSelect);
 
+/** De quien es el progreso del Santuario que se cargo (para no volver a cargarlo al regresar del juego). */
+let shrineFor = '';
+
 const parseBots = (value: string): BotsSetting => (value === BOTS_FILL ? BOTS_FILL : Number(value));
 
 async function enterLobby(): Promise<void> {
@@ -414,6 +418,11 @@ async function enterLobby(): Promise<void> {
     if (renamed) user = renamed;
   }
   $('lobby-user').textContent = user.username;
+  // el progreso de la Aventura es de cada cuenta: se carga una vez por sesion
+  if (shrineFor !== `${user.provider}:${user.id}`) {
+    shrineFor = `${user.provider}:${user.id}`;
+    void shrine.attach(user);
+  }
   renderRoom();
   if (!net) {
     net = new Net();

@@ -10,32 +10,73 @@ interface DebugGame {
 
 export const PASSWORD = 'clave-e2e-segura';
 
+/** Un apodo valido (de 3 a 16 caracteres) y distinto en cada llamada. */
 export function uniqueName(prefix: string): string {
-  const stamp = Date.now().toString(36).slice(-6);
-  const rand = Math.random().toString(36).slice(2, 5);
-  return `${prefix}_${stamp}${rand}`.slice(0, 20);
+  const stamp = Date.now().toString(36).slice(-4);
+  const rand = Math.random().toString(36).slice(2, 4);
+  return `${prefix.slice(0, 9)}_${stamp}${rand}`;
 }
 
-/** El acceso con usuario y contraseña vive en un desplegable: se abre si no lo está. */
-export async function openPasswordForm(page: Page): Promise<void> {
-  // Se espera a que la pantalla de acceso termine de armarse (al armarse deja el desplegable
-  // cerrado); si no, se podria abrir antes y que se cierre despues.
+/** Un correo que no se repite entre pruebas ni entre corridas. */
+export function uniqueEmail(prefix = 'e2e'): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${prefix}.${Date.now().toString(36)}${rand}@e2e.test`.toLowerCase();
+}
+
+/** Escribe el apodo en la ventana que se abre la primera vez que alguien entra a este navegador. */
+export async function confirmNickname(page: Page, nick: string): Promise<void> {
+  await expect(page.getByTestId('nick-panel')).toBeVisible();
+  await page.getByTestId('nick-input').fill(nick);
+  await page.getByTestId('nick-save').click();
+}
+
+/** Abre el formulario de crear cuenta desde la pantalla de acceso. */
+export async function openSignup(page: Page): Promise<void> {
   await expect(page.getByTestId('btn-guest')).toBeVisible();
-  const box = page.getByTestId('auth-legacy');
-  if (!(await box.evaluate((el) => (el as HTMLDetailsElement).open)))
-    await box.locator('summary').click();
+  if (!(await page.getByTestId('signup-form').isVisible()))
+    await page.getByTestId('link-signup').click();
+  await expect(page.getByTestId('signup-form')).toBeVisible();
 }
 
-export async function registerViaUi(page: Page, username: string, debug = false): Promise<void> {
+/** Crea una cuenta con correo y contrasena por el formulario y se queda en la pantalla de acceso. */
+export async function fillSignup(
+  page: Page,
+  email: string,
+  password = PASSWORD,
+  confirm = password,
+): Promise<void> {
+  await openSignup(page);
+  await page.getByTestId('signup-email').fill(email);
+  await page.getByTestId('signup-pass').fill(password);
+  await page.getByTestId('signup-confirm').fill(confirm);
+  await page.getByTestId('signup-submit').click();
+}
+
+/** Escribe el correo (o el usuario de una cuenta vieja) y la contrasena en el formulario de entrar. */
+export async function fillLogin(
+  page: Page,
+  identifier: string,
+  password = PASSWORD,
+): Promise<void> {
+  await expect(page.getByTestId('login-form')).toBeVisible();
+  await page.getByTestId('login-email').fill(identifier);
+  await page.getByTestId('login-pass').fill(password);
+  await page.getByTestId('login-submit').click();
+}
+
+/**
+ * Crea una cuenta nueva con correo por el formulario de registro, elige el apodo `username` y espera
+ * el lobby. Devuelve el correo de la cuenta para poder volver a entrar.
+ */
+export async function registerViaUi(page: Page, username: string, debug = false): Promise<string> {
   await page.goto(debug ? '/?debug' : '/');
   await expect(page).toHaveURL(/\/login$/);
-  await openPasswordForm(page);
-  await page.getByRole('tab', { name: 'Crear cuenta' }).click();
-  await page.getByTestId('auth-user').fill(username);
-  await page.getByTestId('auth-pass').fill(PASSWORD);
-  await page.getByTestId('auth-submit').click();
+  const email = uniqueEmail();
+  await fillSignup(page, email);
+  await confirmNickname(page, username);
   await expect(page.getByTestId('screen-lobby')).toBeVisible();
   await expect(page.getByTestId('lobby-net')).toHaveAttribute('data-state', 'online');
+  return email;
 }
 
 export type LobbyTab = 'jugar' | 'salas' | 'gato';

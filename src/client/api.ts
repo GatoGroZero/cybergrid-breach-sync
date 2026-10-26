@@ -1,3 +1,5 @@
+import type { MetaSave } from '../shared/br/progress';
+
 export interface User {
   id: number;
   username: string;
@@ -10,6 +12,8 @@ export interface AuthConfig {
   email: boolean;
   guest: boolean;
   password: boolean;
+  /** El servidor guarda cuentas y progreso de forma que sobrevive a un reinicio. */
+  durable?: boolean;
 }
 
 export class ApiError extends Error {
@@ -69,6 +73,31 @@ export const api = {
   },
   async emailVerify(email: string, code: string): Promise<User> {
     return (await call<{ user: User }>('/api/auth/email/verify', { email, code })).user;
+  },
+  async signin(identifier: string, password: string): Promise<User> {
+    return (await call<{ user: User }>('/api/auth/signin', { identifier, password })).user;
+  },
+  async signup(email: string, password: string, confirm: string): Promise<User> {
+    return (await call<{ user: User }>('/api/auth/signup', { email, password, confirm })).user;
+  },
+  async progressGet(): Promise<{ save: MetaSave | null; durable: boolean }> {
+    return call('/api/progress');
+  },
+  /** Sube el progreso. Si el servidor ya tenia algo mas nuevo lo devuelve con `conflict`. */
+  async progressPut(
+    save: MetaSave,
+  ): Promise<{ save: MetaSave; durable: boolean; conflict: boolean }> {
+    const res = await fetch('/api/progress', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ save }),
+      credentials: 'same-origin',
+    });
+    const data = (await res.json().catch(() => ({}))) as { save?: MetaSave; durable?: boolean };
+    if (res.status === 409 && data.save)
+      return { save: data.save, durable: data.durable === true, conflict: true };
+    if (!res.ok || !data.save) throw new ApiError('No se pudo guardar tu progreso', res.status, '');
+    return { save: data.save, durable: data.durable === true, conflict: false };
   },
   async setNickname(nickname: string): Promise<User> {
     return (await call<{ user: User }>('/api/auth/nickname', { nickname })).user;

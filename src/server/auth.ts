@@ -2,7 +2,7 @@ import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:c
 import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { credentialsSchema } from '../shared/br/protocol';
+import { credentialsSchema, signinSchema, signupSchema } from '../shared/br/protocol';
 import { nicknameSchema, randomNickname } from '../shared/nickname';
 import type { Config } from './config';
 import type { Repo } from './db';
@@ -10,6 +10,7 @@ import { emailRouter } from './emailLogin';
 import { googleRouter } from './google';
 import type { Mailer } from './mailer';
 import { publicUser, SESSION_COOKIE, sessionFromHeader, startSession } from './session';
+import { StoreError, type Store } from './store';
 
 export { SESSION_COOKIE, sessionFromHeader, type SessionUser } from './session';
 
@@ -116,8 +117,24 @@ function requireJson(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-export function authRouter(deps: { repo: Repo; config: Config; mailer?: Mailer | null }): Router {
-  const { repo, config } = deps;
+/** Lo que se guarda de una cuenta con correo. */
+interface Account {
+  /** Hash scrypt de la contrasena. */
+  h: string;
+  /** Apodo elegido. */
+  n?: string;
+  c: number;
+}
+
+const acctKey = (email: string): string => `acct:v1:${email}`;
+
+export function authRouter(deps: {
+  repo: Repo;
+  config: Config;
+  store: Store;
+  mailer?: Mailer | null;
+}): Router {
+  const { repo, config, store } = deps;
   const mailer = deps.mailer ?? null;
   const router = Router();
 
@@ -179,6 +196,7 @@ export function authRouter(deps: { repo: Repo; config: Config; mailer?: Mailer |
       email: config.email !== null && mailer !== null,
       guest: config.guestLogin,
       password: config.passwordAuth,
+      durable: store.durable,
     });
   });
 
@@ -209,10 +227,99 @@ export function authRouter(deps: { repo: Repo; config: Config; mailer?: Mailer |
       (req.body as { nickname?: unknown } | undefined)?.nickname,
     );
     if (!parsed.success) return invalid(res, parsed.error.issues);
+    // las cuentas con correo recuerdan su apodo para la proxima vez que entren
+    if (current.provider === 'email' && current.sub.startsWith('email:')) {
+      try {
+        const key = acctKey(current.sub.slice('email:'.length));
+        const raw = await store.get(key);
+        if (raw)
+          await store.set(key, JSON.stringify({ ...(JSON.parse(raw) as Account), n: parsed.data }));
+      } catch {
+        // si el almacen no responde, el apodo igual vale para esta sesion
+      }
+    }
     const user = await startSession(res, config, {
       sub: current.sub,
       name: parsed.data,
       provider: current.provider,
+    });
+    res.json({ user: publicUser(user) });
+  });
+
+  const unavailable = (res: Response): void => {
+    res.status(503).json({
+      error: 'almacen_no_disponible',
+      mensaje: 'No pudimos guardar tu cuenta ahora, intenta en un momento',
+    });
+  };
+
+  /** Crear una cuenta con correo y contrasena (con la contrasena repetida). */
+  router.post('/signup', registerLimiter, async (req, res) => {
+    if (!config.passwordAuth) return disabled(res);
+    const parsed = signupSchema.safeParse(req.body);
+    if (!parsed.success) return invalid(res, parsed.error.issues);
+    const { email, password } = parsed.data;
+    try {
+      const account: Account = { h: await hashPassword(password), c: Date.now() };
+      const created = await store.setNx(acctKey(email), JSON.stringify(account));
+      if (!created) {
+        res.status(409).json({
+          error: 'correo_en_uso',
+          mensaje: 'Ese correo ya tiene una cuenta: inicia sesión',
+        });
+        return;
+      }
+    } catch (err) {
+      if (err instanceof StoreError) return unavailable(res);
+      throw err;
+    }
+    const user = await startSession(res, config, {
+      sub: `email:${email}`,
+      name: randomNickname(),
+      provider: 'email',
+    });
+    res.status(201).json({ user: publicUser(user) });
+  });
+
+  /** Entrar con correo y contrasena (o con el usuario de una cuenta vieja). */
+  router.post('/signin', loginLimiter, async (req, res) => {
+    if (!config.passwordAuth) return disabled(res);
+    const bad = (): void => {
+      res
+        .status(401)
+        .json({ error: 'credenciales_invalidas', mensaje: 'Correo o contraseña incorrectos' });
+    };
+    const parsed = signinSchema.safeParse(req.body);
+    if (!parsed.success) return bad();
+    const { identifier, password } = parsed.data;
+    if (!identifier.includes('@')) {
+      // cuentas de usuario y contrasena de antes (y las de demostracion)
+      const row = repo.getUserByName(identifier);
+      const ok = await verifyPassword(password, row?.pass_hash ?? (await getDummyHash()));
+      if (!row || !ok) return bad();
+      const user = await startSession(res, config, {
+        sub: `local:${row.id}`,
+        name: row.username,
+        provider: 'local',
+      });
+      res.json({ user: publicUser(user) });
+      return;
+    }
+    const email = identifier.toLowerCase();
+    let account: Account | null;
+    try {
+      const raw = await store.get(acctKey(email));
+      account = raw ? (JSON.parse(raw) as Account) : null;
+    } catch (err) {
+      if (err instanceof StoreError) return unavailable(res);
+      throw err;
+    }
+    const ok = await verifyPassword(password, account?.h ?? (await getDummyHash()));
+    if (!account || !ok) return bad();
+    const user = await startSession(res, config, {
+      sub: `email:${email}`,
+      name: account.n ?? randomNickname(),
+      provider: 'email',
     });
     res.json({ user: publicUser(user) });
   });

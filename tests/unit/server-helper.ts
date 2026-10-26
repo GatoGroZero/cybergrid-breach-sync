@@ -8,6 +8,7 @@ import { loadConfig, type Config, type ConfigOverrides } from '../../src/server/
 import type { Mailer } from '../../src/server/mailer';
 import { Repo } from '../../src/server/db';
 import { Metrics } from '../../src/server/metrics';
+import type { Store } from '../../src/server/store';
 import { createRealtime, type Realtime } from '../../src/server/realtime';
 
 export interface TestServer {
@@ -22,7 +23,7 @@ export interface TestServer {
 
 export async function startServer(
   overrides: ConfigOverrides = {},
-  extra: { mailer?: Mailer | null } = {},
+  extra: { mailer?: Mailer | null; store?: Store } = {},
 ): Promise<TestServer> {
   const config = loadConfig({
     env: 'test',
@@ -42,6 +43,7 @@ export async function startServer(
     metrics,
     runtime: realtime.runtime,
     mailer: extra.mailer ?? null,
+    store: extra.store,
   });
   http.on('request', app);
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));

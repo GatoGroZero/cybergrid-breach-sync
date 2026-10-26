@@ -106,4 +106,53 @@ test.describe('Flujo 17: inventario con detalle, balas por cantidad y pestañas'
       )
       .not.toContain('rifle');
   });
+
+  test('pasar el ratón por armas, curas y balas no mueve ni cambia de tamaño la tarjeta (no tiembla)', async ({
+    page,
+  }) => {
+    await empezar(page);
+    // armas y curas de distinto tamaño en la mochila
+    await emit(page, 'dev:kit', 'heavy');
+    await emit(page, 'dev:kit');
+    await expect(page.getByTestId('hud-coords')).toBeVisible();
+    await page.keyboard.press('KeyI');
+    await expect(page.getByTestId('inv')).toBeVisible();
+    const card = page.locator('.inv-card');
+    const body = page.locator('.inv-body');
+    const frame = async (): Promise<number[]> => {
+      const c = (await card.boundingBox())!;
+      const b = (await body.boundingBox())!;
+      return [c.x, c.y, c.width, c.height, b.height].map((n) => Math.round(n * 2) / 2);
+    };
+    const quieto = await frame();
+
+    const seen = new Set<string>();
+    const detail = page.getByTestId('inv-detail');
+    const slots = page.getByTestId('inv-slot');
+    const chips = page.getByTestId('ammo-chip');
+    const targets = [
+      ...Array.from({ length: await slots.count() }, (_, i) => slots.nth(i)),
+      ...Array.from({ length: await chips.count() }, (_, i) => chips.nth(i)),
+    ];
+    for (const target of targets) {
+      if (
+        (await target.isDisabled()) ||
+        (await target.getAttribute('aria-label'))?.includes('vacío')
+      )
+        continue;
+      await target.hover();
+      seen.add((await detail.innerText()).slice(0, 40));
+      expect(await frame()).toEqual(quieto);
+      await target.click();
+      expect(await frame()).toEqual(quieto);
+    }
+    // se probaron cosas de verdad distintas (armas, curas, balas), no la misma una y otra vez
+    expect(seen.size).toBeGreaterThanOrEqual(4);
+
+    // y lo mismo en las otras pestañas
+    for (const tab of ['inv-tab-habilidades', 'inv-tab-equipo']) {
+      await page.getByTestId(tab).click();
+      expect(await frame()).toEqual(quieto);
+    }
+  });
 });

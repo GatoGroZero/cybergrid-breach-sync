@@ -17,6 +17,12 @@ async function seedDemoUsers(repo: Repo): Promise<void> {
 async function main(): Promise<void> {
   const config = loadConfig();
   const repo = new Repo(config.dbPath);
+  console.info(
+    config.upstash
+      ? 'Cuentas y progreso: Upstash Redis (duradero)'
+      : 'Cuentas y progreso: SQLite local (con disco efimero se pierden en cada despliegue; ' +
+          'define UPSTASH_REDIS_REST_URL y UPSTASH_REDIS_REST_TOKEN)',
+  );
   const metrics = new Metrics();
 
   const http = createServer();

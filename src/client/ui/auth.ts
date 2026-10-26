@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { credentialsSchema } from '../../shared/br/protocol';
+import { signinSchema, signupSchema } from '../../shared/br/protocol';
 import { api, ApiError, type AuthConfig, type User } from '../api';
 import { $ } from './dom';
 
@@ -16,9 +16,9 @@ export const authErrorText = (code: string | null): string =>
 const emailSchema = z.string().trim().email('Escribe un correo válido');
 const NO_CONFIG: AuthConfig = { google: false, email: false, guest: true, password: false };
 
-/** Pantalla de acceso: Google, codigo por correo, invitado y (si esta activo) usuario y contrasena. */
+/** Pantalla de acceso: correo y contrasena (entrar o crear cuenta), Google, codigo por correo e invitado. */
 export class AuthScreen {
-  private mode: 'login' | 'register' = 'login';
+  private mode: 'login' | 'signup' = 'login';
   private email = '';
   private cfg: AuthConfig = NO_CONFIG;
 
@@ -28,6 +28,8 @@ export class AuthScreen {
   onLeaveForGoogle: () => void = () => undefined;
 
   private readonly error = $('auth-error');
+  private readonly loginForm = $<HTMLFormElement>('login-form');
+  private readonly signupForm = $<HTMLFormElement>('signup-form');
   private readonly emailForm = $<HTMLFormElement>('email-form');
   private readonly codeForm = $<HTMLFormElement>('code-form');
 
@@ -38,16 +40,17 @@ export class AuthScreen {
     $('code-back').addEventListener('click', () => this.showEmailStep());
     $('btn-guest').addEventListener('click', () => void this.guest());
 
-    $('tab-login').addEventListener('click', () => this.setMode('login'));
-    $('tab-register').addEventListener('click', () => this.setMode('register'));
-    $<HTMLFormElement>('auth-form').addEventListener('submit', (e) => void this.submitPassword(e));
+    $('to-signup').addEventListener('click', () => this.setMode('signup'));
+    $('to-login').addEventListener('click', () => this.setMode('login'));
+    this.loginForm.addEventListener('submit', (e) => void this.signin(e));
+    this.signupForm.addEventListener('submit', (e) => void this.signup(e));
   }
 
   /** Deja la pantalla lista para mostrarse: campos limpios y solo las formas de entrar activas. */
   async prepare(message = ''): Promise<void> {
-    $<HTMLDetailsElement>('auth-legacy').open = false;
     this.setMode('login');
     this.showEmailStep();
+    for (const form of [this.loginForm, this.signupForm]) form.reset();
     this.error.textContent = message;
     try {
       this.cfg = await api.config();
@@ -58,26 +61,25 @@ export class AuthScreen {
     const { google, email, guest, password } = this.cfg;
     $('btn-google').hidden = !google;
     $('auth-email').hidden = !email;
-    $('or-email').hidden = !google;
     $('auth-guest').hidden = !guest;
-    $('or-guest').hidden = !google && !email;
-    const legacy = $<HTMLDetailsElement>('auth-legacy');
-    legacy.hidden = !password;
-    // Si es lo unico que hay, se muestra abierto. Nunca se cierra aqui: el jugador pudo abrirlo
-    // mientras llegaba la respuesta del servidor.
-    if (password && !google && !email && !guest) legacy.open = true;
+    $('auth-others-title').hidden = !(google || email || guest) || !password;
+    this.showForms();
   }
 
-  private setMode(mode: 'login' | 'register'): void {
+  /** Cambia entre entrar y crear cuenta. */
+  private setMode(mode: 'login' | 'signup'): void {
     this.mode = mode;
-    $('tab-login').classList.toggle('is-active', mode === 'login');
-    $('tab-register').classList.toggle('is-active', mode === 'register');
-    $('tab-login').setAttribute('aria-selected', String(mode === 'login'));
-    $('tab-register').setAttribute('aria-selected', String(mode === 'register'));
-    $('auth-submit').textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta';
-    $<HTMLInputElement>('auth-pass').autocomplete =
-      mode === 'login' ? 'current-password' : 'new-password';
+    this.showForms();
     this.error.textContent = '';
+  }
+
+  /** Muestra el formulario de entrar o el de crear cuenta (solo si el servidor admite contrasena). */
+  private showForms(): void {
+    const password = this.cfg.password;
+    this.loginForm.hidden = !password || this.mode !== 'login';
+    this.signupForm.hidden = !password || this.mode !== 'signup';
+    $('switch-signup').hidden = !password || this.mode !== 'login';
+    $('switch-login').hidden = !password || this.mode !== 'signup';
   }
 
   private showEmailStep(): void {
@@ -142,28 +144,43 @@ export class AuthScreen {
     });
   }
 
-  private async submitPassword(event: Event): Promise<void> {
+  /** Entrar con el correo (o el usuario de una cuenta de demostracion) y la contrasena. */
+  private async signin(event: Event): Promise<void> {
     event.preventDefault();
-    const username = $<HTMLInputElement>('auth-user').value.trim();
-    const password = $<HTMLInputElement>('auth-pass').value;
     this.error.textContent = '';
-
-    if (this.mode === 'register') {
-      const parsed = credentialsSchema.safeParse({ username, password });
-      if (!parsed.success) {
-        this.error.textContent = parsed.error.issues[0]?.message ?? 'Datos inválidos';
-        return;
-      }
-    } else if (!username || !password) {
-      this.error.textContent = 'Escribe tu usuario y tu contraseña';
+    const parsed = signinSchema.safeParse({
+      identifier: $<HTMLInputElement>('login-email').value,
+      password: $<HTMLInputElement>('login-pass').value,
+    });
+    if (!parsed.success) {
+      this.error.textContent = 'Escribe tu correo y tu contraseña';
       return;
     }
-    await this.busy($<HTMLButtonElement>('auth-submit'), async () => {
-      const user =
-        this.mode === 'login'
-          ? await api.login(username, password)
-          : await api.register(username, password);
-      $<HTMLInputElement>('auth-pass').value = '';
+    await this.busy($<HTMLButtonElement>('login-submit'), async () => {
+      const user = await api.signin(parsed.data.identifier, parsed.data.password);
+      $<HTMLInputElement>('login-pass').value = '';
+      await this.onLogin(user);
+    });
+  }
+
+  /** Crear una cuenta con correo, contrasena y la contrasena repetida. */
+  private async signup(event: Event): Promise<void> {
+    event.preventDefault();
+    this.error.textContent = '';
+    const password = $<HTMLInputElement>('signup-pass').value;
+    const confirm = $<HTMLInputElement>('signup-confirm').value;
+    const parsed = signupSchema.safeParse({
+      email: $<HTMLInputElement>('signup-email').value,
+      password,
+      confirm,
+    });
+    if (!parsed.success) {
+      this.error.textContent = parsed.error.issues[0]?.message ?? 'Datos inválidos';
+      return;
+    }
+    await this.busy($<HTMLButtonElement>('signup-submit'), async () => {
+      const user = await api.signup(parsed.data.email, password, confirm);
+      for (const id of ['signup-pass', 'signup-confirm']) $<HTMLInputElement>(id).value = '';
       await this.onLogin(user);
     });
   }

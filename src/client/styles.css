@@ -301,22 +301,40 @@ hr {
   font-size: 18px;
 }
 
-.legacy {
-  margin-top: 14px;
-  text-align: left;
+.auth-form {
+  margin: 0;
 }
 
-.legacy summary {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.auth-form[hidden] {
+  display: none;
+}
+
+.switch {
+  margin: 12px 0 0;
   color: var(--dim);
-  cursor: pointer;
+  line-height: 1.5;
 }
 
-.legacy[open] summary {
-  margin-bottom: 8px;
+.switch[hidden] {
+  display: none;
+}
+
+/* enlace dentro de la frase, no un bloque aparte */
+.switch button.link {
+  display: inline;
+  margin: 0;
+  padding: 8px 4px;
+  min-height: 44px;
+}
+
+.auth-card .or {
+  margin: 18px 0 12px;
+  text-align: center;
+}
+
+.auth-card .or span {
+  max-width: 78%;
+  line-height: 1.3;
 }
 
 .legal {
@@ -1125,13 +1143,22 @@ body.cinema .menu-btn {
 
 .inv-main {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* alto fijo: si la tarjeta cambiara de tamano al pasar el raton por otro objeto, se recentraria
+   y la pantalla temblaria */
+.inv-body {
+  height: clamp(250px, 58vh, 430px);
 }
 
 .inv-detail {
-  position: sticky;
-  top: 0;
   min-width: 0;
-  min-height: 140px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   background: var(--black);
   border: 3px solid var(--line);
@@ -1315,9 +1342,12 @@ body.cinema .menu-btn {
     font-size: 14px;
   }
 
+  .inv-body {
+    height: calc(100dvh - 104px);
+  }
+
   .inv-detail {
     padding: 8px;
-    min-height: 0;
   }
 
   .inv-info-head {
@@ -1354,13 +1384,18 @@ body.cinema .menu-btn {
 @media (max-width: 640px) {
   .inv-body {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .inv-main {
+    height: auto;
+    overflow: visible;
   }
 
   /* en pantalla angosta el detalle va arriba, a la vista, y no pegado al final */
   .inv-detail {
-    position: static;
     order: -1;
-    min-height: 0;
+    height: auto;
   }
 }
 
@@ -2007,10 +2042,15 @@ body.cinema .menu-btn {
   border-color: var(--text);
 }
 
-.shrine-item .btn {
+.shrine-actions {
   grid-column: 2;
   grid-row: 1 / span 2;
-  min-width: 104px;
+  display: grid;
+  gap: 6px;
+}
+
+.shrine-actions .btn {
+  min-width: 118px;
 }
 
 .shrine-stats {

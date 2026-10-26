@@ -16,3 +16,9 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
+      # Almacen duradero (Upstash Redis, API REST) para cuentas con correo y progreso de la Aventura.
+      # El disco gratis de Render se borra en cada despliegue; los valores se escriben en Render.
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

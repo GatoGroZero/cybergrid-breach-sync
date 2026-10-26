@@ -47,13 +47,31 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
 
     // "Corazon fuerte" cuesta 20 al primer nivel y 40 al segundo
     const heart = page.getByTestId('shrine-vida');
-    await heart.getByRole('button').click();
+    const upgrade = heart.getByRole('button', { name: /^(Mejorar|Al máximo)/ });
+    await upgrade.click();
     await expect(page.getByTestId('shrine-essence')).toHaveText('50');
-    await heart.getByRole('button').click();
+    await upgrade.click();
     await expect(page.getByTestId('shrine-essence')).toHaveText('10');
     // sin esencia suficiente ya no se puede seguir
-    await expect(heart.getByRole('button')).toBeDisabled();
+    await expect(upgrade).toBeDisabled();
     await expect(heart.locator('.shrine-pips i[data-on=true]')).toHaveCount(2);
+
+    // quitar una mejora devuelve su esencia completa (el segundo nivel costó 40)
+    const quitar = page.getByTestId('shrine-quitar-vida');
+    await expect(quitar).toHaveText('Quitar (+40)');
+    await quitar.click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('50');
+    await expect(heart.locator('.shrine-pips i[data-on=true]')).toHaveCount(1);
+    await expect(quitar).toHaveText('Quitar (+20)');
+    await quitar.click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('70');
+    await expect(heart.locator('.shrine-pips i[data-on=true]')).toHaveCount(0);
+    // sin niveles no hay nada que quitar
+    await expect(quitar).toBeDisabled();
+    // y la esencia devuelta alcanza para volver a comprarlas
+    await upgrade.click();
+    await upgrade.click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('10');
 
     // se recuerda al volver a abrir la pagina
     await page.reload();
@@ -64,6 +82,66 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
     ).toHaveCount(2);
     await page.getByTestId('shrine-close').click();
     await expect(page.getByTestId('shrine')).toBeHidden();
+  });
+
+  test('el progreso se guarda en la cuenta: sobrevive a borrar el navegador y a quitar mejoras', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_cuenta'));
+    await page.locator('[data-mode=aventura]').click();
+    await seedMeta(page, { essence: 120 });
+    await page.locator('[data-mode=aventura]').click();
+    await page.getByTestId('btn-shrine').click();
+    await expect(page.getByTestId('shrine-note')).toContainText('en tu cuenta');
+    await page
+      .getByTestId('shrine-vida')
+      .getByRole('button', { name: /^Mejorar/ })
+      .click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('100');
+
+    const guardado = async (): Promise<{ vida: number; essence: number } | null> => {
+      const res = await page.request.get('/api/progress');
+      const body = (await res.json()) as {
+        save: { levels: { vida: number }; essence: number } | null;
+      };
+      return body.save ? { vida: body.save.levels.vida, essence: body.save.essence } : null;
+    };
+    // el servidor recibe la compra
+    await expect.poll(guardado).toEqual({ vida: 1, essence: 100 });
+
+    // "volvió horas después" desde un navegador limpio: nada local, todo viene de la cuenta
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload();
+    await page.getByTestId('nick-save').click();
+    await expect(page.getByTestId('screen-lobby')).toBeVisible();
+    await page.locator('[data-mode=aventura]').click();
+    await expect(page.getByTestId('shrine-badge')).toHaveText('100');
+    await page.getByTestId('btn-shrine').click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('100');
+    await expect(
+      page.getByTestId('shrine-vida').locator('.shrine-pips i[data-on=true]'),
+    ).toHaveCount(1);
+
+    // quitar la mejora también llega al servidor y devuelve la esencia
+    await page.getByTestId('shrine-quitar-vida').click();
+    await expect(page.getByTestId('shrine-essence')).toHaveText('120');
+    await expect.poll(guardado).toEqual({ vida: 0, essence: 120 });
+  });
+
+  test('un invitado ve el aviso de que su progreso se queda solo en este navegador', async ({
+    page,
+    request,
+  }) => {
+    await page.goto('/');
+    await page.getByTestId('btn-guest').click();
+    await page.getByTestId('nick-save').click();
+    await expect(page.getByTestId('screen-lobby')).toBeVisible();
+    await page.locator('[data-mode=aventura]').click();
+    await page.getByTestId('btn-shrine').click();
+    await expect(page.getByTestId('shrine-note')).toContainText('solo en este navegador');
+    // y el servidor no le guarda nada
+    expect((await page.request.get('/api/progress')).status()).toBe(403);
+    expect((await request.get('/api/progress')).status()).toBe(401);
   });
 
   test('una aventura en solitario: reliquia inicial, puertas, enemigos, volteretas y victoria', async ({
@@ -120,10 +198,18 @@ test.describe('Flujo 13: Aventura en el bosque encantado', () => {
     await expect(page.locator('#results-title')).toHaveText('¡EL BOSQUE ESTÁ A SALVO!');
     await expect(page.getByTestId('results-adv')).toBeVisible();
     await expect(page.getByTestId('adv-essence')).toContainText('esencia lunar');
-    const bank = await page.evaluate(
-      () => JSON.parse(window.localStorage.getItem('cg_meta_v1') ?? '{}') as { essence: number },
-    );
+    // la esencia entra a la bolsa de la cuenta: en este navegador y en el servidor
+    const bank = await page.evaluate(() => {
+      const key = Object.keys(window.localStorage).find((k) => k.startsWith('cg_meta_v2:'));
+      return JSON.parse(window.localStorage.getItem(key ?? '') ?? '{}') as { essence: number };
+    });
     expect(bank.essence).toBeGreaterThan(5);
+    await expect
+      .poll(async () => {
+        const res = await page.request.get('/api/progress');
+        return ((await res.json()) as { save: { essence: number } | null }).save?.essence ?? 0;
+      })
+      .toBe(bank.essence);
     await page.getByTestId('btn-back').click();
     await expect(page.getByTestId('screen-lobby')).toBeVisible();
   });

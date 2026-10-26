@@ -37,6 +37,8 @@ export interface Config {
   sessionDays: number;
   google: GoogleConfig | null;
   email: EmailConfig | null;
+  /** Redis de Upstash para guardar cuentas y progreso de forma duradera (si no hay, se usa SQLite). */
+  upstash: { url: string; token: string } | null;
   trustProxy: number | boolean;
   /** Detras de Cloudflare (Render) la IP real viene en CF-Connecting-IP. */
   trustCloudflare: boolean;
@@ -120,6 +122,13 @@ function loadEmail(env: Config['env']): EmailConfig | null {
   return null;
 }
 
+/** Direccion y llave de Upstash Redis (las dos juntas; con una sola no se activa). */
+function loadUpstash(): { url: string; token: string } | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim().replace(/\/+$/, '');
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  return url && token && /^https:\/\//.test(url) ? { url, token } : null;
+}
+
 function int(value: string | undefined, fallback: number): number {
   const n = Number.parseInt(value ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
@@ -150,6 +159,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     sessionDays: Math.min(90, Math.max(1, int(process.env.SESSION_DAYS, 30))),
     google: loadGoogle(),
     email: loadEmail(env),
+    upstash: loadUpstash(),
     trustProxy: int(process.env.TRUST_PROXY, env === 'production' ? 2 : 0),
     trustCloudflare: process.env.TRUST_CLOUDFLARE
       ? process.env.TRUST_CLOUDFLARE === 'true'
@@ -163,7 +173,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
     zoneTimeScale: Math.min(60, Math.max(1, int(process.env.ZONE_TIME_SCALE, 1))),
     introSeconds: Math.min(15, Math.max(0, int(process.env.INTRO_SECONDS, 5))),
     pickSeconds: Math.min(40, Math.max(2, int(process.env.PICK_SECONDS, 14))),
-    version: '3.3.0',
+    version: '3.4.0',
     limits: {
       login: int(process.env.LIMIT_LOGIN, 30),
       register: int(process.env.LIMIT_REGISTER, 30),
