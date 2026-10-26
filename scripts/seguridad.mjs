@@ -307,6 +307,8 @@ async function run(round) {
       ];
       for (const a of ataques) {
         const r = await post('/api/auth/signin', a);
+        // el firewall del borde (Cloudflare) puede cortar el ataque antes de que llegue a la app
+        if (r.status === 403 && /cloudflare/i.test(r.headers.get('server') ?? '')) continue;
         if (![400, 401, 429].includes(r.status) || !noLeak(r))
           return { ok: false, detail: `${JSON.stringify(a).slice(0, 40)} -> ${r.status}` };
       }
