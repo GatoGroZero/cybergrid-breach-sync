@@ -22,6 +22,7 @@ import type { Floater } from './fx';
 import { keyLabel, type Circle } from './input';
 import type { ClientBR } from './state';
 import { AdvHud } from './hudadv';
+import { drawBossIntro } from './hudboss';
 import { hudPrefs, withScale } from './hudprefs';
 import { drawTouchControls } from './touchui';
 
@@ -260,6 +261,12 @@ export class Hud {
         this.reloadFrac = Math.min(1, Math.max(0, 1 - me.reload / WEAPONS[held.kind].reload));
       }
     }
+    // presentacion de un jefe: solo las franjas y su nombre, nada del HUD de siempre
+    if (g.bossIntro) {
+      g.input.hotbarRects = [];
+      drawBossIntro(f);
+      return;
+    }
     this.drawLabels(f);
     this.drawFloaters(f);
     this.drawPrompt(f);
@@ -343,18 +350,21 @@ export class Hud {
     const g = f.g;
     if (!g.alive || g.loot || g.result) return;
     const box = g.nearestBox();
-    if (!box) return;
-    const [, x, y, kind, , top] = box;
+    const sign = box ? null : g.nearTutorial ? g.signAt : null;
+    if (!box && !sign) return;
+    const [, x, y, kind, , top] = box ?? [0, sign!.x, sign!.y - 8, -1, 0, 0];
     const title =
-      kind === 0
-        ? 'Cofre'
-        : kind === 4
-          ? 'Caja de munición'
-          : kind === 1
-            ? 'Cofre dorado'
-            : kind === 2
-              ? 'Lápida'
-              : ITEM_NAMES[ITEM_KINDS[Math.floor(top / 3)] ?? 'pistol'];
+      kind === -1
+        ? 'Tutorial'
+        : kind === 0
+          ? 'Cofre'
+          : kind === 4
+            ? 'Caja de munición'
+            : kind === 1
+              ? 'Cofre dorado'
+              : kind === 2
+                ? 'Lápida'
+                : ITEM_NAMES[ITEM_KINDS[Math.floor(top / 3)] ?? 'pistol'];
     const p = f.toScreen(x, y - 14 + Math.sin(f.now / 220) * 1.5);
     const touch = g.input.mode === 'touch';
     const label = touch ? 'ABRIR' : keyLabel(g.input.keys.interact).toUpperCase();
@@ -1091,8 +1101,9 @@ export class Hud {
       aim: input.aimPad,
       running: g.running && g.moving,
       pressed: input.pressed,
-      interactReady: box !== null && g.alive,
-      useLabel: box === null && g.alive && g.useKind !== null,
+      interactReady: (box !== null || g.nearTutorial) && g.alive,
+      readLabel: box === null && g.nearTutorial,
+      useLabel: box === null && !g.nearTutorial && g.alive && g.useKind !== null,
       bagIcon: this.assets.can,
       emoteIcon: this.assets.emote.face[0],
       emoteOpen: input.emoteOpen,

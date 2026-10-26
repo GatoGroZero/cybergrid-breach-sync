@@ -1032,6 +1032,40 @@
       </div>
     </div>
 
+    <div
+      id="tutorial"
+      class="overlay"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tutorial-title"
+      data-testid="tutorial"
+    >
+      <div class="card modal wide-modal modal-scroll tut">
+        <div class="tut-top">
+          <h2 id="tutorial-title">Tutorial de la Aventura</h2>
+          <button
+            id="tutorial-x"
+            class="btn small"
+            type="button"
+            aria-label="Cerrar el tutorial"
+            data-testid="tutorial-x"
+          >
+            X
+          </button>
+        </div>
+        <div id="tutorial-body" class="modal-body tut-body" data-testid="tutorial-body"></div>
+        <button
+          id="tutorial-close"
+          class="btn primary wide"
+          type="button"
+          data-testid="tutorial-close"
+        >
+          Cerrar
+        </button>
+      </div>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite" data-testid="toast"></div>
 
     <script type="module" src="./main.ts"></script>

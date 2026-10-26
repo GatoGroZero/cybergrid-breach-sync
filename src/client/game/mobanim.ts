@@ -254,7 +254,8 @@ export class MobAnimator {
     }
     if ((m.flags & MOB_FLAG.stunned) !== 0) offX += Math.sin(now / 55) * 1.2;
     // aparece creciendo desde el suelo
-    const born = clamp((now - s.bornAt) / 280, 0, 1);
+    // los jefes salen de la tierra despacio, para que se vea su entrada
+    const born = clamp((now - s.bornAt) / (def.boss ? 900 : 280), 0, 1);
     if (born < 1) {
       const e = 1 + 2.2 * (born - 1) ** 3 + 1.2 * (born - 1) ** 2;
       const grow = clamp(0.3 + 0.7 * e, 0.3, 1.12);

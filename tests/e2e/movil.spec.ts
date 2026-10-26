@@ -125,6 +125,58 @@ test.describe('Móvil: controles táctiles', () => {
     await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('el boton LEER junto al cartel abre el tutorial con un toque y se cierra con la X', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_tut'), true);
+    await page.locator('[data-mode=aventura]').click();
+    await page.getByTestId('btn-solo').click();
+    await expect(page.locator('#game')).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => window.__cybergrid?.intro === 0, null, { timeout: 20_000 });
+    const cdp = await page.context().newCDPSession(page);
+    const tap = async (x: number, y: number): Promise<void> => {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x, y, id: 1 }],
+      });
+      await page.waitForTimeout(80);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    const size = page.viewportSize() as { width: number; height: number };
+    // un toque cualquiera activa el modo tactil
+    await tap(size.width * 0.5, size.height * 0.3);
+    await page.waitForFunction(() => window.__cybergrid?.mode === 'touch');
+
+    const sign = await page.evaluate(
+      () => (window as unknown as { __game: { signAt: { x: number; y: number } } }).__game.signAt,
+    );
+    await page.evaluate(
+      (s) =>
+        (
+          window as unknown as { __net: { socket: { emit(e: string, p: unknown): void } } }
+        ).__net.socket.emit('dev:tp', { x: s.x - 18, y: s.y + 4 }),
+      sign,
+    );
+    await page.waitForFunction(
+      () => (window as unknown as { __game: { nearTutorial: boolean } }).__game.nearTutorial,
+    );
+    const spot = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __game: { input: { touchLayout: { interact: { x: number; y: number } } } };
+          }
+        ).__game.input.touchLayout.interact,
+    );
+    await tap(spot.x * size.width, spot.y * size.height);
+    // el "click" que sigue al toque no debe cerrarlo al nacer
+    await page.waitForTimeout(900);
+    await expect(page.getByTestId('tutorial')).toBeVisible();
+    await expect(page.getByTestId('tutorial-close')).toBeInViewport();
+    await page.getByTestId('tutorial-x').tap();
+    await expect(page.getByTestId('tutorial')).toBeHidden();
+  });
+
   test('el inventario se abre con la lata y se ordena arrastrando con el dedo', async ({
     page,
   }) => {

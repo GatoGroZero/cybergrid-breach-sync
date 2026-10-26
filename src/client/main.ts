@@ -43,13 +43,17 @@ import {
 } from './ui/modes';
 import { Painter, drawCatIcon, startWalker } from './ui/painter';
 import { Settings } from './ui/settings';
+import { Tutorial } from './ui/tutorial';
 import { Shrine } from './ui/santuario';
 import { SceneArt, Stage, sceneFor } from './ui/escenarios';
 import { buildPostal } from './ui/postales';
 import { Portada } from './ui/portada';
 import { MODE_INFO } from './ui/modes';
-import { relicIcon } from './pixel/art-items';
-import { RELICS } from '../shared/br/adventure';
+import { powerIcon, relicIcon } from './pixel/art-items';
+import { vineGateTile } from './pixel/art-bosque';
+import { mobSprite } from './pixel/art-mobs';
+import { catSprites } from './pixel/cat';
+import { MOB, RELICS } from '../shared/br/adventure';
 
 const canvas = $<HTMLCanvasElement>('game');
 const screenAuth = $('screen-auth');
@@ -182,6 +186,35 @@ const input = new InputController(canvas, {
 
 const inventory = new InventoryPanel(renderer.assets, () => game);
 const settings = new Settings(input, sfx, renderer.assets.can, renderer.assets.emote.face[0]);
+const tutorial = new Tutorial({
+  keys: () => input.keys,
+  onToggle: (open) => {
+    // mientras se lee, el gato no se mueve ni dispara por accidente
+    input.active = !open && !canvas.hidden;
+  },
+  icon: (name) => {
+    switch (name) {
+      case 'gato':
+        return catSprites(painter.skin).right[0] ?? null;
+      case 'arma':
+        return renderer.assets.icon.rifle;
+      case 'cura':
+        return renderer.assets.icon.medkit;
+      case 'puerta':
+        return vineGateTile(0);
+      case 'jefe':
+        return mobSprite(MOB.reinaRata).frames[0] ?? null;
+      case 'poder':
+        return powerIcon(0);
+      case 'reliquia':
+        return relicIcon(0);
+      case 'vida':
+        return renderer.assets.heart;
+      default:
+        return powerIcon(4);
+    }
+  },
+});
 
 inventory.onClose = () => syncActive();
 settings.onClose = () => syncActive();
@@ -1023,6 +1056,7 @@ function startGame(payload: GameStartPayload): void {
   if (DEBUG) {
     (window as unknown as { __game?: ClientBR; __net?: Net }).__game = game;
     (window as unknown as { __net?: Net }).__net = net;
+    (window as unknown as { __tutorial?: Tutorial }).__tutorial = tutorial;
   }
   input.active = true;
   applyMode(input.mode);
@@ -1083,6 +1117,7 @@ function updateHud(g: ClientBR, n: Net): void {
     coords.dataset.y = String(y);
     coords.textContent = `${x}, ${y}`;
   }
+  document.body.classList.toggle('cinema', g.bossIntro !== null);
   $('hud-fps').textContent = `${fps} FPS`;
   $('hud-rtt').textContent = n.connected ? `ping ${Math.round(n.rttMedian)} ms` : 'sin red';
   $('hud-rtt').dataset.q =
@@ -1142,6 +1177,11 @@ async function doInteract(): Promise<void> {
     return;
   }
   const box = g.nearestBox();
+  if (!box && g.nearTutorial) {
+    // el cartel del claro de inicio abre el tutorial (y la misma tecla lo cierra)
+    tutorial.toggle(input.mode === 'touch');
+    return;
+  }
   if (!box) {
     // sin nada que abrir, la tecla de interactuar usa la cura o la pocion que llevas en la mano
     if (g.useKind !== null) g.useSelected();
@@ -1317,6 +1357,7 @@ function showAdventureResults(
 }
 
 function leaveGameView(): void {
+  if (tutorial.isOpen) tutorial.close();
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
   if (deathTimer !== null) window.clearTimeout(deathTimer);

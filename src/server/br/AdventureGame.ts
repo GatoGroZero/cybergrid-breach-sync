@@ -1,5 +1,6 @@
 import {
   ARMOR_SLOTS,
+  BOSS_INTRO_S,
   BOSS_ORDER,
   DASH,
   HAZARD,
@@ -177,6 +178,9 @@ export class AdventureGame extends BRGame {
     room: number;
   }[] = [];
   private currentRoom = 0;
+  /** Segundos que faltan de la presentacion del jefe (0 si no hay) y donde esta. */
+  private bossIntroLeft = 0;
+  private bossIntroAt = { kind: 0, x: 0, y: 0 };
   private readonly bossHp = new Map<number, number>();
   /** Casillas a las que se puede llegar caminando desde el inicio (nadie nace en un hueco cerrado). */
   private readonly reach: Uint8Array;
@@ -1190,6 +1194,8 @@ export class AdventureGame extends BRGame {
       const boss = this.spawnMob(def.boss as number, cx, cy - 20, def.id);
       if (boss) {
         boss.cd = this.time + 2.2;
+        this.bossIntroLeft = BOSS_INTRO_S;
+        this.bossIntroAt = { kind: boss.kind, x: boss.x, y: boss.y };
         this.emit({ e: 'boss', kind: boss.kind, phase: 1 });
       }
       return;
@@ -1396,6 +1402,21 @@ export class AdventureGame extends BRGame {
 
   // ---------------------------------------------------------------- simulacion
 
+  /**
+   * Presentacion del jefe: mientras dura nadie se mueve, dispara ni recibe dano, y el tiempo de la
+   * partida (y con el el de los enemigos) se detiene. Asi el grupo ve entrar al jefe y despues empieza.
+   */
+  protected override beforeSim(): boolean {
+    if (this.bossIntroLeft <= 0) return false;
+    this.bossIntroLeft = this.bossIntroLeft - TICK_DT < 1e-6 ? 0 : this.bossIntroLeft - TICK_DT;
+    for (const cat of this.cats) {
+      cat.moving = false;
+      cat.running = false;
+      while (cat.queue.length > 0) cat.lastSeq = (cat.queue.shift() as InputPayload).seq;
+    }
+    return true;
+  }
+
   protected override afterSim(dt: number): void {
     void dt;
     this.ctx.time = this.time;
@@ -1597,6 +1618,16 @@ export class AdventureGame extends BRGame {
         Math.max(0, Math.ceil(st.rageUntil - this.time)),
         Math.max(0, Math.ceil(st.swiftUntil - this.time)),
       ],
+      ...(this.bossIntroLeft > 0
+        ? {
+            intro: {
+              kind: this.bossIntroAt.kind,
+              left: Math.round(this.bossIntroLeft * 100) / 100,
+              x: Math.round(this.bossIntroAt.x),
+              y: Math.round(this.bossIntroAt.y),
+            },
+          }
+        : {}),
       ...(this.ending ? { over: this.ending } : {}),
     };
     snap.adv = adv;
