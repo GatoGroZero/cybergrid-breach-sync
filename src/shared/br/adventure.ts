@@ -14,6 +14,8 @@ export const squadLives = (players: number): number => SQUAD_LIVES + 2 * Math.ma
 export const REVIVE_S = 6;
 /** Cuantos minijefes hay antes del jefe final. */
 export const MINIBOSSES = 5;
+/** Segundos de presentacion del jefe: todos quietos y la camara lo enfoca antes de que empiece la pelea. */
+export const BOSS_INTRO_S = 3.6;
 
 // ---------------------------------------------------------------- enemigos
 

@@ -17,6 +17,8 @@ import { flashed, flippedOf, hostileShotSprite, mobSprite } from '../pixel/art-m
 import { pickupSprite } from '../pixel/art-items';
 import { C, ell, make, type Ctx } from '../pixel/draw';
 import type { Fx } from './fx';
+import { BOSS_AURA, INTRO_NAME_AT } from './bossinfo';
+import { SIGN_RANGE } from './cartel';
 import { MOB_EVENT, MobAnimator } from './mobanim';
 import type { ClientBR, MobView } from './state';
 
@@ -61,16 +63,6 @@ const DEATH_COLORS: Record<number, string[]> = {
   21: ['#bfe9ff', '#e6f6ff', '#6fa8e8'],
 };
 
-/** Colores de la luz de cada jefe (aura del suelo). */
-const BOSS_AURA: Record<number, string> = {
-  10: '#ffcd75',
-  11: '#73c9ff',
-  12: '#ff7ab6',
-  13: '#ff7a3a',
-  14: '#73b3ff',
-  15: '#b794f4',
-};
-
 /**
  * Lo que la Aventura agrega al mundo: enemigos, jefes, zonas de peligro, avisos, botin del suelo y
  * puertas de enredadera. El renderizador general le pasa el contexto y esta pieza dibuja lo suyo.
@@ -82,6 +74,8 @@ export class AdvScene {
   private readonly anim = new MobAnimator();
   private meX = 0;
   private meY = 0;
+  /** Efectos de la presentacion de un jefe ya lanzados (para no repetirlos cada cuadro). */
+  private introRun: { at: number; titled: boolean } | null = null;
   private readonly gates = [0, 1, 2, 3].map(vineGateTile);
 
   constructor(
@@ -467,6 +461,8 @@ export class AdvScene {
     const seen = new Set<number>();
     this.meX = g.x;
     this.meY = g.y;
+    this.bossIntroFx(g, now);
+    this.pushSign(list, b, g, camX, camY, now);
     this.anim.beginFrame();
     for (const m of mobs.values()) {
       if (m.x < camX - 60 || m.y < camY - 60 || m.x > camX + vw + 60 || m.y > camY + vh + 60)
@@ -666,6 +662,138 @@ export class AdvScene {
         }
       },
     });
+  }
+
+  private signArt: HTMLCanvasElement | null = null;
+
+  /** El letrero del tutorial: un poste con una tabla que lleva un signo de interrogacion. */
+  private signSprite(): HTMLCanvasElement {
+    if (this.signArt) return this.signArt;
+    const [cv, c] = make(18, 26);
+    const OUT = '#2e1f17';
+    const WOOD = '#b9835a';
+    const WOOD_D = '#8a5a38';
+    const WOOD_L = '#d9a574';
+    // poste
+    c.fillStyle = OUT;
+    c.fillRect(7, 11, 4, 14);
+    c.fillStyle = WOOD_D;
+    c.fillRect(8, 11, 2, 13);
+    // tabla
+    c.fillStyle = OUT;
+    c.fillRect(1, 1, 16, 12);
+    c.fillStyle = WOOD;
+    c.fillRect(2, 2, 14, 10);
+    c.fillStyle = WOOD_L;
+    c.fillRect(2, 2, 14, 2);
+    c.fillStyle = WOOD_D;
+    c.fillRect(2, 7, 14, 1);
+    c.fillRect(2, 11, 14, 1);
+    // clavos
+    c.fillStyle = OUT;
+    for (const [x, y] of [
+      [3, 3],
+      [14, 3],
+      [3, 9],
+      [14, 9],
+    ] as const)
+      c.fillRect(x, y, 1, 1);
+    // signo de interrogacion
+    c.fillStyle = OUT;
+    for (const [x, y, w, h] of [
+      [7, 4, 4, 1],
+      [10, 5, 1, 2],
+      [9, 7, 1, 1],
+      [8, 8, 1, 1],
+      [8, 10, 1, 1],
+      [7, 5, 1, 1],
+    ] as const)
+      c.fillRect(x, y, w, h);
+    // sombra en el suelo
+    c.fillStyle = 'rgba(8,12,24,0.35)';
+    c.fillRect(5, 24, 8, 2);
+    this.signArt = cv;
+    return cv;
+  }
+
+  /** El cartel del tutorial en el claro de inicio: un halo que respira lo hace notar. */
+  private pushSign(
+    list: Drawable[],
+    b: Ctx,
+    g: ClientBR,
+    camX: number,
+    camY: number,
+    now: number,
+  ): void {
+    const at = g.signAt;
+    if (!at) return;
+    const vw = b.canvas.width;
+    const vh = b.canvas.height;
+    if (at.x < camX - 30 || at.y < camY - 40 || at.x > camX + vw + 30 || at.y > camY + vh + 30)
+      return;
+    const spr = this.signSprite();
+    const near = g.nearTutorial;
+    list.push({
+      y: at.y + 12,
+      draw: () => {
+        const x = Math.round(at.x - camX);
+        const y = Math.round(at.y - camY);
+        const pulse = 0.5 + 0.5 * Math.sin(now / 340);
+        b.globalAlpha = (near ? 0.4 : 0.16) + 0.14 * pulse;
+        ell(b, x, y + 11, SIGN_RANGE * (near ? 0.7 : 0.5), SIGN_RANGE * 0.26, '#ffe27a');
+        b.globalAlpha = 1;
+        b.drawImage(spr, x - 9, y - 14);
+        // una flechita que sube y baja sobre el cartel para llamar la atencion
+        const bob = Math.round(Math.sin(now / 260) * 1.5);
+        b.fillStyle = C.yellow;
+        b.fillRect(x - 2, y - 22 + bob, 4, 1);
+        b.fillRect(x - 1, y - 21 + bob, 2, 1);
+      },
+    });
+  }
+
+  /** Entrada del jefe: la tierra se abre, aparece su nombre con un golpe y el aire se llena de motas. */
+  private bossIntroFx(g: ClientBR, now: number): void {
+    const bi = g.bossIntro;
+    if (!bi) {
+      this.introRun = null;
+      return;
+    }
+    const color = BOSS_AURA[bi.kind] ?? '#ffffff';
+    const elapsed = (now - bi.at) / 1000;
+    if (!this.introRun || this.introRun.at !== bi.at) {
+      this.introRun = { at: bi.at, titled: false };
+      for (let i = 0; i < 3; i++) this.fx.ring(bi.x, bi.y + 16, 26 + i * 26, color, 0.9 + i * 0.25);
+      this.fx.burst(bi.x, bi.y + 16, 22, {
+        colors: ['#6b5240', '#8a6f55', '#c9b48c', color],
+        speed: 70,
+        life: 0.9,
+        grav: 40,
+        angle: -Math.PI / 2,
+        spread: 2.6,
+        size: 2,
+      });
+      this.hooks.light(bi.x, bi.y, 70, color, 0.45);
+      this.hooks.shake(5);
+    }
+    if (!this.introRun.titled && elapsed >= INTRO_NAME_AT) {
+      this.introRun.titled = true;
+      this.sfx.bossTitle();
+      this.hooks.shake(6);
+      for (let i = 0; i < 2; i++) this.fx.ring(bi.x, bi.y, 40 + i * 30, color, 0.7 + i * 0.2);
+      for (let i = 0; i < 16; i++)
+        this.fx.star(bi.x + (Math.random() - 0.5) * 70, bi.y - Math.random() * 40, color, 1, -26);
+      this.hooks.light(bi.x, bi.y, 80, color, 0.5);
+    }
+    // motas que suben alrededor del jefe mientras dura la presentacion
+    if (Math.random() < 0.6)
+      this.fx.star(
+        bi.x + (Math.random() - 0.5) * 50,
+        bi.y + 10 - Math.random() * 30,
+        color,
+        0.9,
+        -22,
+      );
   }
 
   /** Polvo, chispas y soplidos que acompanan lo que hace un enemigo (aparecer, ser golpeado, atacar, pisar). */

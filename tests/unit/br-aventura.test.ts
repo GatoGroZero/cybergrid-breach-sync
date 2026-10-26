@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOSS_INTRO_S,
   BOSS_ORDER,
   BOSS_POWER,
   DASH,
@@ -36,6 +37,12 @@ function make(n = 1, seed = 4321): AdventureGame {
 
 const run = (g: AdventureGame, seconds: number): void => {
   for (let i = 0; i < Math.round(seconds / TICK_DT); i++) g.step();
+};
+
+/** Deja pasar la presentacion de un jefe (todos quietos) y la proteccion con la que aparece. */
+const presentacion = (g: AdventureGame): void => {
+  for (let i = 0; i < 600 && g.snapshotFor(1)?.adv?.intro; i++) g.step();
+  run(g, 0.6);
 };
 
 const alive = (g: AdventureGame): Mob[] => [...g.mobs.values()].filter((m) => m.hp > 0);
@@ -238,6 +245,7 @@ describe('aventura: jefes y reliquias', () => {
     const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
     g.debugTeleport(first);
     run(g, 3.5);
+    presentacion(g);
     const boss = alive(g).find((m) => m.def.boss)!;
     expect(boss).toBeDefined();
     expect(boss.kind).toBe(BOSS_ORDER[0]);
@@ -272,6 +280,7 @@ describe('aventura: jefes y reliquias', () => {
       const idx = g.rooms.findIndex((r) => r.def.boss === kind);
       g.debugTeleport(idx);
       run(g, 3.5);
+      presentacion(g);
       const boss = alive(g).find((m) => m.kind === kind)!;
       expect(boss, mobDef(kind).name).toBeDefined();
       const seen = new Set<number>();
@@ -445,6 +454,7 @@ describe('aventura: habilidades de jefe', () => {
     const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
     g.debugTeleport(first);
     run(g, 3.5);
+    presentacion(g);
     g.damageMob(
       alive(g).find((m) => m.def.boss)!,
       99_999,
@@ -553,6 +563,7 @@ describe('aventura: botin de jefe y escala por grupo', () => {
     const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
     g.debugTeleport(first);
     run(g, 3.5);
+    presentacion(g);
     g.damageMob(
       alive(g).find((m) => m.def.boss)!,
       999_999,
@@ -582,6 +593,7 @@ describe('aventura: botin de jefe y escala por grupo', () => {
     const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
     g.debugTeleport(first);
     run(g, 3.5);
+    presentacion(g);
     g.damageMob(
       alive(g).find((m) => m.def.boss)!,
       999_999,
@@ -620,6 +632,7 @@ describe('aventura: botin de jefe y escala por grupo', () => {
       const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
       g.debugTeleport(first);
       run(g, 3.5);
+      presentacion(g);
       return alive(g).find((m) => m.def.boss)!.maxHp;
     };
     const solo = hp(1);
@@ -681,5 +694,63 @@ describe('aventura: revivir al terminar la zona', () => {
     g.damageCat(g.cat(1)!, 9999, null);
     run(g, 0.3);
     expect(g.over).toBe(true);
+  });
+});
+
+describe('aventura: presentacion de los jefes', () => {
+  const llegarAlJefe = (n = 1): AdventureGame => {
+    const g = make(n);
+    const first = g.rooms.findIndex((r) => r.def.kind === 'minijefe');
+    g.debugTeleport(first);
+    // el jefe aparece a los 1.8 s de entrar a su guarida
+    for (let i = 0; i < 600 && !g.snapshotFor(1)?.adv?.intro; i++) g.step();
+    return g;
+  };
+
+  it('al aparecer el jefe el servidor avisa de la presentacion con su tipo, lugar y tiempo', () => {
+    const g = llegarAlJefe();
+    const intro = g.snapshotFor(1)!.adv!.intro!;
+    expect(intro).toBeDefined();
+    const boss = alive(g).find((m) => m.def.boss)!;
+    expect(intro.kind).toBe(boss.kind);
+    expect(intro.left).toBeGreaterThan(BOSS_INTRO_S - 0.3);
+    expect(intro.left).toBeLessThanOrEqual(BOSS_INTRO_S);
+    expect(Math.abs(intro.x - boss.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(intro.y - boss.y)).toBeLessThanOrEqual(1);
+  });
+
+  it('durante la presentacion todos quedan quietos, el tiempo no corre y nadie sufre dano', () => {
+    const g = llegarAlJefe();
+    const cat = g.cat(1)!;
+    const before = { x: cat.x, y: cat.y, hp: cat.hp, time: g.time };
+    for (let s = 1; s <= 30; s++)
+      g.pushInput(1, { seq: 5000 + s, mx: 1, my: 0, aim: 0, fire: true });
+    run(g, 1.5);
+    expect(cat.x).toBe(before.x);
+    expect(cat.y).toBe(before.y);
+    expect(cat.hp).toBe(before.hp);
+    expect(g.time).toBe(before.time);
+    const left = g.snapshotFor(1)!.adv!.intro!.left;
+    expect(left).toBeLessThan(BOSS_INTRO_S - 1.2);
+  });
+
+  it('despues de la presentacion la pelea empieza: el aviso desaparece y el tiempo vuelve a correr', () => {
+    const g = llegarAlJefe();
+    const t0 = g.time;
+    run(g, BOSS_INTRO_S + 0.3);
+    expect(g.snapshotFor(1)!.adv!.intro).toBeUndefined();
+    expect(g.time).toBeGreaterThan(t0);
+    const cat = g.cat(1)!;
+    const x = cat.x;
+    g.pushInput(1, { seq: 9000, mx: 1, my: 0, aim: 0, fire: false });
+    run(g, 0.3);
+    expect(cat.x).not.toBe(x);
+  });
+
+  it('las salas de combate comunes no tienen presentacion', () => {
+    const g = make(1);
+    g.debugTeleport(1);
+    run(g, 3);
+    expect(g.snapshotFor(1)!.adv!.intro).toBeUndefined();
   });
 });

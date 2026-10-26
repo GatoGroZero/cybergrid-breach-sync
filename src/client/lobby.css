@@ -952,3 +952,75 @@
   overflow-y: auto;
   padding-right: 4px;
 }
+
+/* ------------------------------------------------------------------ tutorial de la Aventura */
+
+.tut {
+  width: min(640px, 100%);
+}
+
+.tut-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tut-top h2 {
+  margin: 0;
+}
+
+.tut-body {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.tut-card {
+  padding: 10px 12px 8px;
+  background: var(--black);
+  border: 3px solid var(--line);
+}
+
+.tut-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.tut-head h3 {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--yellow);
+}
+
+.tut-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.tut-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 20px;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+@media (max-height: 520px) {
+  .tut-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .tut-list {
+    font-size: 18px;
+  }
+}

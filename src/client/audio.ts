@@ -769,6 +769,23 @@ export class Sfx {
   }
 
   /** El rugido de cada jefe al aparecer y al enfurecerse. */
+  /** Lo que suena al empezar la presentacion de un jefe: un golpe grave y un retumbo que sube. */
+  bossSting(): void {
+    this.ch = 'damage';
+    this.tone(62, 1.1, 'sine', 0.2, 34);
+    this.noise(0.5, 0.1, 260, 0, 'lowpass');
+    this.tone(48, 2.2, 'sawtooth', 0.045, 96, 0, 0.1);
+    this.tone(96, 2.0, 'triangle', 0.03, 190, 0, 0.5);
+  }
+
+  /** El golpe seco cuando aparece el nombre del jefe. */
+  bossTitle(): void {
+    this.ch = 'damage';
+    this.tone(78, 0.7, 'sine', 0.22, 40);
+    this.noise(0.35, 0.12, 1800, 0, 'bandpass', 0.8);
+    this.tone(196, 0.5, 'square', 0.05, 98, 0, 0.02);
+  }
+
   bossRoar(kind: number, phase: number): void {
     this.ch = 'damage';
     const m = phase > 1 ? 1.25 : 1;

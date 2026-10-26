@@ -38,6 +38,8 @@ import type {
 import { FixedStepper } from '../../shared/timing';
 import type { Sfx } from '../audio';
 import type { Net } from '../net';
+import { introFocus } from './bossinfo';
+import { nearSign, signSpot, type Spot } from './cartel';
 import type { InputController } from './input';
 
 export interface CatView {
@@ -190,6 +192,8 @@ export class ClientBR {
   /** Aventura: cartel grande al entrar a una sala o superarla. */
   advBanner: { title: string; sub: string; at: number; tone: 'info' | 'good' | 'bad' } | null =
     null;
+  /** Aventura: presentacion del jefe en curso (todos quietos y la camara lo enfoca). */
+  bossIntro: { kind: number; x: number; y: number; at: number; left: number } | null = null;
   private lastAdvRoom = -1;
   private lastAdvStates: number[] = [];
   private lastAdvChoice = false;
@@ -356,6 +360,17 @@ export class ClientBR {
   /** Aventura: carteles al cambiar de sala y sonidos de sala superada y de reliquia nueva. */
   private trackAdv(adv: AdvState): void {
     const now = performance.now();
+    const intro = adv.intro;
+    if (intro) {
+      if (!this.bossIntro) this.sfx.bossSting();
+      this.bossIntro = {
+        kind: intro.kind,
+        x: intro.x,
+        y: intro.y,
+        at: this.bossIntro?.at ?? now,
+        left: intro.left,
+      };
+    } else this.bossIntro = null;
     // la musica sube de tono cuando hay un jefe peleando
     const bossFight =
       (adv.roomKind === 'minijefe' || adv.roomKind === 'jefe') && adv.states[adv.room] === 1;
@@ -662,10 +677,33 @@ export class ClientBR {
 
   /** Posicion a la que apunta la camara: el gato propio o a quien se esta viendo si ya caiste. */
   cameraTarget(cats: Map<number, CatView>): { x: number; y: number } {
+    const base = this.baseCameraTarget(cats);
+    const view = this.introView(performance.now());
+    if (!view || !this.bossIntro) return base;
+    // durante la presentacion la camara va hacia el jefe y regresa antes de pelear
+    const k = view.focus;
+    return {
+      x: base.x + (this.bossIntro.x - base.x) * k,
+      y: base.y + (this.bossIntro.y - base.y) * k,
+    };
+  }
+
+  private baseCameraTarget(cats: Map<number, CatView>): { x: number; y: number } {
     if (this.alive) return { x: this.drawX, y: this.drawY };
     const spec = this.latest?.spectating;
     const target = spec !== undefined ? cats.get(spec) : undefined;
     return target ? { x: target.x, y: target.y } : { x: this.x, y: this.y };
+  }
+
+  /** Aventura: donde esta el cartel del tutorial (en el claro de inicio), o null en otros modos. */
+  get signAt(): Spot | null {
+    const start = this.mode === 'aventura' ? this.map.rooms?.[0] : undefined;
+    return start ? signSpot(start) : null;
+  }
+
+  /** Estas lo bastante cerca del cartel como para accionarlo. */
+  get nearTutorial(): boolean {
+    return this.alive && nearSign(this.signAt, this.x, this.y);
   }
 
   nearestBox(): ContainerTuple | null {
@@ -692,7 +730,17 @@ export class ClientBR {
 
   /** Todos quietos: cuenta regresiva del inicio, o fases de eleccion y pausa de una ronda. */
   get frozen(): boolean {
-    return this.intro > 0 || (this.pvp !== null && this.pvp.phase !== 'fight');
+    return (
+      this.intro > 0 || this.bossIntro !== null || (this.pvp !== null && this.pvp.phase !== 'fight')
+    );
+  }
+
+  /** Cuanto esta enfocado el jefe en su presentacion (0 si no hay) y cuantos segundos van. */
+  introView(now: number): { focus: number; elapsed: number; left: number } | null {
+    const bi = this.bossIntro;
+    if (!bi) return null;
+    const elapsed = (now - bi.at) / 1000;
+    return { focus: introFocus(elapsed, bi.left), elapsed, left: bi.left };
   }
 
   /** Equipo de un gato (0 o 1) o -1 si no juega por equipos. */

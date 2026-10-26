@@ -29,6 +29,7 @@ import { CAT_PAD, catSprites } from '../pixel/cat';
 import { paintWorld } from '../pixel/world';
 import { AdvScene } from './advscene';
 import { DaylightFx, staticLights, type LightSrc } from './daylight';
+import { introZoom } from './bossinfo';
 import { Fx } from './fx';
 import { RainFx } from './weather';
 import { Hud, type Label } from './hud';
@@ -930,6 +931,15 @@ export class BRRenderer {
     this.collectBoxes(list, g, camX, camY, now, dt);
     this.collectCats(list, g, cats, camX, camY, now, dt);
     this.adv?.collect(list, b, g, mobs, camX, camY, now);
+    const sign = g.signAt;
+    if (sign && !g.nearTutorial)
+      this.labels.push({
+        x: sign.x,
+        y: sign.y - 34,
+        text: 'TUTORIAL',
+        color: C.yellow,
+        kind: 'small',
+      });
     this.adv?.drawAuras(b, g, cats, camX, camY, now);
     list.sort((p, q) => p.y - q.y);
     for (const d of list) d.draw();
@@ -959,7 +969,24 @@ export class BRRenderer {
     // buffer -> pantalla
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.buf, 0, 0, this.viewW * this.scale, this.viewH * this.scale);
+    const view = g.introView(now);
+    const zoom = view ? introZoom(view.focus) : 1;
+    if (view && zoom > 1.001) {
+      // presentacion del jefe: se recorta el centro del cuadro (donde esta el jefe) y se agranda
+      const sw = this.viewW / zoom;
+      const sh = this.viewH / zoom;
+      ctx.drawImage(
+        this.buf,
+        (this.viewW - sw) / 2,
+        (this.viewH - sh) / 2,
+        sw,
+        sh,
+        0,
+        0,
+        this.viewW * this.scale,
+        this.viewH * this.scale,
+      );
+    } else ctx.drawImage(this.buf, 0, 0, this.viewW * this.scale, this.viewH * this.scale);
 
     // HUD en pixeles CSS
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);

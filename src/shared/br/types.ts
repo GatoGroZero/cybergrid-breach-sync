@@ -158,6 +158,8 @@ export interface AdvState {
   fallen: number;
   /** Segundos que quedan de la hierba gatera y de la valeriana. */
   buffs: [number, number];
+  /** Presentacion de un jefe: tipo, segundos que faltan y donde esta (la camara lo enfoca). */
+  intro?: { kind: number; left: number; x: number; y: number };
   /** El grupo gano o perdio. */
   over?: 'victory' | 'defeat';
 }

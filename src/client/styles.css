@@ -865,6 +865,13 @@ input::placeholder {
     -1px 0 0 var(--black);
 }
 
+/* durante la presentacion de un jefe no hay botones en pantalla */
+body.cinema .bag-btn,
+body.cinema .menu-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .bag-btn,
 .menu-btn {
   position: fixed;
