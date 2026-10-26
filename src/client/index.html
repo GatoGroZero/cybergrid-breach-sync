@@ -921,6 +921,16 @@
             <button id="set-tab-sound" class="tab" role="tab" aria-selected="false" type="button">
               Sonido
             </button>
+            <button
+              id="set-tab-ui"
+              class="tab"
+              role="tab"
+              aria-selected="false"
+              type="button"
+              data-testid="set-tab-ui"
+            >
+              Pantalla
+            </button>
           </div>
           <div id="set-keys" class="set-pane">
             <p class="muted">Pulsa una tecla y luego la que quieras usar. Escape cancela.</p>
@@ -961,6 +971,16 @@
               Restaurar posiciones
             </button>
           </div>
+          <div id="set-ui" class="set-pane" hidden>
+            <p class="muted">
+              Pon cada parte del HUD del tamaño que te acomode: unos las ven muy grandes y otros muy
+              chicas. Se guarda solo y se nota al instante.
+            </p>
+            <div id="ui-list" class="volumes" data-testid="ui-list"></div>
+            <button id="ui-reset" class="btn small ghost" type="button" data-testid="ui-reset">
+              Tamaños de siempre
+            </button>
+          </div>
           <div id="set-sound" class="set-pane" hidden>
             <label class="check">
               <input id="sound-toggle" type="checkbox" checked />
@@ -990,6 +1010,22 @@
           -
         </button>
         <button id="editor-plus" class="btn small" type="button" aria-label="Más grande">+</button>
+        <label class="editor-alpha">
+          <span>Transparencia</span>
+          <input
+            id="editor-alpha"
+            type="range"
+            min="20"
+            max="100"
+            step="5"
+            value="100"
+            disabled
+            data-testid="editor-alpha"
+            aria-label="Transparencia del botón elegido"
+          />
+          <output id="editor-alpha-out">100%</output>
+        </label>
+        <button id="editor-alpha-all" class="btn small ghost" type="button">Igual en todos</button>
         <button id="editor-reset" class="btn small ghost" type="button">Restaurar</button>
         <button id="editor-cancel" class="btn small ghost" type="button">Cancelar</button>
         <button id="editor-save" class="btn small primary" type="button">Guardar</button>

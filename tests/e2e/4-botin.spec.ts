@@ -182,6 +182,10 @@ test.describe('Flujo 4c: ajustes', () => {
     await page.mouse.move(size.w * 0.7, size.h * 0.55, { steps: 6 });
     await page.mouse.up();
     await page.locator('#editor-plus').click();
+    // con el boton elegido se habilita su transparencia
+    await expect(page.getByTestId('editor-alpha')).toBeEnabled();
+    await page.getByTestId('editor-alpha').fill('50');
+    await expect(page.locator('#editor-alpha-out')).toHaveText('50%');
     await page.locator('#editor-save').click();
     const layout = await page.evaluate(() =>
       JSON.parse(window.localStorage.getItem('cg_touch') ?? '{}'),
@@ -189,9 +193,44 @@ test.describe('Flujo 4c: ajustes', () => {
     expect(layout.aim.x).toBeCloseTo(0.7, 1);
     expect(layout.aim.y).toBeCloseTo(0.55, 1);
     expect(layout.aim.s).toBeGreaterThan(1.1);
+    expect(layout.aim.a).toBeCloseTo(0.5, 2);
+    // los demas botones siguen sin tocar
+    expect(layout.stick.a).toBeUndefined();
     await expect(page.getByTestId('touch-editor')).toBeHidden();
     await page.locator('#settings-close').click();
     await expect(page.getByTestId('settings')).toBeHidden();
+  });
+});
+
+test.describe('Flujo 4e: tamano del HUD a gusto', () => {
+  test('cada parte de la pantalla tiene su control, se recuerda y se puede restaurar', async ({
+    page,
+  }) => {
+    await registerViaUi(page, uniqueName('e2e_hud'));
+    await page.getByTestId('btn-settings').click();
+    await page.getByTestId('set-tab-ui').click();
+    await expect(page.getByTestId('ui-list').locator('input[type=range]')).toHaveCount(4);
+    await expect(page.getByTestId('ui-boss')).toHaveValue('100');
+
+    await page.getByTestId('ui-boss').fill('70');
+    await page.getByTestId('ui-msg').fill('140');
+    const saved = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('cg_hud') ?? '{}'),
+    );
+    expect(saved.boss).toBeCloseTo(0.7, 2);
+    expect(saved.msg).toBeCloseTo(1.4, 2);
+    expect(saved.bars).toBe(1);
+
+    await page.reload();
+    await expect(page.getByTestId('screen-lobby')).toBeVisible();
+    await page.getByTestId('btn-settings').click();
+    await page.getByTestId('set-tab-ui').click();
+    await expect(page.getByTestId('ui-boss')).toHaveValue('70');
+    await expect(page.getByTestId('ui-msg')).toHaveValue('140');
+
+    await page.getByTestId('ui-reset').click();
+    await expect(page.getByTestId('ui-boss')).toHaveValue('100');
+    await expect(page.getByTestId('ui-msg')).toHaveValue('100');
   });
 });
 

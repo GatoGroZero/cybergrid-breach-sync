@@ -1,5 +1,12 @@
 import { C } from '../pixel/draw';
-import { TOUCH_LABELS, touchCircles, type Circle, type TouchId, type TouchLayout } from './input';
+import {
+  TOUCH_LABELS,
+  touchAlpha,
+  touchCircles,
+  type Circle,
+  type TouchId,
+  type TouchLayout,
+} from './input';
 
 const FONT = "'Press Start 2P', monospace";
 
@@ -61,8 +68,13 @@ export function drawTouchControls(
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   const glow = (id: TouchId): number => (st.selected === id ? 1 : 0);
+  /** Cada boton se dibuja con la opacidad que su dueno le puso. */
+  const op = (id: TouchId): void => {
+    ctx.globalAlpha = touchAlpha(layout[id]);
+  };
 
   // joystick
+  op('stick');
   const stick = circles.stick;
   ring(
     ctx,
@@ -98,6 +110,7 @@ export function drawTouchControls(
   );
 
   // joystick de la mira
+  op('aim');
   const aimC = circles.aim;
   const aimSt = st.aim;
   const aiming = aimSt?.aiming === true;
@@ -131,6 +144,7 @@ export function drawTouchControls(
   if (!aimSt?.active) ctx.fillText('APUNTA', aimC.x, aimC.y + aimC.r * 0.62);
 
   // interactuar
+  op('interact');
   const it = circles.interact;
   const hot = st.interactReady || st.useLabel === true;
   const pulse = hot ? 0.55 + 0.45 * Math.sin(performance.now() / 160) : 0;
@@ -145,6 +159,7 @@ export function drawTouchControls(
   ctx.fillText(st.useLabel ? 'USAR' : 'ABRIR', it.x, it.y);
 
   // inventario (lata de sardinas)
+  op('bag');
   const bag = circles.bag;
   ring(ctx, bag, glow('bag') ? C.yellow : 'rgba(148,176,194,0.8)', 'rgba(26,28,44,0.55)');
   if (st.bagIcon) {
@@ -159,6 +174,7 @@ export function drawTouchControls(
   }
 
   // emotes
+  op('emote');
   const em = circles.emote;
   ring(
     ctx,
@@ -178,6 +194,7 @@ export function drawTouchControls(
   }
 
   // recargar
+  op('reload');
   const rl = circles.reload;
   const reloading = (st.reloadFrac ?? 0) > 0;
   ring(
@@ -201,6 +218,7 @@ export function drawTouchControls(
 
   // voltereta (solo en la Aventura; al editar la disposicion tambien se ve)
   if (st.dash || st.editing) {
+    op('dash');
     const dc = circles.dash;
     const ready = st.dash?.ready ?? 1;
     ring(
@@ -237,6 +255,7 @@ export function drawTouchControls(
   pids.forEach((id, i) => {
     const pw = st.powers?.[i];
     if (!pw && !st.editing) return;
+    op(id);
     const pc = circles[id];
     const ready = pw ? pw.ready : 1;
     ring(
@@ -252,7 +271,7 @@ export function drawTouchControls(
       ready >= 1 ? 'rgba(41,54,111,0.75)' : 'rgba(26,28,44,0.7)',
     );
     if (pw) {
-      ctx.globalAlpha = ready >= 1 ? 1 : 0.5;
+      ctx.globalAlpha = touchAlpha(layout[id]) * (ready >= 1 ? 1 : 0.5);
       const k = (pc.r * 1.25) / Math.max(pw.icon.width, pw.icon.height);
       ctx.drawImage(
         pw.icon,
@@ -261,7 +280,7 @@ export function drawTouchControls(
         Math.round(pw.icon.width * k),
         Math.round(pw.icon.height * k),
       );
-      ctx.globalAlpha = 1;
+      op(id);
       if (ready < 1) {
         ctx.beginPath();
         ctx.arc(pc.x, pc.y, pc.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
@@ -278,6 +297,7 @@ export function drawTouchControls(
 
   // menu y mapa
   for (const id of ['menu', 'map'] as const) {
+    op(id);
     const c = circles[id];
     ring(ctx, c, glow(id) ? C.yellow : 'rgba(148,176,194,0.7)', 'rgba(26,28,44,0.55)', 2);
     ctx.fillStyle = C.white;
@@ -298,11 +318,13 @@ export function drawTouchControls(
       first.r * 2 + 8,
     );
   }
+  op('hotbar');
   circles.slots.forEach((c, i) => {
     if (st.drawSlot) st.drawSlot(c, i);
     else ring(ctx, c, 'rgba(148,176,194,0.7)', 'rgba(26,28,44,0.6)', 2);
   });
 
+  ctx.globalAlpha = 1;
   if (st.editing) {
     ctx.font = `10px ${FONT}`;
     ctx.fillStyle = 'rgba(244,244,244,0.9)';

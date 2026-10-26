@@ -3,7 +3,10 @@ import {
   DEFAULT_KEYS,
   DEFAULT_TOUCH,
   ACTIONS,
+  TOUCH_MIN_ALPHA,
   keyLabel,
+  loadTouchLayout,
+  touchAlpha,
   touchCircles,
   type Circle,
 } from '../../src/client/game/input';
@@ -61,5 +64,36 @@ describe('teclas del teclado', () => {
     expect(keyLabel('KeyW')).toBe('W');
     expect(keyLabel('Digit3')).toBe('3');
     expect(keyLabel('Space')).toBe('Espacio');
+  });
+});
+
+describe('transparencia de los botones tactiles', () => {
+  const guardar = (valor: unknown): void => {
+    const store = new Map<string, string>([['cg_touch', JSON.stringify(valor)]]);
+    (globalThis as unknown as { window: unknown }).window = {
+      localStorage: { getItem: (k: string) => store.get(k) ?? null },
+    };
+  };
+
+  it('un boton sin opacidad guardada se ve como siempre (1)', () => {
+    guardar({ aim: { x: 0.8, y: 0.6, s: 1 } });
+    const layout = loadTouchLayout();
+    expect(touchAlpha(layout.aim)).toBe(1);
+    expect(layout.aim.a).toBeUndefined();
+    expect(touchAlpha(layout.stick)).toBe(1);
+  });
+
+  it('la opacidad guardada se respeta y se recorta entre el minimo y 1', () => {
+    guardar({
+      aim: { x: 0.8, y: 0.6, s: 1, a: 0.5 },
+      stick: { x: 0.1, y: 0.7, s: 1, a: 0.01 },
+      bag: { x: 0.9, y: 0.4, s: 1, a: 7 },
+      menu: { x: 0.1, y: 0.1, s: 1, a: 'mucha' },
+    });
+    const layout = loadTouchLayout();
+    expect(layout.aim.a).toBe(0.5);
+    expect(layout.stick.a).toBe(TOUCH_MIN_ALPHA);
+    expect(layout.bag.a).toBe(1);
+    expect(layout.menu.a).toBeUndefined();
   });
 });

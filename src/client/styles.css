@@ -1358,6 +1358,33 @@ input::placeholder {
   touch-action: none;
 }
 
+.editor-alpha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  font-size: 18px;
+  color: var(--dim);
+}
+
+.editor-alpha input[type='range'] {
+  width: clamp(80px, 22vw, 150px);
+  height: 28px;
+  accent-color: var(--yellow);
+  cursor: pointer;
+}
+
+.editor-alpha input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.editor-alpha output {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--yellow);
+}
+
 .editor-bar {
   position: fixed;
   top: max(8px, env(safe-area-inset-top, 0px));
