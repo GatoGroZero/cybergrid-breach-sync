@@ -37,6 +37,39 @@ export const credentialsSchema = z.object({
     .max(PASSWORD_MAX, `La contraseña no puede pasar de ${PASSWORD_MAX} caracteres`),
 });
 
+/** Correo de una cuenta: sin mayusculas ni espacios de mas. */
+export const emailAddress = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(254, 'El correo es demasiado largo')
+  .email('Escribe un correo válido');
+
+/** Contrasena de una cuenta con correo: cualquier letra (con ñ y acentos) y se guarda normalizada. */
+export const accountPassword = z
+  .string()
+  .min(PASSWORD_MIN, `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres`)
+  .max(PASSWORD_MAX, `La contraseña no puede pasar de ${PASSWORD_MAX} caracteres`)
+  .transform((s) => s.normalize('NFC'));
+
+/** Crear una cuenta: correo, contrasena y la contrasena otra vez. */
+export const signupSchema = z
+  .object({ email: emailAddress, password: accountPassword, confirm: z.string().max(PASSWORD_MAX) })
+  .refine((v) => v.confirm.normalize('NFC') === v.password, {
+    message: 'Las contraseñas no coinciden',
+    path: ['confirm'],
+  });
+
+/** Entrar: el correo (o el usuario de las cuentas viejas) y la contrasena. */
+export const signinSchema = z.object({
+  identifier: z.string().trim().min(1).max(254),
+  password: z
+    .string()
+    .min(1)
+    .max(PASSWORD_MAX)
+    .transform((s) => s.normalize('NFC')),
+});
+
 export const pingSchema = z.object({
   t: z.number(),
   rtt: z.number().min(0).max(60_000).optional(),

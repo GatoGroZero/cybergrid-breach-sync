@@ -241,7 +241,13 @@ describe('invitado y apodo', () => {
   it('el invitado se puede apagar y el usuario con contrasena tambien', async () => {
     const off = await startServer({ guestLogin: false, passwordAuth: false });
     const cfg = await request(off.app).get('/api/auth/config');
-    expect(cfg.body).toEqual({ google: false, email: false, guest: false, password: false });
+    expect(cfg.body).toEqual({
+      google: false,
+      email: false,
+      guest: false,
+      password: false,
+      durable: false,
+    });
     expect((await request(off.app).post('/api/auth/guest').send({})).status).toBe(404);
     expect(
       (

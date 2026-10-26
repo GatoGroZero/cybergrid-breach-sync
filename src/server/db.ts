@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS users (
   pass_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kv (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS matches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT,
@@ -91,6 +95,9 @@ export class Repo {
   private readonly aggMatches;
   private readonly aggPlayers;
   private readonly deleteSeeded;
+  private readonly kvSelect;
+  private readonly kvUpsert;
+  private readonly kvInsert;
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -123,6 +130,11 @@ export class Repo {
          FROM match_players GROUP BY source`,
     );
     this.deleteSeeded = this.db.prepare(`DELETE FROM matches WHERE source = 'seed'`);
+    this.kvSelect = this.db.prepare('SELECT v FROM kv WHERE k = ?');
+    this.kvUpsert = this.db.prepare(
+      'INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
+    );
+    this.kvInsert = this.db.prepare('INSERT OR IGNORE INTO kv (k, v) VALUES (?, ?)');
   }
 
   close(): void {
@@ -138,6 +150,20 @@ export class Repo {
       if ((err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') return null;
       throw err;
     }
+  }
+
+  kvGet(key: string): string | null {
+    const row = this.kvSelect.get(key) as { v: string } | undefined;
+    return row?.v ?? null;
+  }
+
+  kvSet(key: string, value: string): void {
+    this.kvUpsert.run(key, value);
+  }
+
+  /** Guarda solo si la clave no existe: devuelve false si ya estaba. */
+  kvSetNx(key: string, value: string): boolean {
+    return this.kvInsert.run(key, value).changes > 0;
   }
 
   getUserByName(username: string): UserRow | undefined {

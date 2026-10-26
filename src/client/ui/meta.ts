@@ -1,88 +1,45 @@
-import { META_UPGRADES, NO_META, clampMeta, type MetaLevels } from '../../shared/br/adventure';
+import { parseSave, emptySave, type MetaSave } from '../../shared/br/progress';
+
+export {
+  addRun,
+  buy,
+  emptySave,
+  hasProgress,
+  newest,
+  nextCost,
+  parseSave,
+  refundOf,
+  sell,
+} from '../../shared/br/progress';
+export type { MetaSave } from '../../shared/br/progress';
 
 /**
- * Progreso permanente de la Aventura. Se guarda en este navegador (el disco del servidor gratis no
- * dura): la esencia lunar que dejan las partidas se gasta en mejoras en el Santuario.
+ * Copia del progreso de la Aventura en este navegador. Cada cuenta tiene la suya (para que dos
+ * personas que comparten la computadora no se mezclen); los invitados comparten una.
  */
-export interface MetaSave {
-  levels: MetaLevels;
-  /** Esencia lunar sin gastar. */
-  essence: number;
-  /** Partidas jugadas, victorias y la mejor cantidad de salas superadas. */
-  runs: number;
-  wins: number;
-  best: number;
-}
+const LEGACY = 'cg_meta_v1';
+const keyFor = (owner: string): string => `cg_meta_v2:${owner}`;
 
-const KEY = 'cg_meta_v1';
-
-export const emptySave = (): MetaSave => ({
-  levels: { ...NO_META },
-  essence: 0,
-  runs: 0,
-  wins: 0,
-  best: 0,
-});
-
-const num = (v: unknown, max = 1_000_000): number =>
-  typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0;
-
-/** Lee y limpia lo guardado (si esta danado o no existe, se empieza de cero). */
-export function parseSave(raw: unknown): MetaSave {
-  if (typeof raw !== 'object' || raw === null) return emptySave();
-  const r = raw as Record<string, unknown>;
-  return {
-    levels: clampMeta(r.levels),
-    essence: num(r.essence),
-    runs: num(r.runs, 100_000),
-    wins: num(r.wins, 100_000),
-    best: num(r.best, 100),
-  };
-}
-
-export function loadSave(): MetaSave {
+export function loadSave(owner: string): MetaSave {
   try {
-    const raw = window.localStorage.getItem(KEY);
-    return raw ? parseSave(JSON.parse(raw)) : emptySave();
+    const own = window.localStorage.getItem(keyFor(owner));
+    if (own) return parseSave(JSON.parse(own));
+    // la copia de antes (una sola para todos) la hereda quien entre primero a esta version
+    const old = window.localStorage.getItem(LEGACY);
+    if (!old) return emptySave();
+    const inherited = parseSave(JSON.parse(old));
+    window.localStorage.setItem(keyFor(owner), JSON.stringify(inherited));
+    window.localStorage.removeItem(LEGACY);
+    return inherited;
   } catch {
     return emptySave();
   }
 }
 
-export function storeSave(save: MetaSave): void {
+export function storeSave(owner: string, save: MetaSave): void {
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(save));
+    window.localStorage.setItem(keyFor(owner), JSON.stringify(save));
   } catch {
     // sin almacenamiento: el progreso dura lo que dure la pestana
   }
-}
-
-/** Costo del siguiente nivel de una mejora, o null si ya esta al maximo. */
-export function nextCost(save: MetaSave, key: keyof MetaLevels): number | null {
-  const up = META_UPGRADES.find((u) => u.key === key);
-  if (!up) return null;
-  const level = save.levels[key];
-  return level >= up.max ? null : (up.costs[level] ?? null);
-}
-
-/** Compra un nivel si alcanza la esencia. Devuelve la partida nueva o null si no se pudo. */
-export function buy(save: MetaSave, key: keyof MetaLevels): MetaSave | null {
-  const cost = nextCost(save, key);
-  if (cost === null || save.essence < cost) return null;
-  return {
-    ...save,
-    essence: save.essence - cost,
-    levels: { ...save.levels, [key]: save.levels[key] + 1 },
-  };
-}
-
-/** Suma lo que dejo una partida: esencia, partidas jugadas y record. */
-export function addRun(save: MetaSave, essence: number, rooms: number, won: boolean): MetaSave {
-  return {
-    ...save,
-    essence: num(save.essence + Math.max(0, Math.floor(essence))),
-    runs: save.runs + 1,
-    wins: save.wins + (won ? 1 : 0),
-    best: Math.max(save.best, rooms),
-  };
 }

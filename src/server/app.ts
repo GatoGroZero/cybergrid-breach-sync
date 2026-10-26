@@ -9,6 +9,8 @@ import type { Config } from './config';
 import type { Repo } from './db';
 import type { Mailer } from './mailer';
 import type { Metrics } from './metrics';
+import { progressRouter } from './progress';
+import { createStore, type Store } from './store';
 import { testRouter, type RuntimeInfo } from './testApi';
 
 export interface AppDeps {
@@ -18,10 +20,13 @@ export interface AppDeps {
   runtime: () => RuntimeInfo;
   /** Envia los codigos de acceso por correo; sin el, el acceso por correo no se ofrece. */
   mailer?: Mailer | null;
+  /** Donde se guardan las cuentas con correo y el progreso (si falta, se arma segun la configuracion). */
+  store?: Store;
 }
 
 export function createApp(deps: AppDeps): Express {
   const { config } = deps;
+  const store = deps.store ?? createStore(config, deps.repo);
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -61,7 +66,8 @@ export function createApp(deps: AppDeps): Express {
   );
 
   app.use('/api/test', testRouter(deps));
-  app.use('/api/auth', express.json({ limit: '4kb' }), sameOrigin, authRouter(deps));
+  app.use('/api/auth', express.json({ limit: '4kb' }), sameOrigin, authRouter({ ...deps, store }));
+  app.use('/api/progress', sameOrigin, progressRouter({ config, store }));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'no_encontrado', mensaje: 'Ruta no encontrada' });
