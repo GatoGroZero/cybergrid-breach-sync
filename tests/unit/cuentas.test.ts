@@ -203,6 +203,46 @@ describe('cuentas con correo y contraseña', () => {
     expect(repetida.status).toBe(409);
   });
 
+  it('los datos mal escritos no gastan el cupo de registros de una red compartida, y el tope avisa cuanto esperar', async () => {
+    const s = await start({ limits: { register: 3 } });
+    const malos = [
+      { email: 'no-es-correo', password: PASS, confirm: PASS },
+      { email: 'a@b.com', password: 'corta', confirm: 'corta' },
+      { email: 'a@b.com', password: PASS, confirm: `${PASS}x` },
+    ];
+    // muchos intentos con errores de captura (como en una clase entera detras de una sola IP)
+    for (let i = 0; i < 12; i++) {
+      const res = await request(s.app)
+        .post('/api/auth/signup')
+        .send(malos[i % 3]);
+      expect(res.status).toBe(400);
+    }
+    for (const n of [1, 2, 3]) {
+      const ok = await request(s.app)
+        .post('/api/auth/signup')
+        .send({ email: `alumno${n}@correo.com`, password: PASS, confirm: PASS });
+      expect(ok.status).toBe(201);
+    }
+    const tope = await request(s.app)
+      .post('/api/auth/signup')
+      .send({ email: 'alumno4@correo.com', password: PASS, confirm: PASS });
+    expect(tope.status).toBe(429);
+    expect(tope.body.mensaje).toMatch(/^Demasiados intentos, espera \d+ minutos?$/);
+    expect(tope.headers['retry-after']).toBeDefined();
+  });
+
+  it('un correo que ya existe se rechaza sin volver a calcular el hash', async () => {
+    const s = await start();
+    const datos = { email: 'repetido@correo.com', password: PASS, confirm: PASS };
+    expect((await request(s.app).post('/api/auth/signup').send(datos)).status).toBe(201);
+    const t0 = performance.now();
+    const otra = await request(s.app).post('/api/auth/signup').send(datos);
+    const ms = performance.now() - t0;
+    expect(otra.status).toBe(409);
+    // calcular un scrypt de 32 MiB tarda decenas de milisegundos o mas: aqui solo hay una consulta
+    expect(ms).toBeLessThan(40);
+  });
+
   it('guarda solo el hash de la contraseña, nunca la contraseña', async () => {
     const redis = fakeUpstash();
     const s = await start({}, { store: redis.store });

@@ -215,9 +215,16 @@ export function authRouter(deps: {
   );
   const accountFails = new FailureLog(config.limits.accountFails, 15 * 60 * 1000);
 
-  const tooMany = {
-    error: 'demasiados_intentos',
-    mensaje: 'Demasiados intentos, espera unos minutos',
+  // Avisa cuanto falta para volver a intentar (con "unos minutos" nadie sabe cuanto esperar).
+  const tooMany = (req: Request, res: Response): void => {
+    const reset = (req as Request & { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+    const minutes = reset ? Math.max(1, Math.ceil((reset.getTime() - Date.now()) / 60_000)) : null;
+    res.status(429).json({
+      error: 'demasiados_intentos',
+      mensaje: minutes
+        ? `Demasiados intentos, espera ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`
+        : 'Demasiados intentos, espera unos minutos',
+    });
   };
   // Solo cuentan los intentos fallidos de login, asi un uso normal nunca se bloquea.
   const loginLimiter = rateLimit({
@@ -226,21 +233,25 @@ export function authRouter(deps: {
     skipSuccessfulRequests: true,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: tooMany,
+    handler: tooMany,
   });
+  // Una red compartida (escuela, laboratorio) tiene una sola IP publica para todos: un dato mal
+  // escrito (400) no gasta el cupo, que solo cuenta lo que llega a crear o a buscar una cuenta.
   const registerLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: config.limits.register,
+    skipFailedRequests: true,
+    requestWasSuccessful: (_req, res) => res.statusCode !== 400,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: tooMany,
+    handler: tooMany,
   });
   const guestLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: config.limits.guest,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: tooMany,
+    handler: tooMany,
   });
 
   const invalid = (res: Response, issues: { path: PropertyKey[]; message: string }[]): void => {
@@ -326,16 +337,18 @@ export function authRouter(deps: {
     const parsed = signupSchema.safeParse(req.body);
     if (!parsed.success) return invalid(res, parsed.error.issues);
     const { email, password } = parsed.data;
+    const taken = (): void => {
+      res.status(409).json({
+        error: 'correo_en_uso',
+        mensaje: 'Ese correo ya tiene una cuenta: inicia sesión',
+      });
+    };
     try {
+      // si ya existe se avisa sin gastar CPU en el hash (el SET NX de abajo sigue siendo el que manda)
+      if ((await store.get(acctKey(email))) !== null) return taken();
       const account: Account = { h: await hashPassword(password), c: Date.now() };
       const created = await store.setNx(acctKey(email), JSON.stringify(account));
-      if (!created) {
-        res.status(409).json({
-          error: 'correo_en_uso',
-          mensaje: 'Ese correo ya tiene una cuenta: inicia sesión',
-        });
-        return;
-      }
+      if (!created) return taken();
     } catch (err) {
       if (err instanceof StoreError) return unavailable(res);
       throw err;
