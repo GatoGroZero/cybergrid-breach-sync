@@ -359,6 +359,13 @@ export class Lobby {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugWin();
     });
+    socket.on('dev:power', (raw: unknown) => {
+      const m = me();
+      const p = raw as { id?: unknown; lvl?: unknown } | null;
+      if (!this.config.testKit || !(m?.game instanceof AdventureGame)) return;
+      if (typeof p?.id === 'number' && Number.isInteger(p.id))
+        m.game.debugPower(m.member.catId, p.id, typeof p.lvl === 'number' ? p.lvl : 1);
+    });
     socket.on('dev:arm', () => {
       const m = me();
       if (this.config.testKit && m?.game instanceof AdventureGame) m.game.debugArm(m.member.catId);
