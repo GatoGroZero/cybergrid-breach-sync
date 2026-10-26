@@ -899,6 +899,34 @@ export class AdvScene {
         0.9,
         -24,
       );
+    if (ev.id === 5) {
+      // nova de fuego: un anillo de llamas sale disparado y las brasas suben
+      for (let i = 0; i < 28; i++) {
+        const a = (i / 28) * Math.PI * 2;
+        fx.add({
+          x: x + Math.cos(a) * 14,
+          y: y + Math.sin(a) * 9,
+          vx: Math.cos(a) * 150,
+          vy: Math.sin(a) * 100,
+          life: 0.55,
+          max: 0.55,
+          color: i % 3 === 0 ? '#ef7d57' : '#ffcd75',
+          size: 2,
+          grav: 0,
+          kind: 0,
+          r: 0,
+        });
+      }
+      fx.burst(x, y, 16, {
+        colors: ['#ffcd75', '#ef7d57', '#d9461f'],
+        speed: 40,
+        life: 0.9,
+        grav: -40,
+        size: 2,
+        angle: -Math.PI / 2,
+        spread: 3,
+      });
+    }
     this.hooks.light(x, y, set.r * 1.6, set.light, 0.7);
     if (ev.id === 3 || ev.id === 5) this.hooks.shake(ev.id === 5 ? 4 : 3);
     const s = spatial(x - g.x, y - g.y, 420);
