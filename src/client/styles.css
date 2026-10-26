@@ -623,6 +623,24 @@ input::placeholder {
   background: var(--red);
 }
 
+.badge.away {
+  background: var(--panel-3);
+  color: #94b0c2;
+}
+
+.badge.playing {
+  background: var(--yellow, #ffcd75);
+  color: var(--black);
+}
+
+.member-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .room-list li .info {
   min-width: 0;
 }

@@ -513,6 +513,8 @@ export interface StageCat {
   /** Equipo (0 o 1) en los modos por equipos. */
   team?: number;
   ready?: boolean;
+  /** Ausente: se ve atenuado y con sueno. */
+  away?: boolean;
   me?: boolean;
   host?: boolean;
 }
@@ -697,7 +699,9 @@ export class Stage {
       c.ellipse(x, baseY - 2, w * 0.46, 4 * (scale / 2), 0, 0, Math.PI * 2);
       c.stroke();
     }
+    if (k.away) c.globalAlpha = 0.5;
     c.drawImage(frame, dx, dy, w, h);
+    c.globalAlpha = 1;
     labels.push(() => {
       if (k.host) c.drawImage(this.crown, x - 6, dy - 7 + bob, 12, 8);
       // nombre y "listo"
@@ -710,6 +714,13 @@ export class Stage {
       c.strokeText(name, x, baseY + 5);
       c.fillStyle = k.me ? '#ffcd75' : '#f4f4f4';
       c.fillText(name, x, baseY + 5);
+      if (k.away) {
+        // las "z" suben despacio sobre la cabeza
+        c.font = '10px VT323, monospace';
+        c.fillStyle = '#94b0c2';
+        c.fillText('z', x + 5, dy - 2 - ((t / 400) % 3));
+        c.fillText('Z', x + 9, dy - 7 - ((t / 400) % 3));
+      }
       if (k.ready) {
         c.fillStyle = '#a7f070';
         c.fillRect(x - 3, dy - 3, 6, 2);

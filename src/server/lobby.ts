@@ -18,12 +18,14 @@ import {
   TEAM_NAMES,
 } from '../shared/br/modes';
 import {
+  awaySchema,
   createRoomSchema,
   dropAmmoSchema,
   dropSchema,
   emoteSchema,
   inputSchema,
   joinRoomSchema,
+  kickSchema,
   kitSchema,
   lootIdSchema,
   lootTakeSchema,
@@ -75,6 +77,10 @@ interface Member {
   skin: Skin;
   /** Equipo en los modos por equipos. */
   team: TeamId;
+  /** Esta jugando la partida en curso (si entro tarde o salio de la partida, espera en el lobby). */
+  inGame: boolean;
+  /** Se puso ausente: sigue en el grupo pero no cuenta para empezar ni entra a la partida. */
+  away: boolean;
 }
 
 interface Room {
@@ -230,7 +236,7 @@ export class Lobby {
     const me = () => {
       const room = this.roomOf(user.id);
       const member = room?.members.get(user.id);
-      return room && member ? { room, member, game: room.game } : null;
+      return room && member ? { room, member, game: member.inGame ? room.game : null } : null;
     };
 
     socket.on('rooms:list', (ack?: (a: Ack<PublicRoom[]>) => void) => {
@@ -273,6 +279,16 @@ export class Lobby {
     });
     socket.on('room:start', (ack?: (a: Ack) => void) => {
       if (allow(actionBucket)) ack?.(this.startNow(user.id));
+    });
+    socket.on('room:away', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.setAway(user.id, raw));
+    });
+    socket.on('room:kick', (raw: unknown, ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.kick(user.id, raw));
+    });
+    // Salir de la partida SIN salir del grupo (room:leave sigue siendo salir del grupo).
+    socket.on('game:leave', (ack?: (a: Ack) => void) => {
+      if (allow(actionBucket)) ack?.(this.leaveMatch(user.id));
     });
 
     // ---- partida
@@ -455,7 +471,8 @@ export class Lobby {
     const member = room?.members.get(userId);
     if (!room || !member) return;
     member.socketId = null;
-    if (room.phase === 'playing' && room.game) {
+    // Solo quien esta dentro de la partida se queda esperando su regreso; los demas se van.
+    if (room.phase === 'playing' && room.game && member.inGame) {
       room.game.setConnected(member.catId, false);
       return;
     }
@@ -470,9 +487,9 @@ export class Lobby {
     member.socketId = socket.id;
     void socket.leave(BROWSE);
     void socket.join(room.code);
-    room.game?.setConnected(member.catId, true);
+    if (member.inGame) room.game?.setConnected(member.catId, true);
     socket.emit('room:state', this.stateOf(room));
-    if (room.phase === 'playing' && room.game)
+    if (room.phase === 'playing' && room.game && member.inGame)
       socket.emit('game:start', this.startPayload(room, member));
   }
 
@@ -497,15 +514,30 @@ export class Lobby {
     return { mode: room.mode, bots: room.bots, format: room.format, teamSize: room.teamSize };
   }
 
-  /** Personas de cada equipo (solo cuenta en los modos por equipos). */
-  private teamHumans(room: Room): [number, number] {
+  /** Quienes entrarian a la partida: todos menos los que se pusieron ausentes. */
+  private activeMembers(room: Room): Member[] {
+    return [...room.members.values()].filter((m) => !m.away);
+  }
+
+  /** Personas de cada equipo (solo cuenta en los modos por equipos). Un ausente conserva su lugar. */
+  private teamHumans(room: Room, onlyActive = false): [number, number] {
     const out: [number, number] = [0, 0];
-    for (const m of room.members.values()) out[m.team]++;
+    for (const m of room.members.values()) if (!onlyActive || !m.away) out[m.team]++;
     return out;
   }
 
   private canStartRoom(room: Room): boolean {
-    return startable(this.rulesOf(room), room.members.size, this.teamHumans(room));
+    return startable(
+      this.rulesOf(room),
+      this.activeMembers(room).length,
+      this.teamHumans(room, true),
+    );
+  }
+
+  /** Alguien sigue dentro de la partida en curso (si no, la partida ya no tiene para quien correr). */
+  private hasPlayers(room: Room): boolean {
+    for (const m of room.members.values()) if (m.inGame) return true;
+    return false;
   }
 
   /** Mapas que existen en cada modo. */
@@ -583,8 +615,6 @@ export class Lobby {
     if (!room) return fail('sala_no_existe') as Ack<{ code: string }>;
     if (this.userRoom.get(user.id) === room.code) return { ok: true, data: { code: room.code } };
     if (this.userRoom.has(user.id)) return fail('ya_estas_en_una_sala') as Ack<{ code: string }>;
-    if (room.phase === 'playing' || room.phase === 'ended')
-      return fail('partida_en_curso') as Ack<{ code: string }>;
     if (room.members.size >= humanCapacity(this.rulesOf(room)))
       return fail('sala_llena') as Ack<{ code: string }>;
     this.cancelCountdown(room);
@@ -602,6 +632,8 @@ export class Lobby {
       catId: 0,
       skin: this.skins.get(user.id) ?? defaultSkin(),
       team: this.lighterTeam(room),
+      inGame: false,
+      away: false,
     });
     this.userRoom.set(user.id, room.code);
     void socket.leave(BROWSE);
@@ -612,9 +644,9 @@ export class Lobby {
     const room = this.roomOf(userId);
     if (!room) return;
     const member = room.members.get(userId);
-    if (room.phase === 'playing' && room.game && member)
+    if (room.phase === 'playing' && room.game && member?.inGame)
       room.game.setConnected(member.catId, false);
-    const everyone = [...room.members.values()];
+    const everyone = [...room.members.values()].filter((m) => m.catId > 0);
     room.members.delete(userId);
     this.userRoom.delete(userId);
     void socket?.leave(room.code);
@@ -632,8 +664,102 @@ export class Lobby {
       this.notifyRooms();
       return;
     }
-    if (room.hostId === userId) room.hostId = (room.members.keys().next().value as number) ?? 0;
+    if (room.hostId === userId) {
+      // el cargo pasa a quien siga conectado (si no hay nadie conectado, al primero)
+      const next = [...room.members.values()].find((m) => m.socketId !== null && !m.away);
+      room.hostId = next?.userId ?? (room.members.keys().next().value as number) ?? 0;
+    }
+    // si quien se fue era el ultimo dentro de la partida, la partida se cierra
+    if (room.phase === 'playing' && room.game && !this.hasPlayers(room)) this.closeMatch(room);
     this.broadcast(room);
+  }
+
+  /** Salir de la partida en curso sin salir del grupo: se espera en el lobby a que termine. */
+  private leaveMatch(userId: number): Ack {
+    const room = this.roomOf(userId);
+    const member = room?.members.get(userId);
+    if (!room || !member) return fail('no_estas_en_una_sala');
+    if (room.phase !== 'playing' || !room.game || !member.inGame) return { ok: true };
+    member.inGame = false;
+    member.ready = false;
+    room.game.setConnected(member.catId, false);
+    if (!this.hasPlayers(room)) this.closeMatch(room);
+    this.broadcast(room);
+    return { ok: true };
+  }
+
+  /** Cierra la partida sin esperar: nadie la esta jugando. El grupo sigue junto en el lobby. */
+  private closeMatch(room: Room): void {
+    const game = room.game;
+    if (room.loop) clearTimeout(room.loop);
+    room.loop = null;
+    if (game) {
+      if (!game.over) game.forceFinish(null);
+      if (game.result) this.persist(room, game, game.result);
+    }
+    this.resetRoom(room);
+  }
+
+  /** Vuelve la sala al lobby: sin partida, nadie listo y todos esperando de nuevo. */
+  private resetRoom(room: Room): void {
+    room.game = null;
+    room.phase = 'lobby';
+    room.countdown = 0;
+    room.celebrateUntil = null;
+    room.persisted = false;
+    for (const m of room.members.values()) {
+      m.ready = false;
+      m.inGame = false;
+      m.catId = 0;
+    }
+    for (const m of [...room.members.values()]) {
+      if (m.socketId === null) this.leaveRoom(m.userId, null);
+    }
+  }
+
+  /** Ponerse ausente (o volver): sigue en el grupo pero no cuenta para empezar ni entra a la partida. */
+  private setAway(userId: number, raw: unknown): Ack {
+    const parsed = awaySchema.safeParse(raw);
+    if (!parsed.success) return fail('datos_invalidos');
+    const room = this.roomOf(userId);
+    const member = room?.members.get(userId);
+    if (!room || !member) return fail('no_estas_en_una_sala');
+    if (member.inGame) return fail('estas_en_la_partida');
+    if (member.away === parsed.data.away) return { ok: true };
+    member.away = parsed.data.away;
+    member.ready = false;
+    this.cancelCountdown(room);
+    this.broadcast(room);
+    this.maybeAutoStart(room);
+    return { ok: true };
+  }
+
+  /** El anfitrion saca a alguien de la sala (tambien al que se quedo sin conexion). */
+  private kick(userId: number, raw: unknown): Ack {
+    const parsed = kickSchema.safeParse(raw);
+    if (!parsed.success) return fail('datos_invalidos');
+    const room = this.roomOf(userId);
+    if (!room) return fail('no_estas_en_una_sala');
+    if (room.hostId !== userId) return fail('solo_el_anfitrion');
+    const targetId = parsed.data.userId;
+    if (targetId === userId) return fail('no_puedes_expulsarte');
+    if (!room.members.has(targetId)) return fail('no_esta_en_la_sala');
+    const socket = this.sockets.get(targetId) ?? null;
+    socket?.emit('room:kicked');
+    this.leaveRoom(targetId, socket);
+    return { ok: true };
+  }
+
+  /** Si todos los presentes ya estan listos, empieza la cuenta regresiva. */
+  private maybeAutoStart(room: Room): void {
+    const active = this.activeMembers(room);
+    if (
+      active.length > 0 &&
+      active.every((m) => m.ready) &&
+      room.phase === 'lobby' &&
+      this.canStartRoom(room)
+    )
+      this.startCountdown(room);
   }
 
   private setReady(userId: number, raw: unknown): Ack {
@@ -643,16 +769,12 @@ export class Lobby {
     const member = room?.members.get(userId);
     if (!room || !member) return fail('no_estas_en_una_sala');
     if (room.phase !== 'lobby' && room.phase !== 'countdown') return fail('partida_en_curso');
+    if (member.away) return fail('estas_ausente');
     member.ready = parsed.data.ready;
     member.skin = this.skins.get(userId) ?? member.skin;
     if (!member.ready) this.cancelCountdown(room);
     this.broadcast(room);
-    if (
-      [...room.members.values()].every((m) => m.ready) &&
-      room.phase === 'lobby' &&
-      this.canStartRoom(room)
-    )
-      this.startCountdown(room);
+    this.maybeAutoStart(room);
     return { ok: true };
   }
 
@@ -731,7 +853,7 @@ export class Lobby {
         host: r.members.get(r.hostId)?.name ?? '',
         players: r.members.size,
         maxPlayers: humanCapacity(this.rulesOf(r)),
-        bots: botCountFor(this.rulesOf(r), r.members.size),
+        bots: botCountFor(this.rulesOf(r), this.activeMembers(r).length),
         phase: r.phase,
         map: r.map,
         mode: r.mode,
@@ -761,7 +883,7 @@ export class Lobby {
       maxPlayers: this.totalCats(room),
       maxHumans: humanCapacity(this.rulesOf(room)),
       bots: room.bots,
-      botCount: botCountFor(this.rulesOf(room), room.members.size),
+      botCount: botCountFor(this.rulesOf(room), this.activeMembers(room).length),
       canStart: this.canStartRoom(room),
       mode: room.mode,
       format: room.format,
@@ -775,6 +897,8 @@ export class Lobby {
         host: m.userId === room.hostId,
         skin: m.skin,
         team: m.team,
+        away: m.away,
+        playing: m.inGame,
       })),
     };
   }
@@ -784,7 +908,7 @@ export class Lobby {
     const rules = this.rulesOf(room);
     return room.mode === 'br'
       ? MAX_PLAYERS
-      : room.members.size + botCountFor(rules, room.members.size);
+      : this.activeMembers(room).length + botCountFor(rules, this.activeMembers(room).length);
   }
 
   private broadcast(room: Room): void {
@@ -848,11 +972,16 @@ export class Lobby {
 
   /** Los gatos de la partida: las personas y, en cada lado, los bots que falten. */
   private buildCats(room: Room, rng: ReturnType<typeof createRng>): CatInit[] {
-    const members = [...room.members.values()];
+    const members = this.activeMembers(room);
     const rules = this.rulesOf(room);
     const teamSize = teamSizeOf(rules);
+    for (const m of room.members.values()) {
+      m.catId = 0;
+      m.inGame = false;
+    }
     const cats: CatInit[] = members.map((m, i) => {
       m.catId = i + 1;
+      m.inGame = true;
       m.ready = false;
       return {
         id: m.catId,
@@ -891,7 +1020,15 @@ export class Lobby {
   }
 
   private startGame(room: Room): void {
-    const members = [...room.members.values()];
+    room.celebrateUntil = null;
+    room.persisted = false;
+    const members = this.activeMembers(room);
+    if (members.length === 0) {
+      room.phase = 'lobby';
+      room.countdown = 0;
+      this.broadcast(room);
+      return;
+    }
     const rng = createRng(randomInt(1, 2_000_000_000));
     const pool = this.mapsOf(room.mode);
     const mapKind: MapKind = room.map === 'azar' ? (rng.pick([...pool]) as MapKind) : room.map;
@@ -934,7 +1071,7 @@ export class Lobby {
       }
     }
     if (!game) {
-      room.phase = 'lobby';
+      this.resetRoom(room);
       this.broadcast(room);
       return;
     }
@@ -987,12 +1124,12 @@ export class Lobby {
 
   private sendSnapshots(room: Room, game: BRGame): void {
     for (const m of room.members.values()) {
-      if (!m.socketId) continue;
+      if (!m.socketId || !m.inGame) continue;
       const snap = game.snapshotFor(m.catId);
       if (snap) this.sockets.get(m.userId)?.emit('game:snap', snap);
     }
     for (const death of game.drainDeaths()) {
-      const member = [...room.members.values()].find((m) => m.catId === death.catId);
+      const member = [...room.members.values()].find((m) => m.inGame && m.catId === death.catId);
       if (member?.socketId) this.sockets.get(member.userId)?.emit('game:died', death.payload);
     }
     game.endTick();
@@ -1014,12 +1151,7 @@ export class Lobby {
 
     room.resetTimer = setTimeout(() => {
       room.resetTimer = null;
-      room.game = null;
-      room.phase = 'lobby';
-      for (const m of room.members.values()) m.ready = false;
-      for (const m of [...room.members.values()]) {
-        if (m.socketId === null) this.leaveRoom(m.userId, null);
-      }
+      this.resetRoom(room);
       if (this.rooms.has(room.code)) this.broadcast(room);
     }, RESULTS_SECONDS * 1000);
   }
@@ -1029,7 +1161,7 @@ export class Lobby {
     room: Room,
     game: BRGame,
     result: GameEndPayload,
-    members: Member[] = [...room.members.values()],
+    members: Member[] = [...room.members.values()].filter((m) => m.catId > 0),
   ): void {
     if (room.persisted) return;
     room.persisted = true;

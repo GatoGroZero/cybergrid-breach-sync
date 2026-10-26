@@ -157,6 +157,12 @@ export const joinRoomSchema = z.object({
 });
 
 export const readySchema = z.object({ ready: z.boolean() });
+/** Ponerse ausente (o volver) sin salir del grupo. */
+export const awaySchema = z.object({ away: z.boolean() });
+/** El anfitrion saca a alguien de la sala. */
+export const kickSchema = z.object({
+  userId: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+});
 
 export type Credentials = z.infer<typeof credentialsSchema>;
 export type InputPayload = z.infer<typeof inputSchema>;
@@ -177,6 +183,10 @@ export interface RoomMember {
   skin: { base: number; paint: string; outfit?: number };
   /** Equipo (0 o 1) en los modos por equipos. */
   team?: number;
+  /** Se puso ausente: sigue en el grupo pero no cuenta para empezar. */
+  away?: boolean;
+  /** Esta jugando la partida en curso (si no, espera en el lobby). */
+  playing?: boolean;
 }
 
 export type RoomPhase = 'lobby' | 'countdown' | 'playing' | 'ended';
