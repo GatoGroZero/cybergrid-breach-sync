@@ -1,6 +1,6 @@
 {
   "name": "cybergrid-breach-sync",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "private": true,
   "type": "module",
   "description": "Battle royale multijugador de gatos en pixeles, en tiempo real, con Canvas 2D, WebSockets y servidor autoritativo",
@@ -26,7 +26,8 @@
     "test:e2e": "playwright test",
     "verify": "npm run check:text && npm run typecheck && npm run lint && npm run test && npm run build",
     "audit:prod": "node scripts/audit-prod.mjs",
-    "auditoria": "node scripts/auditoria.mjs"
+    "auditoria": "node scripts/auditoria.mjs",
+    "seguridad": "node scripts/seguridad.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Express } from 'express';
 import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,6 +44,17 @@ export function createApp(deps: AppDeps): Express {
     });
   }
 
+  // El socket solo puede abrirse hacia este mismo servidor (antes se permitia cualquier ws: y wss:,
+  // y un script inyectado habria podido sacar datos por ahi). Safari antiguo no hace coincidir
+  // 'self' con ws/wss, por eso se escribe la direccion explicita a partir de la cabecera Host.
+  const production = config.env === 'production';
+  const ownSocket = (req: IncomingMessage): string => {
+    const host = String(req.headers.host ?? '');
+    return /^[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/.test(host)
+      ? `${production ? 'wss' : 'ws'}://${host}`
+      : "'self'";
+  };
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -50,20 +62,47 @@ export function createApp(deps: AppDeps): Express {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
+          scriptSrcAttr: ["'none'"],
           styleSrc: ["'self'"],
           imgSrc: ["'self'", 'data:', 'blob:'],
           fontSrc: ["'self'"],
-          connectSrc: ["'self'", 'ws:', 'wss:'],
+          connectSrc: ["'self'", ownSocket],
           mediaSrc: ["'self'", 'blob:'],
           objectSrc: ["'none'"],
+          childSrc: ["'none'"],
+          manifestSrc: ["'self'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
           frameAncestors: ["'none'"],
+          ...(production ? { upgradeInsecureRequests: [] } : {}),
         },
       },
       crossOriginEmbedderPolicy: false,
     }),
   );
+  // Funciones del navegador que el juego no usa y que no debe poder pedir un script ajeno.
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      [
+        'accelerometer=()',
+        'bluetooth=()',
+        'camera=()',
+        'display-capture=()',
+        'geolocation=()',
+        'gyroscope=()',
+        'hid=()',
+        'magnetometer=()',
+        'microphone=()',
+        'midi=()',
+        'payment=()',
+        'serial=()',
+        'usb=()',
+        'xr-spatial-tracking=()',
+      ].join(', '),
+    );
+    next();
+  });
 
   app.use('/api/test', testRouter(deps));
   app.use('/api/auth', express.json({ limit: '4kb' }), sameOrigin, authRouter({ ...deps, store }));
@@ -103,9 +142,10 @@ export function createApp(deps: AppDeps): Express {
 
   const onError: ErrorRequestHandler = (err, _req, res, _next) => {
     const id = randomUUID();
-    console.error(`[error ${id}]`, err);
-    if (res.headersSent) return;
     const status = typeof err?.status === 'number' && err.status < 500 ? err.status : 500;
+    // un JSON roto o un cuerpo enorme es culpa de quien lo manda: no llena el registro de errores
+    if (status >= 500) console.error(`[error ${id}]`, err);
+    if (res.headersSent) return;
     res.status(status).json({
       error: status === 500 ? 'error_interno' : 'peticion_invalida',
       mensaje: status === 500 ? 'Ocurrió un error en el servidor' : 'Petición inválida',

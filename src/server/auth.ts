@@ -4,7 +4,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { credentialsSchema, signinSchema, signupSchema } from '../shared/br/protocol';
 import { nicknameSchema, randomNickname } from '../shared/nickname';
-import type { Config } from './config';
+import { DEMO_USERS, type Config } from './config';
 import type { Repo } from './db';
 import { emailRouter } from './emailLogin';
 import { googleRouter } from './google';
@@ -93,6 +93,14 @@ function getDummyHash(): Promise<string> {
 
 /** Rechaza peticiones con cabecera Origin de otro sitio (defensa extra contra CSRF). */
 export function sameOrigin(req: Request, res: Response, next: NextFunction): void {
+  // El navegador dice desde donde sale cada peticion (Sec-Fetch-Site) y un script ajeno no lo
+  // puede cambiar: las que cambian algo solo valen si salen de esta misma pagina.
+  const site = req.headers['sec-fetch-site'];
+  const changes = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
+  if (changes && typeof site === 'string' && site !== 'same-origin' && site !== 'none') {
+    res.status(403).json({ error: 'origen_no_permitido', mensaje: 'Origen no permitido' });
+    return;
+  }
   const origin = req.headers.origin;
   if (!origin) {
     next();
@@ -107,6 +115,51 @@ export function sameOrigin(req: Request, res: Response, next: NextFunction): voi
     // origen mal formado: se rechaza abajo
   }
   res.status(403).json({ error: 'origen_no_permitido', mensaje: 'Origen no permitido' });
+}
+
+/**
+ * Cuenta los fallos de acceso por cuenta, no solo por IP: quien prueba contrasenas desde muchas
+ * direcciones distintas choca igual con el tope de la cuenta que ataca.
+ */
+export class FailureLog {
+  private readonly hits = new Map<string, { n: number; since: number }>();
+  constructor(
+    private readonly max: number,
+    private readonly windowMs: number,
+    private readonly cap = 20_000,
+  ) {}
+
+  private live(key: string, now: number): { n: number; since: number } | undefined {
+    const hit = this.hits.get(key);
+    if (hit && now - hit.since > this.windowMs) {
+      this.hits.delete(key);
+      return undefined;
+    }
+    return hit;
+  }
+
+  blocked(key: string, now = Date.now()): boolean {
+    return (this.live(key, now)?.n ?? 0) >= this.max;
+  }
+
+  fail(key: string, now = Date.now()): void {
+    const hit = this.live(key, now);
+    if (hit) hit.n++;
+    else {
+      // tope de memoria: si se llena, se descartan las mas viejas
+      if (this.hits.size >= this.cap) {
+        for (const [k, v] of this.hits) {
+          if (now - v.since > this.windowMs || this.hits.size >= this.cap) this.hits.delete(k);
+          if (this.hits.size < this.cap * 0.9) break;
+        }
+      }
+      this.hits.set(key, { n: 1, since: now });
+    }
+  }
+
+  clear(key: string): void {
+    this.hits.delete(key);
+  }
 }
 
 function requireJson(req: Request, res: Response, next: NextFunction): void {
@@ -147,6 +200,20 @@ export function authRouter(deps: {
     if (req.method === 'POST') requireJson(req, res, next);
     else next();
   });
+  // Tope general por IP para todo /api/auth, ademas de los de cada ruta.
+  router.use(
+    rateLimit({
+      windowMs: 60 * 1000,
+      limit: config.limits.api,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      message: {
+        error: 'demasiados_intentos',
+        mensaje: 'Demasiadas peticiones, espera un momento',
+      },
+    }),
+  );
+  const accountFails = new FailureLog(config.limits.accountFails, 15 * 60 * 1000);
 
   const tooMany = {
     error: 'demasiados_intentos',
@@ -284,19 +351,38 @@ export function authRouter(deps: {
   /** Entrar con correo y contrasena (o con el usuario de una cuenta vieja). */
   router.post('/signin', loginLimiter, async (req, res) => {
     if (!config.passwordAuth) return disabled(res);
-    const bad = (): void => {
+    const bad = (key: string | null): void => {
+      if (key) accountFails.fail(key);
       res
         .status(401)
         .json({ error: 'credenciales_invalidas', mensaje: 'Correo o contraseña incorrectos' });
     };
     const parsed = signinSchema.safeParse(req.body);
-    if (!parsed.success) return bad();
+    if (!parsed.success) {
+      res
+        .status(401)
+        .json({ error: 'credenciales_invalidas', mensaje: 'Correo o contraseña incorrectos' });
+      return;
+    }
     const { identifier, password } = parsed.data;
+    const key = identifier.toLowerCase();
+    // Tope de fallos por cuenta (las de demostracion quedan fuera: todos conocen su clave y que
+    // alguien las bloquee no debe dejar sin entrar a quien las revisa). Se decide antes de gastar
+    // CPU en el hash o una consulta al almacen.
+    const guarded = !(DEMO_USERS as readonly string[]).includes(key);
+    if (guarded && accountFails.blocked(key)) {
+      res.status(429).json({
+        error: 'demasiados_intentos',
+        mensaje: 'Demasiados intentos con esta cuenta, espera unos minutos',
+      });
+      return;
+    }
     if (!identifier.includes('@')) {
       // cuentas de usuario y contrasena de antes (y las de demostracion)
       const row = repo.getUserByName(identifier);
       const ok = await verifyPassword(password, row?.pass_hash ?? (await getDummyHash()));
-      if (!row || !ok) return bad();
+      if (!row || !ok) return bad(guarded ? key : null);
+      accountFails.clear(key);
       const user = await startSession(res, config, {
         sub: `local:${row.id}`,
         name: row.username,
@@ -305,19 +391,19 @@ export function authRouter(deps: {
       res.json({ user: publicUser(user) });
       return;
     }
-    const email = identifier.toLowerCase();
     let account: Account | null;
     try {
-      const raw = await store.get(acctKey(email));
+      const raw = await store.get(acctKey(key));
       account = raw ? (JSON.parse(raw) as Account) : null;
     } catch (err) {
       if (err instanceof StoreError) return unavailable(res);
       throw err;
     }
     const ok = await verifyPassword(password, account?.h ?? (await getDummyHash()));
-    if (!account || !ok) return bad();
+    if (!account || !ok) return bad(key);
+    accountFails.clear(key);
     const user = await startSession(res, config, {
-      sub: `email:${email}`,
+      sub: `email:${key}`,
       name: account.n ?? randomNickname(),
       provider: 'email',
     });
@@ -348,22 +434,30 @@ export function authRouter(deps: {
 
   router.post('/login', loginLimiter, async (req, res) => {
     if (!config.passwordAuth) return disabled(res);
-    const parsed = credentialsSchema.safeParse(req.body);
-    if (!parsed.success) {
+    const bad = (): void => {
       res
         .status(401)
         .json({ error: 'credenciales_invalidas', mensaje: 'Usuario o contraseña incorrectos' });
+    };
+    const parsed = credentialsSchema.safeParse(req.body);
+    if (!parsed.success) return bad();
+    const { username, password } = parsed.data;
+    const key = username.toLowerCase();
+    const guarded = !(DEMO_USERS as readonly string[]).includes(key);
+    if (guarded && accountFails.blocked(key)) {
+      res.status(429).json({
+        error: 'demasiados_intentos',
+        mensaje: 'Demasiados intentos con esta cuenta, espera unos minutos',
+      });
       return;
     }
-    const { username, password } = parsed.data;
     const row = repo.getUserByName(username);
     const ok = await verifyPassword(password, row?.pass_hash ?? (await getDummyHash()));
     if (!row || !ok) {
-      res
-        .status(401)
-        .json({ error: 'credenciales_invalidas', mensaje: 'Usuario o contraseña incorrectos' });
-      return;
+      if (guarded) accountFails.fail(key);
+      return bad();
     }
+    accountFails.clear(key);
     const user = await startSession(res, config, {
       sub: `local:${row.id}`,
       name: row.username,

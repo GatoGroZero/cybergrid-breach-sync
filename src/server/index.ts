@@ -1,5 +1,5 @@
-import { createServer } from 'node:http';
 import { createApp } from './app';
+import { createHardenedServer } from './http';
 import { hashPassword } from './auth';
 import { DEMO_PASSWORD, DEMO_USERS, loadConfig } from './config';
 import { Repo } from './db';
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   );
   const metrics = new Metrics();
 
-  const http = createServer();
+  const http = createHardenedServer();
   const realtime = createRealtime(http, { config, metrics, repo });
   const app = createApp({
     config,
@@ -62,6 +62,20 @@ async function main(): Promise<void> {
         });
       });
   };
+  // Red de seguridad: un error inesperado se anota y el servidor sigue. Si se repite sin parar algo
+  // esta realmente roto, y es mejor que Render lo reinicie.
+  let faults: number[] = [];
+  const fault = (kind: string, err: unknown): void => {
+    console.error(`[${kind}]`, err);
+    const now = Date.now();
+    faults = [...faults.filter((t) => now - t < 60_000), now];
+    if (faults.length > 25) {
+      console.error('demasiados errores seguidos, se reinicia el servidor');
+      process.exit(1);
+    }
+  };
+  process.on('uncaughtException', (err) => fault('uncaughtException', err));
+  process.on('unhandledRejection', (err) => fault('unhandledRejection', err));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
