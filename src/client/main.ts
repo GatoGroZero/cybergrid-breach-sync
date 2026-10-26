@@ -13,6 +13,7 @@ import type {
   GameStartPayload,
   PublicRoom,
   WinPayload,
+  RoomMember,
   RoomState,
 } from '../shared/br/protocol';
 import { KIT_IDS, MODES, TEAM_COLORS, TEAM_NAMES, type DuelFormat } from '../shared/br/modes';
@@ -93,6 +94,10 @@ const ERRORS: Record<string, string> = {
   equipo_lleno: 'Ese equipo ya está completo',
   sin_equipos: 'Este modo no tiene equipos',
   fuera_de_tiempo: 'Ya pasó el tiempo para elegir',
+  estas_ausente: 'Estás ausente: pulsa Volver para poder marcar Listo',
+  estas_en_la_partida: 'Sal de la partida para ponerte ausente',
+  no_esta_en_la_sala: 'Esa persona ya no está en la sala',
+  no_puedes_expulsarte: 'No puedes expulsarte a ti mismo',
 };
 /** Enlace de invitacion (?sala=ABCDE): se guarda para entrar a la sala cuando haya sesion. */
 const INVITE_KEY = 'cg_invitacion';
@@ -469,6 +474,18 @@ function wireNet(n: Net): void {
     disconnect();
     showAuth('Abriste tu sesión en otra pestaña');
   });
+  s.on('room:kicked', () => {
+    // el anfitrion te saco: si estabas jugando, la vista de juego se cierra
+    if (game) {
+      leaveGameView();
+      navigate('/lobby');
+      void enterLobby();
+    }
+    room = null;
+    countdownEl.hidden = true;
+    renderRoom();
+    toast('El anfitrión te sacó de la sala');
+  });
   s.on('room:closed', () => {
     // el servidor cierra las salas que llevan mucho rato quietas en el lobby
     room = null;
@@ -537,14 +554,14 @@ function renderRoomList(rooms: PublicRoom[]): void {
     const li = el('li');
     li.dataset.testid = 'public-room';
     li.dataset.code = r.code;
-    const joinable = r.phase === 'lobby' || r.phase === 'countdown';
+    const running = r.phase === 'playing' || r.phase === 'ended';
     const full = r.players >= r.maxPlayers;
-    li.dataset.busy = String(!joinable);
+    li.dataset.busy = String(running);
     const info = el('div', 'info');
     const mapName = MAP_NAMES[r.map as keyof typeof MAP_NAMES] ?? 'Mapa al azar';
     info.append(
       el('strong', '', r.name),
-      el('div', 'muted', `Anfitrión: ${r.host}`),
+      el('div', 'muted', `Anfitrión: ${r.host}${running ? ' · jugando ahora' : ''}`),
       el('div', 'muted', `${MODES[r.mode ?? 'br'].name} · ${mapName}`),
       el(
         'div',
@@ -552,9 +569,9 @@ function renderRoomList(rooms: PublicRoom[]): void {
         `${r.players}/${r.maxPlayers} personas${r.mode === 'aventura' ? '' : ` · ${botsLabel(r.bots)}`}`,
       ),
     );
-    const join = el('button', 'btn small', !joinable ? 'En curso' : full ? 'Llena' : 'Entrar');
+    const join = el('button', 'btn small', full ? 'Llena' : running ? 'Esperar dentro' : 'Entrar');
     join.type = 'button';
-    join.disabled = !joinable || full;
+    join.disabled = full;
     join.addEventListener('click', () => void joinRoom(r.code));
     li.append(info, join);
     list.append(li);
@@ -623,6 +640,13 @@ $('btn-leave').addEventListener('click', async () => {
   room = null;
   renderRoom();
   void refreshRooms();
+});
+
+$('btn-away').addEventListener('click', async () => {
+  if (!net || !room || !user) return;
+  const me = room.members.find((m) => m.userId === user?.id);
+  const res = await net.ack('room:away', { away: !me?.away });
+  if (!res.ok) toast(ERRORS[res.error] ?? 'No se pudo cambiar tu estado');
 });
 
 $('btn-ready').addEventListener('click', async () => {
@@ -761,6 +785,7 @@ function syncStage(): void {
           skin: m.skin,
           ...(room!.teamSize > 0 ? { team: m.team ?? 0 } : {}),
           ready: m.ready,
+          away: m.away === true,
           me: m.userId === user?.id,
           host: m.host,
         }))
@@ -896,31 +921,25 @@ function renderRoom(): void {
   list.replaceChildren();
   list.hidden = room.teamSize > 0;
   renderTeamBoard(room);
-  let ready = 0;
-  for (const m of room.members) {
-    if (m.ready) ready++;
-    const li = el('li');
-    li.dataset.testid = 'member';
-    li.dataset.name = m.name;
-    const left = el('div', 'who');
-    const icon = el('canvas');
-    drawCatIcon(icon, m.skin, 2);
-    const label = el('div');
-    label.append(el('strong', '', m.name));
-    if (m.host) label.append(el('span', 'badge', 'anfitrión'));
-    left.append(icon, label);
-    const state = el('span', m.connected ? (m.ready ? 'badge ready' : 'badge') : 'badge off');
-    state.textContent = m.connected ? (m.ready ? 'Listo' : 'Esperando') : 'Desconectado';
-    state.dataset.testid = 'member-state';
-    li.append(left, state);
-    list.append(li);
-  }
-
   const me = room.members.find((m) => m.userId === user?.id);
   const isHost = me?.host === true;
+  let ready = 0;
+  let present = 0;
+  for (const m of room.members) {
+    if (!m.away) present++;
+    if (m.ready && !m.away) ready++;
+    list.append(memberRow(m, room.phase, isHost));
+  }
+
   const open = room.phase === 'lobby' || room.phase === 'countdown';
   $('btn-ready').textContent = me?.ready ? 'Cancelar listo' : 'Estoy listo';
-  $<HTMLButtonElement>('btn-ready').disabled = !open;
+  $<HTMLButtonElement>('btn-ready').disabled = !open || me?.away === true;
+  const awayBtn = $<HTMLButtonElement>('btn-away');
+  awayBtn.textContent = me?.away ? 'Volver' : 'Ausentarme';
+  awayBtn.disabled = me?.playing === true;
+  awayBtn.title = me?.away
+    ? 'Vuelves a contar para empezar la partida'
+    : 'Sigues en el grupo, pero no cuentas para empezar ni entras a la partida';
 
   const startBtn = $<HTMLButtonElement>('btn-start');
   startBtn.hidden = !isHost;
@@ -952,16 +971,72 @@ function renderRoom(): void {
   if (!room.canStart && room.teamSize > 0)
     status.textContent = 'Hay más personas en un equipo de las que caben: pasen a otro equipo.';
   else if (room.phase === 'countdown') status.textContent = 'Iniciando…';
-  else if (room.phase === 'playing') status.textContent = 'Partida en curso';
+  else if (room.phase === 'playing')
+    status.textContent = me?.playing
+      ? 'Partida en curso'
+      : 'Hay una partida en curso. Espera aquí con el grupo: entras a la siguiente.';
   else if (room.phase === 'ended') status.textContent = 'Partida terminada, preparando la sala...';
+  else if (me?.away)
+    status.textContent = 'Estás ausente: no cuentas para empezar. Pulsa Volver cuando regreses.';
   else if (!room.canStart)
     status.textContent = 'Faltan jugadores: sin bots hacen falta al menos 2 personas.';
   else
-    status.textContent = `Listos: ${ready} de ${room.members.length}. ${
+    status.textContent = `Listos: ${ready} de ${present}. ${
       isHost
         ? 'Empieza cuando todos estén listos o cuando pulses Iniciar ya.'
         : 'Empieza cuando todos estén listos o cuando el anfitrión inicie.'
     }`;
+}
+
+/** Como se ve cada persona en la lista de la sala (la misma fila en la lista y en los equipos). */
+function memberState(m: RoomMember, phase: RoomState['phase']): [string, string] {
+  if (!m.connected) return ['Desconectado', 'badge off'];
+  if (m.away) return ['Ausente', 'badge away'];
+  if (m.playing) return ['Jugando', 'badge playing'];
+  if (phase === 'playing' || phase === 'ended') return ['En espera', 'badge'];
+  return m.ready ? ['Listo', 'badge ready'] : ['Esperando', 'badge'];
+}
+
+function memberRow(m: RoomMember, phase: RoomState['phase'], amHost: boolean): HTMLLIElement {
+  const li = el('li');
+  li.dataset.testid = 'member';
+  li.dataset.name = m.name;
+  const left = el('div', 'who');
+  const icon = el('canvas');
+  drawCatIcon(icon, m.skin, 2);
+  const label = el('div');
+  label.append(el('strong', '', m.name));
+  if (m.host) label.append(el('span', 'badge', 'anfitrión'));
+  left.append(icon, label);
+  const [text, cls] = memberState(m, phase);
+  const badge = el('span', cls, text);
+  badge.dataset.testid = 'member-state';
+  const right = el('div', 'member-actions');
+  right.append(badge);
+  if (amHost && m.userId !== user?.id) {
+    // dos toques: el primero pide confirmar, para no sacar a alguien por error
+    const kick = el('button', 'btn ghost small kick', 'Expulsar');
+    kick.type = 'button';
+    kick.dataset.testid = 'btn-kick';
+    let armed: number | null = null;
+    kick.addEventListener('click', async () => {
+      if (armed === null) {
+        kick.textContent = '¿Seguro?';
+        armed = window.setTimeout(() => {
+          armed = null;
+          kick.textContent = 'Expulsar';
+        }, 3000);
+        return;
+      }
+      window.clearTimeout(armed);
+      armed = null;
+      const res = await net?.ack('room:kick', { userId: m.userId });
+      if (res && !res.ok) toast(ERRORS[res.error] ?? 'No se pudo expulsar');
+    });
+    right.append(kick);
+  }
+  li.append(left, right);
+  return li;
 }
 
 /** Los dos equipos con sus personas, los lugares de bots y el boton para cambiarte de lado. */
@@ -984,23 +1059,7 @@ function renderTeamBoard(state: RoomState): void {
     );
     box.append(head);
     const ul = el('ul', 'member-list');
-    for (const m of mates) {
-      const li = el('li');
-      li.dataset.testid = 'member';
-      li.dataset.name = m.name;
-      const left = el('div', 'who');
-      const icon = el('canvas');
-      drawCatIcon(icon, m.skin, 2);
-      const label = el('div');
-      label.append(el('strong', '', m.name));
-      if (m.host) label.append(el('span', 'badge', 'anfitrión'));
-      left.append(icon, label);
-      const badge = el('span', m.connected ? (m.ready ? 'badge ready' : 'badge') : 'badge off');
-      badge.textContent = m.connected ? (m.ready ? 'Listo' : 'Esperando') : 'Desconectado';
-      badge.dataset.testid = 'member-state';
-      li.append(left, badge);
-      ul.append(li);
-    }
+    for (const m of mates) ul.append(memberRow(m, state.phase, me?.host === true));
     for (let k = mates.length; k < state.teamSize; k++) {
       const li = el('li', 'team-open');
       li.append(el('span', 'muted', 'Un bot ocupará este lugar'));
@@ -1370,10 +1429,18 @@ function leaveGameView(): void {
   window.__cybergrid = undefined;
 }
 
+/**
+ * Salir de la partida NO es salir del grupo: el gato se va de la partida y vuelve al lobby con su
+ * grupo. Solo si estaba solo en la sala (una partida en solitario) la sala se cierra tambien.
+ */
 async function quitToLobby(): Promise<void> {
   if (!net) return;
-  await net.ack('room:leave');
-  room = null;
+  const alone = (room?.members.length ?? 1) <= 1;
+  await net.ack('game:leave');
+  if (alone) {
+    await net.ack('room:leave');
+    room = null;
+  }
   countdownEl.hidden = true;
   leaveGameView();
   navigate('/lobby');
