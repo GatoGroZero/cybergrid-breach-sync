@@ -1645,6 +1645,14 @@ export class AdventureGame extends BRGame {
     this.finishAdventure(true);
   }
 
+  /** Solo para pruebas: pone una habilidad de jefe ya lista en la primera casilla libre. */
+  debugPower(catId: number, id: number, level = 1): void {
+    const st = this.state.get(catId);
+    if (!st || !POWERS[id]) return;
+    st.powers = st.powers.filter((p) => p.id !== id).slice(0, POWER_SLOTS - 1);
+    st.powers.push({ id, level, readyAt: 0 });
+  }
+
   debugArm(catId: number): void {
     const cat = this.cat(catId);
     if (!cat) return;

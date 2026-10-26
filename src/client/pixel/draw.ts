@@ -59,25 +59,33 @@ export const rect = (c: Ctx, x: number, y: number, w: number, h: number, color: 
   c.fillRect(Math.round(x), Math.round(y), w, h);
 };
 
+/**
+ * Llena las casillas cuyo centro cae dentro de la elipse: una tira por fila en vez de una llamada por
+ * casilla. El resultado es identico, pero un resplandor de 170 px de radio pasa de medio millon de
+ * llamadas a un par de cientos (antes, la primera vez que salia una habilidad grande el juego
+ * se congelaba un segundo entero).
+ */
+function fillSpans(c: Ctx, cx: number, cy: number, rx: number, ry: number): void {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+    const dy = (y + 0.5 - cy) / ry;
+    const rest = 1 - dy * dy;
+    if (rest < 0) continue;
+    const half = rx * Math.sqrt(rest);
+    const x0 = Math.ceil(cx - half - 0.5);
+    const x1 = Math.floor(cx + half - 0.5);
+    if (x1 >= x0) c.fillRect(x0, y, x1 - x0 + 1, 1);
+  }
+}
+
 /** Disco de pixeles: llena las casillas cuyo centro cae dentro del circulo. */
 export function disc(c: Ctx, cx: number, cy: number, r: number, color: string): void {
   c.fillStyle = color;
-  for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
-    for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
-      if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) c.fillRect(x, y, 1, 1);
-    }
-  }
+  fillSpans(c, cx, cy, r, r);
 }
 
 export function ell(c: Ctx, cx: number, cy: number, rx: number, ry: number, color: string): void {
   c.fillStyle = color;
-  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
-    for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-      const dx = (x + 0.5 - cx) / rx;
-      const dy = (y + 0.5 - cy) / ry;
-      if (dx * dx + dy * dy <= 1) c.fillRect(x, y, 1, 1);
-    }
-  }
+  fillSpans(c, cx, cy, rx, ry);
 }
 
 export function line(c: Ctx, x0: number, y0: number, x1: number, y1: number, color: string): void {
